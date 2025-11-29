@@ -156,12 +156,13 @@ type
   Notifier*[T,L] = ref object
     cond:Cond
     lck:Lock
-    listeners:seq[Listener[L]]
-    state:StateData[T,L]
+    listeners*:seq[Listener[L]]
+    state*:StateData[T,L]
 
 ############################################################### ACCESSORS ###############################################################
 
-proc getstate(n:Notifier) = n.state
+proc getstate*(n:Notifier) = 
+  return n.state
 proc getstream(s:StateData) = s.stream
 
 ############################################################# CONSTRUCTORS ##############################################################
@@ -179,7 +180,7 @@ proc newStateData[T,L]() :StateData[T,L] =
   return StateData[T,L](emission:SyncState(priorities:false, consumes:false), mode:EmitState(), 
     exec:ExecAll(), delay:NoDelay(), stream:Channel[EmissionCallback[T,L]](), check:false)
 
-proc newNotifier[T,L]() :Notifier[T,L] =
+proc newNotifier*[T,L]() :Notifier[T,L] =
   return Notifier[T,L](cond:Cond(), lck:Lock(), listeners:newSeq[Listener[L]](), state:newStateData[T,L]())
 
 ################################################################ HELPERS ################################################################
@@ -218,9 +219,12 @@ macro notifier*(args:untyped) =
 
 ## Generate fn(tup[1],tup[2],...)
 ## This allows us to even use varargs and call the function as if each parameters was passed one by one.
-macro destructuredCall*(fn:untyped, tup:typed) =
+macro destructuredCall*(nm:untyped, fn:untyped, tup:typed) =
   let n = len(getType(tup))-1
-  result = newNimNode(nnkCall)
-  result.add(fn)
+  var callex = newNimNode(nnkCall)
+  callex.add(fn)
   for i in 0..<n:
-    result.add((quote do: `tup`[`i`]))
+    callex.add((quote do: `tup`[`i`]))
+
+  return quote do:
+   let `nm` = `callex`
