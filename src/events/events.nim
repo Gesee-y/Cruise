@@ -184,7 +184,7 @@ proc newNotifier[T,L]() :Notifier[T,L] =
 
 ################################################################ HELPERS ################################################################
 
-macro notifier*(args:untyped):Notifier = 
+macro notifier*(args:untyped) = 
   let nname = args[0]
   nname.expectKind(nnkIdent)
 
@@ -214,7 +214,7 @@ macro notifier*(args:untyped):Notifier =
       namedtypes.add(ident)
   
   return quote do:
-   newNotifier[`namedtypes`, `procty`]()
+   let `nname` = newNotifier[`namedtypes`, `procty`]()
 
 ## Generate fn(tup[1],tup[2],...)
 ## This allows us to even use varargs and call the function as if each parameters was passed one by one.

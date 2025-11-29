@@ -19,7 +19,7 @@ my_signal.connect(foo)
 
 ## Bunch of code
 
-my_signal.emit(param1, param2)
+my_signal.emit(1, 2.0)
 ```
 
 Here, we attached the function `foo` to a signal that emits two parameters. `foo` will be called only when `my_signal` is emitted. `foo` is called a **Listener** because it listens for changes emitted by the signal.
@@ -36,6 +36,19 @@ Inspired by Godot signals, Cruise provides `Notifier`s, an implementation of the
 * And more
 
 ![Emission pipeline](assets/pipeline.png)
+
+Cruise's notifiers have a similar syntax to Godot:
+
+```nim
+notifier my_notifier(param:int, another_param:float)
+
+proc foo(param:int, another_param:float) =
+  echo param
+  echo another_param
+
+my_notifier.connect(foo)
+my_notifier.emit(1, 2.0)
+```
 
 ## How It Works
 

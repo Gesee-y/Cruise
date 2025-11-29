@@ -13,10 +13,6 @@ proc tst(x:int, y:float) =
 let a = (1, 2.0)
 destructuredCall(tst, a)
 
-dumpTree:
-  proc(int, int, int)
-  pro(1,2)
-echo tuple[x:int]
-var data = notifier(my_signal(x:int, y:int, z:int))
+notifier my_signal(x:int, y:int, z:int)
 
-echo data.listeners
+echo my_signal.listeners
