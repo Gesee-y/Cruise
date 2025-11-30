@@ -10,12 +10,12 @@ proc connect*[T,L](n:Notifier[T,L], callback:L, consume:bool=true, priority:int=
   let l = Listener[L](callback:callback, consume:consume, priority:priority, stop:false)
   
   # This is to avoid modifying the listeners if we are currently executing the notifier
-  lock(n.lck):
+  withLock(n.lck):
     n.listeners.add(l)
 
 proc disconnect*[T,L](n:Notifier[T,L], callback:L) =
   # Same as `connect`
-  lock(n.lck):
+  withLock(n.lck):
 
     # Just some basic swap and pop logic
     for i in 0..<n.listeners.len:
@@ -62,4 +62,6 @@ proc `[]=`*[T,L](n:Notifier[T,L], args:T) =
   let mode = n.state.mode
   doAssert mode is ValState
 
+  if mode.ignore_eqvalue and mode.value == args:
+    return
   emit(n, args)

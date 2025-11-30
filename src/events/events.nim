@@ -246,3 +246,4 @@ macro destructuredCall*(nm:untyped, fn:untyped, tup:typed) =
 
 include "pipeline.nim"
 include "operations.nim"
+include "state_operations.nim"
