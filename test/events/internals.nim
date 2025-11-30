@@ -4,14 +4,16 @@
 #include "../../src/events/events.nim"
 
 import unittest
-import ../../src/events/events  # adapte le chemin
+import ../../src/events/events 
 
 # ===========================
 # TEST 1 : Macro notifier
 # ===========================
 test "macro notifier generate a Notifier":
   notifier myEvent(a:int, b:string)
-  check myEvent != nil            # existe
+
+  emit(myEvent, (1, "c"))
+  check myEvent != nil
   check myEvent.listeners.len == 0
   check myEvent.state != nil
 

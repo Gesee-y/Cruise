@@ -4,11 +4,16 @@ This implement the event system for, a stateful event system. You can change the
 ]#
 import macros
 import locks
+import threadpool
+import asyncdispatch
+import os
 
 const CHANNEL_SIZE = 64
 
 type
   # First our emission hierarchy
+
+  Notification = ref object of RootObj
 
   ##[ Encapsultate how the Notifier can be executed
   They define how it should emit signals (synchronously, asynchronously, etc).
@@ -74,14 +79,12 @@ type
   State that specify to the Notifier to execute just the latest callback
   ]##
   ExecLatest = ref object of ExecMode
-    cond:Cond
-    lck:Lock
+    count:int
 
   ##[
   This indicate to the Notifier to execute the first callbacks and ignore the others
   ]##
   ExecOldest = ref object of ExecMode
-    lck:Lock
     count:int
   
   ##[
@@ -105,17 +108,16 @@ type
   ]##
   Delay = ref object of DelayMode
     first:bool
-    duration:float
+    duration:int
 
   ##[
   Specify to the Notifier to run asynchronously or in parallel.
   `mode` indicate how listeners should be called
   `wait` specify if the Notifier should wait for all the listener to finish before pursuing the program
   ]##
-  AsyncState = ref object of EmissionState
+  ParallelState = ref object of EmissionState
     mode:TaskMode
     wait:bool
-    parallel:bool
 
   ##[
   Specify to the Notifier to run synchronously, which means on a single thread.
@@ -153,14 +155,16 @@ type
   ##[
   This object can be used for the observer pattern. It use a state machine to allow users to modiy its behavior at runtime.
   ]##
-  Notifier*[T,L] = ref object
+  Notifier*[T,L] = ref object of Notification
     cond:Cond
     lck:Lock
     listeners*:seq[Listener[L]]
+    buffer:seq[seq[Listener[L]]]
     state*:StateData[T,L]
 
 ############################################################### ACCESSORS ###############################################################
 
+proc callback[L](l:Listener[L]) = l.callback
 proc getstate*(n:Notifier) = 
   return n.state
 proc getstream(s:StateData) = s.stream
@@ -168,20 +172,30 @@ proc getstream(s:StateData) = s.stream
 ############################################################# CONSTRUCTORS ##############################################################
 
 proc newExecLatest(notif:Notifier, count:int) =
-  return ExecLatest(Lock(),count)
+  return ExecLatest(count)
 
 proc newExecOldest(notif:Notifier, count:int) =
-  return ExecOldest(Lock(),count)
+  return ExecOldest(count)
 
 proc newStateMismatch(msg:string): ref StateMismatch = 
   return newException(StateMismatch, message=msg)
 
 proc newStateData[T,L]() :StateData[T,L] = 
+  let chan = Channel[EmissionCallback[T,L]]()
+
+  chan.open(CHANNEL_SIZE)
+  
   return StateData[T,L](emission:SyncState(priorities:false, consumes:false), mode:EmitState(), 
-    exec:ExecAll(), delay:NoDelay(), stream:Channel[EmissionCallback[T,L]](), check:false)
+    exec:ExecAll(), delay:NoDelay(), stream:chan, check:false)
 
 proc newNotifier*[T,L]() :Notifier[T,L] =
-  return Notifier[T,L](cond:Cond(), lck:Lock(), listeners:newSeq[Listener[L]](), state:newStateData[T,L]())
+  let cond = Cond()
+  let lck = Lock()
+
+  lck.initLock()
+  cond.initCond()
+  
+  return Notifier[T,L](cond:cond, lck:lck, listeners:newSeq[Listener[L]](), buffer:newSeq[seq[Listener[L]]](), state:newStateData[T,L]())
 
 ################################################################ HELPERS ################################################################
 
@@ -215,7 +229,7 @@ macro notifier*(args:untyped) =
       namedtypes.add(ident)
   
   return quote do:
-   let `nname` = newNotifier[`namedtypes`, `procty`]()
+    let `nname` = newNotifier[`namedtypes`, `procty`]()
 
 ## Generate fn(tup[1],tup[2],...)
 ## This allows us to even use varargs and call the function as if each parameters was passed one by one.
@@ -228,3 +242,7 @@ macro destructuredCall*(nm:untyped, fn:untyped, tup:typed) =
 
   return quote do:
    let `nm` = `callex`
+
+
+include "pipeline.nim"
+include "operations.nim"
