@@ -64,4 +64,5 @@ proc `[]=`*[T,L](n:Notifier[T,L], args:T) =
 
   if mode.ignore_eqvalue and mode.value == args:
     return
+  
   emit(n, args)
