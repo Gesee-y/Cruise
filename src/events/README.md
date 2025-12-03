@@ -73,6 +73,14 @@ A **state** is any combination of pipeline components. For example, `Value + Exe
 * Fold: `notif.fold(fn, Return_type)`. Accumulate value via the function `fn`.
 * Filtering: `notif.filter(fn)`. Filter only some change following the function `fn`
 
+## Performances
+
+This tools being a port from my event system from julia to nim, I guess it's relevant to get to see some performances comparison
+
+- **Emitting without Listeners**: Julia: 380ns, Nim: 580 ns
+- **Emitting with 1 Listener**: Julia: 3289 ns, Nim: 590 ns
+- **Emitting with 5 Listeners**: Julia: ns, Nim: 630 ns
+
 ## Why Notifier?
 
 While there are many standard implementations of the observer pattern and reactive systems, `Notifier`s offer a new perspective: an event processing pipeline that allows great runtime flexibility through composition rather than schedulers.

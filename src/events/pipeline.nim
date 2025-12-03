@@ -35,12 +35,11 @@ proc call_listener[L,T](l:Listener[L], data:T, d:DelayMode) =
   delay(d)
 
 proc nexec_all[T,L](n:var Notifier[T,L]) = 
-  var stream = n.state.stream
-  var tried = stream.tryRecv()
+  var tried = n.state.stream.tryRecv()
 
   while tried.dataAvailable:
     n.buffer.add(tried.msg)
-    tried = stream.tryRecv()
+    tried = n.state.stream.tryRecv()
 
 proc nexec_latest[T,L](notif:var Notifier[T,L], count:int) = 
   var stream = notif.state.stream
