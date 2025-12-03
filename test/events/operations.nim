@@ -101,14 +101,12 @@ suite "Notifier core operations":
     n.close()
 
 
-  test "wait débloque quand emit signal":
+  test "wait signal":
     var unlocked = true
 
     notifier n(x:int)
     n.open()
 
-    # On lance un thread ou future simplifié
-    # Pour éviter les dépendances, on utilise un timeout
     let start = now()
 
     let f = proc () =
