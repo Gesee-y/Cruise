@@ -13,8 +13,8 @@ template map*[T,L](n1:Notifier[T,L], fn, R) =
   
   n1.connect(f)
 
-template filter*[T,L](src: Notifier[T,L], fn) =
-  filt = newNotifier[T,L]()
+template filter*[T,L](src: Notifier[T,L], fn:untyped) =
+  var filt {.inject.} = newNotifier[T,L]()
   enable_value(filt)
 
   anoFunc(f, T, quote do:
@@ -32,21 +32,21 @@ template fold*[T,L,A](src: Notifier[T,L], init: A, fn) =
   var acc = init
 
   anoFunc(f, T, quote do:
-    acc = fn(fol[], allargs)
+    destructuredCallRet(acc, fn, (fol[0], allarg))
     fol.emit((acc:acc))
   )
 
   src.connect(f)
 
-template merge*[T,L](a: Notifier[T,L], b: Notifier[T,L]) =
-  notifier mer(T)
+template merge*[TA,LA,TB,LB](a: Notifier[TA,LA], b: Notifier[TB,LB]) =
+  notifier mer(ax:TB, bx:TB)
   enable_value(mer)
 
-  anoFunc(fa, T, quote do:
-    mer.emit(allarg)
+  anoFunc(fa, TA, quote do:
+    mer.emit((a[0], b[0]))
   )
-  anoFunc(fb, T, quote do:
-    mer.emit(allarg)
+  anoFunc(fb, TB, quote do:
+    mer.emit((a[0], b[0]))
   )
 
   a.connect(fa)
@@ -57,15 +57,11 @@ template zip*[TA,LA,TB,LB](a: Notifier[TA,LA], b: Notifier[TB,LB], fn, R) =
   enable_value(mer)
 
   anoFunc(fa, TA, quote do:
-    let va = allarg
-    if hb:
-      mer.emit((ret:fn(va, vb)))
+    mer.emit((ret:fn(a[0], b[0])))
   )
 
   anoFunc(fb, TB, quote do:
-    let vb = allarg
-    if ha:
-      mer.emit((ret:fn(va, vb)))
+    mer.emit((ret:fn(a[0], b[0])))
   )
 
   a.connect(fa)

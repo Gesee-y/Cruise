@@ -262,7 +262,9 @@ macro anoFunc(name:untyped, obj:typed, body:untyped) =
   var params = newNimNode(nnkFormalParams)
   params.add(newNimNode(nnkEmpty))
 
+  var vs = newNimNode(nnkLetSection)
   var arg_bundle = newNimNode(nnkIdentDefs)
+  vs.add(arg_bundle)
   arg_bundle.add(ident("allarg"))
   arg_bundle.add(newNimNode(nnkEmpty))
 
@@ -280,14 +282,18 @@ macro anoFunc(name:untyped, obj:typed, body:untyped) =
     params.add(ident)
 
   arg_bundle.add(tup)
-  params.add(arg_bundle)
 
   f.add(params)
   f.add(newNimNode(nnkEmpty))
   f.add(newNimNode(nnkEmpty))
-  f.add(body[1])
+  
+  var stmt = newNimNode(nnkStmtList)
+  stmt.add(vs)
 
-  echo f.treeRepr
+  for i in 0..<body[1].len:
+    stmt.add(body[1][i])
+
+  f.add(stmt)
 
   return quote do:
     var `name` = `f`

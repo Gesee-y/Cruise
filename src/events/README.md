@@ -76,6 +76,7 @@ A **state** is any combination of pipeline components. For example, `Value + Exe
 ## Performances
 
 This tools being a port from my event system from julia to nim, I guess it's relevant to get to see some performances comparison
+Only emission is benchmarked because it's the only relevant operation in a game. Since it's what happens most of the time (connection, disconnection, map, etc are more punctual operations.)
 
 - **Emitting without Listeners**: Julia: 380ns, Nim: 580 ns
 - **Emitting with 1 Listener**: Julia: 3289 ns, Nim: 590 ns
