@@ -79,7 +79,7 @@ This tools being a port from my event system from julia to nim, I guess it's rel
 
 - **Emitting without Listeners**: Julia: 380ns, Nim: 580 ns
 - **Emitting with 1 Listener**: Julia: 3289 ns, Nim: 590 ns
-- **Emitting with 5 Listeners**: Julia: ns, Nim: 630 ns
+- **Emitting with 5 Listeners**: Julia: 14019 ns, Nim: 630 ns
 
 ## Why Notifier?
 
