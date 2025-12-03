@@ -16,7 +16,7 @@ Whether there should be a delay before the first listener call
 ]##
 proc delayFirst*[T,L](n: var Notifier[T,L], first:bool=false) =
   var d = n.state.delay
-  doAssert d is Delay
+  doAssert d.kind == dDelay
 
   d.first = first
 
@@ -48,7 +48,7 @@ In this mode, all listeners execution will be passed as one big parallel task
 ]##
 proc singleTask*[T,L](n: var Notifier[T,L]) =
   var em = n.state.emission
-  doAssert em is ParalleState
+  doAssert em.kind == emParallel
 
   em.mode = SingleTask()
 
@@ -59,7 +59,7 @@ In this mode, listeners execution will be passed as multiple parallel task
 ]##
 proc multipleTask*[T,L](n: var Notifier[T,L]) =
   var em = n.state.emission
-  doAssert em is ParalleState
+  doAssert em.kind == emParallel
 
   em.mode = MultipleTask()
 
@@ -68,20 +68,20 @@ Allows the Notifier to keep value of the latest change.
 `ignore_eqv` is if the notifir should emit even if the change is the same as the last value
 ]##
 proc enableValue*[T,L](n: var Notifier[T,L], ignore_eqv=false) =
-  n.state.mode = ValState(ignore_eqvalue:ignore_eqv)
+  n.state.mode = ValState[T](ignore_eqv)
 
 ##[
 The notifier will no be able to keep the value of the latest changafter this function applied on it
 ]##
 proc disableValue*[T,L](n: var Notifier[T,L]) =
-  n.state.mode = EmitState()
+  n.state.mode = EmitState[T]()
 
 ##[
 For a Notifier able to keep value, this say if value equal to the latest change should trigger an emission.
 ]##
 proc ignoreEqValue*[T,L](n: var Notifier[T,L], ignore_eqv=true) =
   var m = n.state.mode
-  doAssert m is ValState
+  doAssert m.kind == nValue
 
   m.ignore_eqvalue = ignore_eqv
 

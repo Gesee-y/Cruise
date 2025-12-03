@@ -5,26 +5,43 @@
 
 import unittest
 import ../../src/events/events 
+import macros
+
+var added = 0
+
+dumpTree:
+  proc (x:int, y:int) =
+    discard
+
+proc adds(a:int, b:int) =
+  added = a + b
+
+proc addz(a:int, b:int):int =
+  return a + b
 
 # ===========================
 # TEST 1 : Macro notifier
 # ===========================
 test "macro notifier generate a Notifier":
-  notifier myEvent(a:int, b:string)
+  notifier myEvent(a:int, b:int)
 
-  emit(myEvent, (1, "c"))
+  map2(myEvent, addz, float)
+  echo notif
+  myEvent.connect(adds)
   check myEvent != nil
-  check myEvent.listeners.len == 0
+  check myEvent.listeners.len == 1
   check myEvent.state != nil
+
+  myEvent.emit((1,3))
+  check added == 4
 
 # ===========================
 # TEST 2 : destructuredCall
 # ===========================
-proc add(a:int, b:int): int = a + b
 
 test "destructuredCall of a funtion":
   let t = (3, 5)
-  destructuredCall(r, add, t)
-  check r == 8
+  destructuredCall(adds, t)
+  check added == 8
 
 

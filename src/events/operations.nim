@@ -43,24 +43,24 @@ proc reset*[T,L](n:Notifier[T,L]) =
 
 proc wait*[T,L](n:Notifier[T,L]) = n.cond.wait()
 
-proc emit*[T,L](n:Notifier[T,L], args:T) =
+proc emit*[T,L](n:var Notifier[T,L], args:T) =
   let success = n.lck.tryAcquire()
   addcallback(n, args)
 
   n.cond.signal()
-  if success: 
+  if success:
     execute_pipeline(n)
     n.lck.release()
 
 proc `[]`*[T,L](n:Notifier[T,L]) =
   let mode = n.state.mode
-  doAssert mode is ValState
+  doAssert mode.kind == nValue
 
   return mode.value
 
-proc `[]=`*[T,L](n:Notifier[T,L], args:T) =
+proc `[]=`*[T,L](n:var Notifier[T,L], args:T) =
   let mode = n.state.mode
-  doAssert mode is ValState
+  doAssert mode.kind == nValue
 
   if mode.ignore_eqvalue and mode.value == args:
     return
