@@ -47,7 +47,7 @@ proc foo(param:int, another_param:float) =
   echo another_param
 
 my_notifier.connect(foo)
-my_notifier.emit(1, 2.0)
+my_notifier.emit((1, 2.0))
 ```
 
 ## How It Works
@@ -68,15 +68,14 @@ A **state** is any combination of pipeline components. For example, `Value + Exe
 
 `Notifier`s also provide reactive functions familiar to users of Rx-style libraries, including:
 
-* Throttling
-* Delays
-* Map
-* Reduce
-* Filtering
+* Delays: `notif.delay(duration, first)`. duration is in millinsecond and first is wheter there should be a delay before the first listener call
+* Map: `notif.map(fn, Return_type)`. Map the fonction fn to each change of `notif`.
+* Fold: `notif.fold(fn, Return_type)`. Accumulate value via the function `fn`.
+* Filtering: `notif.filter(fn)`. Filter only some change following the function `fn`
 
 ## Why Notifier?
 
-While there are many standard implementations of the observer pattern and reactive systems, `Notifier`s offer a new perspective: an event processing pipeline that allows greater runtime flexibility than more static solutions.
+While there are many standard implementations of the observer pattern and reactive systems, `Notifier`s offer a new perspective: an event processing pipeline that allows great runtime flexibility through composition rather than schedulers.
 
 Additionally, the Nim ecosystem lacks mature libraries for reactive programming, making `Notifier`s a valuable addition.
 

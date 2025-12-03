@@ -30,7 +30,7 @@ This architecture offers several advantages:
 
 - ~~**Game logics as first class citizens**: Your customs systems have as much power as the core ones~~
 
-- ~~**Event System**: Cruise provides you 2 event system, a lightweight synchronous one that can be use for simple cases, and a complex one leveraging the full powers of reactive programming such as merging, filtering, delays, throttling,  etc.~~
+- **Event System**: Cruise provides you 2 event system, a lightweight synchronous one that can be use for simple cases, and a complex one leveraging the full powers of reactive programming such as merging, filtering, delays, throttling,  etc.
 
 - ~~**Temporary storage**: To easily share data among your systems, it also support TTL (Time To Live) for data and provides events and serialization support~~
 
