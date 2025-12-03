@@ -240,6 +240,17 @@ macro destructuredCall*(fn:untyped, tup:typed) =
   return quote do:
    `callex`
 
+macro destructuredCallRet*(name:untyped, fn:untyped, tup:typed) =
+  let n = len(getType(tup))-1
+  var callex = newNimNode(nnkCall)
+  callex.add(fn)
+  for i in 0..<n:
+    callex.add((quote do: `tup`[`i`]))
+
+  return quote do:
+   let `name` = `callex`
+
+
 macro anoFunc(name:untyped, obj:typed, body:untyped) =
   var data = obj.getType()[1]
 
@@ -251,15 +262,25 @@ macro anoFunc(name:untyped, obj:typed, body:untyped) =
   var params = newNimNode(nnkFormalParams)
   params.add(newNimNode(nnkEmpty))
 
-  let ids = @["x", "y", "z"]
+  var arg_bundle = newNimNode(nnkIdentDefs)
+  arg_bundle.add(ident("allarg"))
+  arg_bundle.add(newNimNode(nnkEmpty))
+
+  var tup = newNimNode(nnkTupleConstr)
+  let ids = @["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "w", "y","z"]
 
   for i in 1..<data.len:
     var ident = newNimNode(nnkIdentDefs)
-    ident.add(ident(ids[i-1]))
+    let id = ident(ids[i-1])
+    ident.add(id)
+    tup.add(id)
     ident.add(data[i])
     ident.add(newNimNode(nnkEmpty))
 
     params.add(ident)
+
+  arg_bundle.add(tup)
+  params.add(arg_bundle)
 
   f.add(params)
   f.add(newNimNode(nnkEmpty))

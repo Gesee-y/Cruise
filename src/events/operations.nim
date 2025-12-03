@@ -21,9 +21,9 @@ proc disconnect*[T,L](n:Notifier[T,L], callback:L) =
     for i in 0..<n.listeners.len:
       let l = n.listeners[i]
 
-      if l.callback() == callback:
+      if l.callback == callback:
         n.listeners[i] = n.listeners[^1]
-        n.listeners.pop()
+        discard n.listeners.pop()
 
         return
 
@@ -41,7 +41,7 @@ proc reset*[T,L](n:Notifier[T,L]) =
   n.open()
   n.listeners.setLen(0)
 
-proc wait*[T,L](n:Notifier[T,L]) = n.cond.wait()
+proc wait*[T,L](n:Notifier[T,L]) = n.cond.wait(n.lck)
 
 proc emit*[T,L](n:var Notifier[T,L], args:T) =
   let success = n.lck.tryAcquire()
@@ -52,13 +52,13 @@ proc emit*[T,L](n:var Notifier[T,L], args:T) =
     execute_pipeline(n)
     n.lck.release()
 
-proc `[]`*[T,L](n:Notifier[T,L]) =
+proc `[]`*[T,L](n:Notifier[T,L], i:int=0):T =
   let mode = n.state.mode
   doAssert mode.kind == nValue
 
   return mode.value
 
-proc `[]=`*[T,L](n:var Notifier[T,L], args:T) =
+proc `[]=`*[T,L](n:var Notifier[T,L],i:int, args:T) =
   let mode = n.state.mode
   doAssert mode.kind == nValue
 
