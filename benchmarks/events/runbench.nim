@@ -52,15 +52,6 @@ notifier notif7(a:int, b:int)
 benchmark "zip", SAMPLE:
   zip(notif6,notif7, proc(a,b: tuple[a:int, b:int]): int = a.a + b.b, int)
 
-#benchmark "map + filter + fold", SAMPLE:
-  # map -> filter -> fold
- # notif.emit((1, 2))
-
-#benchmark "multi-thread emit":
-#  spawn notif.emit((1, 2))
-#  spawn notif.emit((3, 4))
-#  sync()
-
 benchmark "Value mode", SAMPLE:
   enable_value(notif)
   notif[0] = (1, 2)

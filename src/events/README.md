@@ -91,10 +91,10 @@ These benchmarks are performed on this setup:
 - **Emitting with 5 Listeners**: Julia: 14019 ns, Nim: 630 ns
 
 **Reactive Operators:**
-- Map: 700ns (+100ns overhead)
-- Filter: 700ns (+100ns overhead)
-- Merge: 700ns (+100ns overhead)
-- Zip: 900ns (+300ns overhead)
+- Map: 700ns
+- Filter: 700ns
+- Merge: 700ns
+- Zip: 900ns
 
 **Modes:**
 - Value mode: 800ns
