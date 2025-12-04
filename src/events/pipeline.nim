@@ -52,9 +52,6 @@ proc nexec_latest[T,L](notif:var Notifier[T,L], count:int) =
   var n = count
   
   while tried.dataAvailable and n > 0:
-    # Skip if there are more messages in stream than we need
-    if n < peek(stream): continue
-    
     notif.buffer.add(tried.msg)
     n -= 1
     tried = stream.tryRecv()
@@ -66,6 +63,9 @@ proc nexec_oldest[T,L](notif:var Notifier[T,L], count:int) =
   var n = count
   
   while tried.dataAvailable and n > 0:
+    # Skip if there are more messages in stream than we need
+    if n < peek(stream): continue
+    
     notif.buffer.add(tried.msg)
     n -= 1
     tried = stream.tryRecv()

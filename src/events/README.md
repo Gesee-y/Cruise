@@ -78,9 +78,31 @@ A **state** is any combination of pipeline components. For example, `Value + Exe
 This tools being a port from my event system from julia to nim, I guess it's relevant to get to see some performances comparison
 Only emission is benchmarked because it's the only relevant operation in a game. Since it's what happens most of the time (connection, disconnection, map, etc are more punctual operations.)
 
+These benchmarks are performed on this setup:
+
+- Windows 10
+- CPU Intel Core i5 @2.2GHz
+- 4 cores
+- RAM: 4 Gb
+
+**Core Operations:**
 - **Emitting without Listeners**: Julia: 380ns, Nim: 580 ns
 - **Emitting with 1 Listener**: Julia: 3289 ns, Nim: 590 ns
 - **Emitting with 5 Listeners**: Julia: 14019 ns, Nim: 630 ns
+
+**Reactive Operators:**
+- Map: 700ns (+100ns overhead)
+- Filter: 700ns (+100ns overhead)
+- Merge: 700ns (+100ns overhead)
+- Zip: 900ns (+300ns overhead)
+
+**Modes:**
+- Value mode: 800ns
+- Emit mode: 700ns
+
+**Key highlights:**
+- **Zero allocations** during runtime (emit, connect, disconnect)
+- **Thread-safe** with minimal overhead (~200ns for locks)
 
 ## Why Notifier?
 

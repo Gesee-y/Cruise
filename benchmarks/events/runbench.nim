@@ -1,6 +1,8 @@
 import ../../src/events/events 
 import times, os, strutils, math
 
+const SAMPLE = 10000
+
 template benchmark(benchmarkName: string, sample:int, code: untyped) =
   block:
     var elapsed = 0.0
@@ -26,8 +28,43 @@ notif.connect(cb)
 notif.connect(cb)
 notif.connect(cb)
 
-proc run_bench_emmision(n:int) =
+proc run_bench_emission(n:int) =
   benchmark "emission",n:
     notif.emit((1,2))
 
-run_bench_emmision(100000)
+run_bench_emission(SAMPLE)
+
+notifier notif2(a:int, b:int)
+benchmark "map", SAMPLE:
+  map(notif2, proc(a,b: int): int = a + b, int)
+
+notifier notif3(a:int, b:int)
+benchmark "filter", SAMPLE:
+  filter(notif3, proc(a,b: int): bool = a > b)
+
+notifier notif4(a:int, b:int)
+notifier notif5(a:int, b:int)
+benchmark "merge", SAMPLE:
+  merge(notif4,notif5)
+
+notifier notif6(a:int, b:int)
+notifier notif7(a:int, b:int)
+benchmark "zip", SAMPLE:
+  zip(notif6,notif7, proc(a,b: tuple[a:int, b:int]): int = a.a + b.b, int)
+
+#benchmark "map + filter + fold", SAMPLE:
+  # map -> filter -> fold
+ # notif.emit((1, 2))
+
+#benchmark "multi-thread emit":
+#  spawn notif.emit((1, 2))
+#  spawn notif.emit((3, 4))
+#  sync()
+
+benchmark "Value mode", SAMPLE:
+  enable_value(notif)
+  notif[0] = (1, 2)
+
+benchmark "Emit mode", SAMPLE:
+  # mode par défaut
+  notif.emit((1, 2))
