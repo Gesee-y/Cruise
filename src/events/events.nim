@@ -1,6 +1,6 @@
 #[
 Event system for Cruise
-This implement the event system for, a stateful event system. You can change the state of the events to make them behave differently 
+This implements a stateful event system. You can change the state of the events to make them behave differently 
 ]#
 import macros
 import locks
@@ -43,7 +43,7 @@ type
       wait:bool
   
   ##[
-  The notifier State, it contains all the necessary information about the stae of the notifier.
+  The notifier State, it contains all the necessary information about the state of the notifier.
   ]##
   NotifierState[T] = ref object
     case kind: NotifVar
@@ -54,7 +54,7 @@ type
       discard
 
   ##[
-  TaskMode define how the emission should be donne for the asynchronous state.
+  TaskMode define how the emission should be done for the asynchronous state.
   ]##
   TaskMode = ref object
     kind:TaskVar
@@ -81,12 +81,12 @@ type
       count:int 
         
   ##[
-  Exception throwed when a function is called on Notifier with the wrong state.
+  Exception thrown when a function is called on Notifier with the wrong state.
   ]##
   StateMismatch = object of CatchableError
 
   ##[
-  This represent the interface any listener type should implement in order to be considered a listener
+  This represents the interface any listener type should implement in order to be considered a listener
   ]##
   AbstractListener = concept x
     callback(x)
@@ -104,14 +104,14 @@ type
     stop:bool
 
   ##[
-  List of listeners for a given callback. Serve for registration purposes.
+  List of listeners for a given callback. Serves for registration purposes.
   ]##
   EmissionCallback[T,L] = ref object
     listeners:seq[Listener[L]]
     data:T
 
   ##[
-  Keep all the necessary informations about the state of a Notifier
+  Keep all the necessary information about the state of a Notifier
   ]##
   StateData[T,L] = ref object
     emission:EmissionState
@@ -122,7 +122,7 @@ type
     check:bool
 
   ##[
-  This object can be used for the observer pattern. It use a state machine to allow users to modiy its behavior at runtime.
+  This object can be used for the observer pattern. It uses a state machine to allow users to modify its behavior at runtime.
   ]##
   Notifier*[T,L] = ref object
     cond:Cond
@@ -196,10 +196,42 @@ proc newNotifier*[T,L]() :Notifier[T,L] =
 
 ################################################################ HELPERS ################################################################
 
-macro notifier*(args:untyped) = 
+##[
+Create a typed notifier with named parameters.
+  
+This macro generates a notifier with a specific signature based on the provided parameters.
+It automatically infers the tuple type for data and the procedure type for callbacks.
+  
+Parameters:
+  - `args`: Untyped arguments where first element is the notifier name, followed by name:type pairs
+  
+Returns:
+  A notifier declaration initialized with the appropriate types
+  
+Example:
+```nim
+# Create a notifier for mouse events with x, y coordinates
+notifier mouseClick(x: int, y: int)
+# Creates: var mouseClick = newNotifier[(x: int, y: int), proc(x: int, y: int)]()
+    
+# Create a notifier for simple string messages
+notifier messageReceived(msg: string)
+# Creates: var messageReceived = newNotifier[(msg: string), proc(msg: string)]()
+    
+# Use the notifier
+mouseClick.open()
+proc onMouseClick(x: int, y: int) =
+  echo "Clicked at: ", x, ", ", y
+    
+mouseClick.connect(onMouseClick)
+mouseClick.emit((10, 20))  # Prints "Clicked at: 10, 20"
+```
+]##
+macro notifier*(args:untyped) =
   let nname = args[0]
   nname.expectKind(nnkIdent)
 
+  # Build the type signature from the provided arguments
   var names = newNimNode(nnkBracket)
   var types = newNimNode(nnkPar)
   var namedtypes = newNimNode(nnkTupleTy)
@@ -212,7 +244,7 @@ macro notifier*(args:untyped) =
   procty.add(newNimNode(nnkEmpty))
 
   if args.len > 1:
-
+    # Process each parameter and build the tuple and proc types
     for col in ty:
       let ident = newNimNode(nnkIdentDefs)
       let id = col[0]
@@ -228,22 +260,34 @@ macro notifier*(args:untyped) =
   return quote do:
     var `nname` = newNotifier[`namedtypes`, `procty`]()
 
-## Generate fn(tup[1],tup[2],...)
-## This allows us to even use varargs and call the function as if each parameters was passed one by one.
+##[
+Call a function with tuple elements as separate arguments.
+  
+This macro unpacks a tuple and passes each element as an individual argument to the function.
+Allows calling fn(tup[0], tup[1], ..., tup[n]) with cleaner syntax.
+]##
 macro destructuredCall*(fn:untyped, tup:typed) =
   let n = len(getType(tup))-1
   var callex = newNimNode(nnkCall)
   callex.add(fn)
+  
+  # Unpack each tuple element as a separate argument
   for i in 0..<n:
     callex.add((quote do: `tup`[`i`]))
 
   return quote do:
    `callex`
 
+##[
+Call a function with tuple elements and capture the return value.
+  
+Similar to destructuredCall but stores the result in a variable.
+]##
 macro destructuredCallRet*(name:untyped, fn:untyped, tup:typed) =
   let n = len(getType(tup))-1
   var callex = newNimNode(nnkCall)
   callex.add(fn)
+  
   for i in 0..<n:
     callex.add((quote do: `tup`[`i`]))
 
@@ -252,6 +296,12 @@ macro destructuredCallRet*(name:untyped, fn:untyped, tup:typed) =
 
 
 macro anoFunc(name:untyped, obj:typed, body:untyped) =
+  ##[
+  Generate an anonymous function with parameters inferred from a typed object.
+  
+  Creates a lambda that accepts individual parameters and bundles them into a tuple
+  for processing in the function body.
+  ]##
   var data = obj.getType()[1]
 
   var f = newNimNode(nnkLambda)
@@ -262,6 +312,7 @@ macro anoFunc(name:untyped, obj:typed, body:untyped) =
   var params = newNimNode(nnkFormalParams)
   params.add(newNimNode(nnkEmpty))
 
+  # Bundle all parameters into a tuple for easier handling
   var vs = newNimNode(nnkLetSection)
   var arg_bundle = newNimNode(nnkIdentDefs)
   vs.add(arg_bundle)
@@ -269,6 +320,7 @@ macro anoFunc(name:untyped, obj:typed, body:untyped) =
   arg_bundle.add(newNimNode(nnkEmpty))
 
   var tup = newNimNode(nnkTupleConstr)
+  # Use alphabetic names for parameters (up to 25 parameters supported)
   let ids = @["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "w", "y","z"]
 
   for i in 1..<data.len:
@@ -297,7 +349,6 @@ macro anoFunc(name:untyped, obj:typed, body:untyped) =
 
   return quote do:
     var `name` = `f`
-
 
 
 include "pipeline.nim"

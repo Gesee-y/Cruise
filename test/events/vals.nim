@@ -87,8 +87,8 @@ suite "Reactive Operators Test Suite":
     var res: seq[int] = @[]
     mer.connect(proc(v:int) = res.add(v))
 
-    a.emit((x:2))       # no emit yet (b missing)
-    b.emit((x:4))       # now emits 2*4=8
+    a.emit((x:2))       # emits 0*2=0
+    b.emit((x:4))       # emits 2*4=8
 
     a.emit((x:3))       # emits 3*4 = 12
     b.emit((x:10))      # emits 3*10 = 30
