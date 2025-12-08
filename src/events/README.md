@@ -84,6 +84,7 @@ These benchmarks are performed on this setup:
 - CPU Intel Core i5 @2.2GHz
 - 4 cores
 - RAM: 4 Gb
+- Compiled with nim -d:danger
 
 **Core Operations:**
 - **Emitting without Listeners**: Julia: 380ns, Nim: 580 ns
