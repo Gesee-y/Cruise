@@ -1,46 +1,92 @@
 #[
 Event system for Cruise
-This implement the event system for, a stateful event system. You can change the state of the events to make them behave differently 
+This implements a stateful event system. You can change the state of the events to make them behave differently 
 ]#
 import macros
+import locks
+import threadpool
+import asyncdispatch
+import os
 
 const CHANNEL_SIZE = 64
 
 type
+  TaskVar = enum
+    tsSingle, tsMulti
+
+  EmissionVar = enum
+    emSync, emParallel
+
+  NotifVar = enum
+    nValue, nEmit
+
+  ExecVar = enum
+    exAll, exOldest, exLatest
+
+  DelayVar = enum
+    dNone, dDelay
+
   # First our emission hierarchy
+
+  Notification = ref object
 
   ##[ Encapsultate how the Notifier can be executed
   They define how it should emit signals (synchronously, asynchronously, etc).
   ]##
-  EmissionState = ref object of RootObj
+  EmissionState = ref object
+    mode:TaskMode
+    case kind : EmissionVar
+    of emSync:
+      priorities:bool
+      consumes:bool
+    of emParallel:
+      wait:bool
   
   ##[
-  The notifier State, it contains all the necessary information about the stae of the notifier.
+  The notifier State, it contains all the necessary information about the state of the notifier.
   ]##
-  NotifierState = ref object of RootObj
+  NotifierState[T] = ref object
+    case kind: NotifVar
+    of nValue:
+      value:T
+      ignore_eqvalue:bool
+    of nEmit:
+      discard
 
   ##[
-  TaskMode define how the emission should be donne for the asynchronous state.
+  TaskMode define how the emission should be done for the asynchronous state.
   ]##
-  TaskMode = ref object of RootObj
+  TaskMode = ref object
+    kind:TaskVar
 
   ##[
   Define if there should be a delay between emissions.
   ]##
-  DelayMode = ref object of RootObj
+  DelayMode = ref object
+    case kind:DelayVar
+    of dNone:
+      discard
+    of dDelay:
+      first:bool
+      duration:int
 
   ##[
   Represent the ways in which Listeners can be organized.
   ]##
-  ExecMode = ref object of RootObj
-
+  ExecMode = ref object
+    case kind:ExecVar
+    of exAll:
+      discard
+    of exLatest, exOldest:
+      count:int 
+        
   ##[
-  Exception throwed when a function is called on Notifier with the wrong state.
+  Exception thrown when a function is called on Notifier with the wrong state.
   ]##
   StateMismatch = object of CatchableError
 
   ##[
-  This represent the interface any listener type should implement in order to be considered a listener
+  This represents the interface any listener type should implement in order to be considered a listener
   ]##
   AbstractListener = concept x
     callback(x)
@@ -51,110 +97,261 @@ type
   ##[
   Concrete Listener. Is used by default.
   ]##
-  Listener[T] = object
+  Listener*[T] = object
     callback:T
     consume:bool
     priority:int
     stop:bool
 
   ##[
-  List of listeners for a given callback. Serve for registration purposes.
+  List of listeners for a given callback. Serves for registration purposes.
   ]##
-  EmissionCallback[T] = ref object
-    listeners:seq[Listener[T]]
+  EmissionCallback[T,L] = ref object
+    listeners:seq[Listener[L]]
+    data:T
 
   ##[
-  State that specify to the Notifier to execute all the callbacks
+  Keep all the necessary information about the state of a Notifier
   ]##
-  ExecAll = object of ExecMode
-
-  ##[
-  State that specify to the Notifier to execute just the latest callback
-  ]##
-  ExecLatest = object of ExecMode
-
-  ##[
-  This indicate to the Notifier to execute the first callbacks and ignore the others
-  ]##
-  ExecOldest = object of ExecMode
-
-  ##[
-  This indicate to the Notifier to run all the listeners in one big task for async state
-  ]##
-  SingleTask = object of TaskMode
-
-  ##[
-  Indicate to the Notifier to run each listener on a specific task
-  ]##
-  MultipleTask = object of TaskMode
-
-  ##[
-  Says to the Notifier not to add a delay between listeners execution
-  ]##
-  NoDelay = object of DelayMode
-
-  ##[
-  Specify to the Notifier to add a delay of duration `duration` between listeners call.
-  If `first` is true, then before the first listener is call, there will be a delay.
-  ]##
-  Delay = object of DelayMode
-    first:bool
-    duration:float
-
-  ##[
-  Specify to the Notifier to run asynchronously or in parallel.
-  `mode` indicate how listeners should be called
-  `wait` specify if the Notifier should wait for all the listener to finish before pursuing the program
-  ]##
-  AsyncState = object of EmissionState
-    mode:TaskMode
-    wait:bool
-    parallel:bool
-
-  ##[
-  Specify to the Notifier to run synchronously, which means on a single thread.
-  `priorities` enable the Notifier to take listener's priority into account
-  `consumes` enable listeners to consume themselves
-  ]##
-  SyncState = object of EmissionState
-    priorities:bool
-    consumes:bool
-
-  ##[
-  Specify the Notifier to keep the value of the last emission.
-  `ignore_eqvalue` means that the Notifier will not emit if the new value is the same as the old one.
-  ]##
-  ValState[T] = object of NotifierState
-    ignore_eqvalue:bool
-    value:T
-
-  ##[
-  This tel the Notifier we don't car eabout the last value it had.
-  ]##
-  EmitState = object of NotifierState
-
-  ##[
-
-  ]##
-  StateData[T] = ref object
+  StateData[T,L] = ref object
     emission:EmissionState
-    mode:NotifierState
+    mode:NotifierState[T]
     exec:ExecMode
     delay:DelayMode
-    stream:Channel[EmissionCallback[T]]
+    stream:Channel[EmissionCallback[T,L]]
     check:bool
 
+  ##[
+  This object can be used for the observer pattern. It uses a state machine to allow users to modify its behavior at runtime.
+  ]##
+  Notifier*[T,L] = ref object
+    cond:Cond
+    lck:Lock
+    listeners*:seq[Listener[L]]
+    buffer:seq[EmissionCallback[T,L]]
+    state*:StateData[T,L]
 
-## Generete fn(tup[1],tup[2],...)
-## This allows us to even use varargs and call the function as if each parameters was passed one by one.
-macro destructuredCall*(fn:untyped, tup:typed) =
-  let n = len(getType(tup))-1
-  result = newNimNode(nnkCall)
-  result.add(fn)
-  for i in 0..<n:
-    result.add((quote do: `tup`[`i`]))
+############################################################### ACCESSORS ###############################################################
 
+proc callback[L](l:Listener[L]) = l.callback
+proc getstate*(n:Notifier) = 
+  return n.state
+proc getstream(s:StateData) = s.stream
+
+############################################################# CONSTRUCTORS ##############################################################
+
+proc ExecAll():ExecMode =
+  return ExecMode(kind:exAll)
+
+proc ExecLatest(count:int):ExecMode =
+  return ExecMode(kind:exLatest,count:count)
+
+proc ExecOldest(count:int):ExecMode =
+  return ExecMode(kind:exOldest, count:count)
+
+proc newStateMismatch(msg:string): ref StateMismatch = 
+  return newException(StateMismatch, message=msg)
+
+proc SingleTask():TaskMode =
+  return TaskMode(kind:tsSingle)
+
+proc MultipleTask():TaskMode =
+  return TaskMode(kind:tsMulti)
+
+proc NoDelay():DelayMode =
+  return DelayMode(kind:dNone)
+
+proc Delay(first:bool, dur:int):DelayMode =
+  return DelayMode(kind:dDelay, first:first, duration:dur)
+
+proc SyncState(priorities, consumes:bool): EmissionState =
+  return EmissionState(mode:SingleTask(),kind:emSync, priorities:priorities, consumes:consumes)
+
+proc ParallelState(w:bool, mode:TaskMode=SingleTask()): EmissionState =
+  return EmissionState(mode:mode,kind:emParallel, wait:w)
+
+proc ValState[T](ignore_eqvalue:bool):NotifierState[T] =
+  return NotifierState[T](kind:nValue, ignore_eqvalue:ignore_eqvalue)
+
+proc EmitState[T]():NotifierState[T] =
+  return NotifierState[T](kind:nEmit)
+
+proc newStateData[T,L]() :StateData[T,L] = 
+  var chan = Channel[EmissionCallback[T,L]]()
+
+  chan.open(CHANNEL_SIZE)
+  
+  return StateData[T,L](emission:EmissionState(mode:TaskMode(kind:tsSingle), kind:emSync, priorities:false, consumes:false), 
+    mode:NotifierState[T](kind:nEmit), 
+    exec:ExecMode(kind:exAll), delay:DelayMode(kind:dNone), stream:chan, check:false)
+
+proc newNotifier*[T,L]() :Notifier[T,L] =
+  var cond = Cond()
+  var lck = Lock()
+
+  lck.initLock()
+  cond.initCond()
+  
+  return Notifier[T,L](cond:cond, lck:lck, listeners:newSeq[Listener[L]](), buffer:newSeq[EmissionCallback[T,L]](), state:newStateData[T,L]())
 
 ################################################################ HELPERS ################################################################
-proc newStateMismatch(msg:string): ref StateMismatch = 
-  result = newException(StateMismatch, msg)
+
+##[
+Create a typed notifier with named parameters.
+  
+This macro generates a notifier with a specific signature based on the provided parameters.
+It automatically infers the tuple type for data and the procedure type for callbacks.
+  
+Parameters:
+  - `args`: Untyped arguments where first element is the notifier name, followed by name:type pairs
+  
+Returns:
+  A notifier declaration initialized with the appropriate types
+  
+Example:
+```nim
+# Create a notifier for mouse events with x, y coordinates
+notifier mouseClick(x: int, y: int)
+# Creates: var mouseClick = newNotifier[(x: int, y: int), proc(x: int, y: int)]()
+    
+# Create a notifier for simple string messages
+notifier messageReceived(msg: string)
+# Creates: var messageReceived = newNotifier[(msg: string), proc(msg: string)]()
+    
+# Use the notifier
+mouseClick.open()
+proc onMouseClick(x: int, y: int) =
+  echo "Clicked at: ", x, ", ", y
+    
+mouseClick.connect(onMouseClick)
+mouseClick.emit((10, 20))  # Prints "Clicked at: 10, 20"
+```
+]##
+macro notifier*(args:untyped) =
+  let nname = args[0]
+  nname.expectKind(nnkIdent)
+
+  # Build the type signature from the provided arguments
+  var names = newNimNode(nnkBracket)
+  var types = newNimNode(nnkPar)
+  var namedtypes = newNimNode(nnkTupleTy)
+  var procty = newNimNode(nnkProcTy)
+  var ty = args[1..<args.len]
+  
+  var params = newNimNode(nnkFormalParams)
+  params.add(newNimNode(nnkEmpty))
+  procty.add(params)
+  procty.add(newNimNode(nnkEmpty))
+
+  if args.len > 1:
+    # Process each parameter and build the tuple and proc types
+    for col in ty:
+      let ident = newNimNode(nnkIdentDefs)
+      let id = col[0]
+      let t = col[1]
+      names.add(id)
+      types.add(t)
+      ident.add(id)
+      ident.add(t)
+      ident.add(newNimNode(nnkEmpty))
+      params.add(ident)
+      namedtypes.add(ident)
+  
+  return quote do:
+    var `nname` = newNotifier[`namedtypes`, `procty`]()
+
+##[
+Call a function with tuple elements as separate arguments.
+  
+This macro unpacks a tuple and passes each element as an individual argument to the function.
+Allows calling fn(tup[0], tup[1], ..., tup[n]) with cleaner syntax.
+]##
+macro destructuredCall*(fn:untyped, tup:typed) =
+  let n = len(getType(tup))-1
+  var callex = newNimNode(nnkCall)
+  callex.add(fn)
+  
+  # Unpack each tuple element as a separate argument
+  for i in 0..<n:
+    callex.add((quote do: `tup`[`i`]))
+
+  return quote do:
+   `callex`
+
+##[
+Call a function with tuple elements and capture the return value.
+  
+Similar to destructuredCall but stores the result in a variable.
+]##
+macro destructuredCallRet*(name:untyped, fn:untyped, tup:typed) =
+  let n = len(getType(tup))-1
+  var callex = newNimNode(nnkCall)
+  callex.add(fn)
+  
+  for i in 0..<n:
+    callex.add((quote do: `tup`[`i`]))
+
+  return quote do:
+   let `name` = `callex`
+
+
+macro anoFunc(name:untyped, obj:typed, body:untyped) =
+  ##[
+  Generate an anonymous function with parameters inferred from a typed object.
+  
+  Creates a lambda that accepts individual parameters and bundles them into a tuple
+  for processing in the function body.
+  ]##
+  var data = obj.getType()[1]
+
+  var f = newNimNode(nnkLambda)
+  f.add(newNimNode(nnkEmpty))
+  f.add(newNimNode(nnkEmpty))
+  f.add(newNimNode(nnkEmpty))
+
+  var params = newNimNode(nnkFormalParams)
+  params.add(newNimNode(nnkEmpty))
+
+  # Bundle all parameters into a tuple for easier handling
+  var vs = newNimNode(nnkLetSection)
+  var arg_bundle = newNimNode(nnkIdentDefs)
+  vs.add(arg_bundle)
+  arg_bundle.add(ident("allarg"))
+  arg_bundle.add(newNimNode(nnkEmpty))
+
+  var tup = newNimNode(nnkTupleConstr)
+  # Use alphabetic names for parameters (up to 25 parameters supported)
+  let ids = @["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "w", "y","z"]
+
+  for i in 1..<data.len:
+    var ident = newNimNode(nnkIdentDefs)
+    let id = ident(ids[i-1])
+    ident.add(id)
+    tup.add(id)
+    ident.add(data[i])
+    ident.add(newNimNode(nnkEmpty))
+
+    params.add(ident)
+
+  arg_bundle.add(tup)
+
+  f.add(params)
+  f.add(newNimNode(nnkEmpty))
+  f.add(newNimNode(nnkEmpty))
+  
+  var stmt = newNimNode(nnkStmtList)
+  stmt.add(vs)
+
+  for i in 0..<body[1].len:
+    stmt.add(body[1][i])
+
+  f.add(stmt)
+
+  return quote do:
+    var `name` = `f`
+
+
+include "pipeline.nim"
+include "operations.nim"
+include "state_operations.nim"
+include "val_operations.nim"

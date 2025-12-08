@@ -30,11 +30,11 @@ This architecture offers several advantages:
 
 - ~~**Game logics as first class citizens**: Your customs systems have as much power as the core ones. They are easy to define, are automatically scheduled.~~
 
-- ~~**Event System**: Cruise provides you 2 event system, a lightweight synchronous one that can be use for simple cases, and a complex one leveraging the full powers of reactive programming such as merging, filtering, delays, throttling, etc, all through states which allows you to change them to synchrounous, asynchrounois, parallel, delayed, multitask, mono task etc at runtime.~~
+- **Event System**: Cruise provides you 2 event system, a lightweight synchronous one that can be use for simple cases, and a complex one leveraging the full powers of reactive programming such as merging, filtering, delays, throttling,  etc.
 
 - ~~**Temporary storage**: To easily share data among your systems, it also support TTL (Time To Live) for data and provides events and serialization support~~
 
-- ~~**Multiple clear interfaces**: [ECS](https://github.com/Gesee-y/ECSInterface.jl), SceneTree, [Rendering](https://github.com/Gesee-y/Horizons.jl) , [windowing and events](https://github.com/Gesee-y/Outdoors.jl). All clear and set for you to overload with bunch of premade implementations available.~~
+- ~~**Multiple clear interfaces**: [ECS](https://github.com/Gesee-y/ECSInterface), SceneTree, [Rendering](https://github.com/Gesee-y/Horizons) , [windowing and events](https://github.com/Gesee-y/Outdoors). All clear and set for you to overload with bunch of premade implementations available.~~
 
 - **Make your own structure**: Cruise doesn't enforce any architecture, build your game as you feel
 
