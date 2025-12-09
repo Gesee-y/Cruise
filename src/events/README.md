@@ -73,6 +73,13 @@ A **state** is any combination of pipeline components. For example, `Value + Exe
 * Fold: `notif.fold(fn, Return_type)`. Accumulate value via the function `fn`.
 * Filtering: `notif.filter(fn)`. Filter only some change following the function `fn`
 
+## Other features
+
+- Priorities: `notif.setPriority(v:bool)`. For a synchronous notifier, say whether or not should notifier priority taken into account.
+- Consumes: `notif.setConsume(b:bool)`. Whether or not one-shot listeners are allowed.
+* Deferred: `notif.emitDefer(...)`. Register an emission but don't execute the listeners, only to execute it later.
+* Flush: `notif.flush()`. Execute all the deferred emissions to enable some states operations event on a single threaded environment (like `ExecLatest`)
+
 ## Performances
 
 This tools being a port from my event system from julia to nim, I guess it's relevant to get to see some performances comparison
@@ -97,13 +104,9 @@ These benchmarks are performed on this setup:
 - Merge: 700ns
 - Zip: 900ns
 
-**Modes:**
-- Value mode: 800ns
-- Emit mode: 700ns
-
-**Key highlights:**
-- **Zero allocations** during runtime (emit, connect, disconnect)
-- **Thread-safe** with minimal overhead (~200ns for locks)
+**Notes**
+> - **Zero allocations** during runtime (emit, connect, disconnect)
+> - **Thread-safe** with minimal overhead
 
 ## Why Notifier?
 

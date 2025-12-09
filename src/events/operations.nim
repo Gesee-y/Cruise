@@ -24,11 +24,18 @@ notif.connect(myCallback)
 notif.emit(42)  # Will call myCallback(42)
 ```
 ]##
-proc connect*[T,L](n:Notifier[T,L], callback:L, consume:bool=true, priority:int=0) =
+proc connect*[T,L](n:Notifier[T,L], callback:L, consume:bool=false, priority:int=0) =
   let l = Listener[L](callback:callback, consume:consume, priority:priority, stop:false)
   
   # This is to avoid modifying the listeners if we are currently executing the notifier
   withLock(n.lck):
+    let mode = n.state.emission
+
+    if mode.kind == emSync:
+      if mode.priorities:
+        n.listeners.insertSorted(l)
+        return
+
     n.listeners.add(l)
 
 ##[
@@ -184,6 +191,22 @@ proc emit*[T,L](n:var Notifier[T,L], args:T) =
   if success:
     execute_pipeline(n)
     n.lck.release()
+
+##[
+Deferred version of emit.
+This will just register the emission as to be executed but won't do it right away.
+Only the next call to emit will execute the emission
+]##
+proc emitDefer*[T,L](n:var Notifier[T,L], args:T) =
+  addcallback(n, args)
+
+  n.cond.signal()
+
+##[
+Execute the pipeline if there are any remaining events. Useful if you have deferred some events.
+]##
+proc flush*[T,L](n:var Notifier[T,L]) =
+  execute_pipeline(n)
 
 proc `[]`*[T,L](n:Notifier[T,L], i:int=0):T =
   let mode = n.state.mode

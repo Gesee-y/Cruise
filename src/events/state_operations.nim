@@ -20,6 +20,13 @@ proc delay*[T,L](n: var Notifier[T,L], dur:int, first:bool=false) =
   let d = Delay(first, dur)
   n.state.delay = d
 
+proc setPriority*[T,L](n: var Notifier[T,L], v:bool=false) =
+  if n.state.emission.kind == emSync:
+    n.state.emission.priorities = v
+
+proc setConsume*[T,L](n: var Notifier[T,L], v:bool=false) =
+  n.state.emission.consumes = v
+
 ##[
 Returns true if the notifier has a delay between listener calls.
 

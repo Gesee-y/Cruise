@@ -144,16 +144,57 @@ proc emission[T,L](n:var Notifier[T,L], em:EmissionState, ts:TaskMode) =
     else:
       emit_parallel_multi(n, em)
 
+proc insertSorted[L](s: var seq[Listener[L]], l:Listener[L]) =
+  var low, high: int
+  low = 0
+  high = s.len
+
+  if low == high:
+    s.add(l)
+    return
+
+  while low < high:
+    let mid = (low + high) div 2
+
+    if s[mid].priority < l.priority:
+      low = mid+1
+    else:
+      high = mid-1
+
+  s.insert(l, low)
+  return
+
+proc sortListener[L](a,b:Listener[L]):int = cmp(a.priority, b.priority)
+
 proc execute_pipeline[T,L](n:var Notifier[T,L]) =
   var state = n.state
-  n.buffer.setLen(0)
+
+  while peek(state.stream) > 0:
+    n.buffer.setLen(0)
   
-  # Step 1: Filter incoming messages according to execution mode
-  filtering(n, state.exec)
+    # Step 1: Filter incoming messages according to execution mode
+    filtering(n, state.exec)
   
-  # Step 2: Emit filtered data to listeners
-  emission(n, state.emission, state.emission.mode)
+    # Step 2: Emit filtered data to listeners
+    emission(n, state.emission, state.emission.mode)
   
-  # Step 3: Recursively process if more data is available
-  if ready(state.stream):
-    execute_pipeline(n)
+  if state.emission.consumes:
+    var start, stop: int
+    stop = n.listeners.len
+
+    while start < stop:
+      let l = n.listeners[start]
+
+      if l.consume:
+        let tmp = n.listeners[start]
+        n.listeners[start] = n.listeners[stop-1]
+        n.listeners[stop-1] = tmp
+
+        stop -= 1
+      else:
+        start += 1
+
+    if state.emission.kind == emSync and state.emission.priorities:
+      n.listeners.sort(sortListener)
+    
+    n.listeners.setLen(stop)

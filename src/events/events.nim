@@ -7,6 +7,7 @@ import locks
 import threadpool
 import asyncdispatch
 import os
+import algorithm
 
 const CHANNEL_SIZE = 64
 
@@ -35,10 +36,10 @@ type
   ]##
   EmissionState = ref object
     mode:TaskMode
+    consumes:bool
     case kind : EmissionVar
     of emSync:
       priorities:bool
-      consumes:bool
     of emParallel:
       wait:bool
   
@@ -164,11 +165,11 @@ proc NoDelay():DelayMode =
 proc Delay(first:bool, dur:int):DelayMode =
   return DelayMode(kind:dDelay, first:first, duration:dur)
 
-proc SyncState(priorities, consumes:bool): EmissionState =
+proc SyncState(priorities=false, consumes:bool=false): EmissionState =
   return EmissionState(mode:SingleTask(),kind:emSync, priorities:priorities, consumes:consumes)
 
-proc ParallelState(w:bool, mode:TaskMode=SingleTask()): EmissionState =
-  return EmissionState(mode:mode,kind:emParallel, wait:w)
+proc ParallelState(w:bool, mode:TaskMode=SingleTask(), consumes:bool=false): EmissionState =
+  return EmissionState(mode:mode,kind:emParallel, wait:w, consumes:consumes)
 
 proc ValState[T](ignore_eqvalue:bool):NotifierState[T] =
   return NotifierState[T](kind:nValue, ignore_eqvalue:ignore_eqvalue)
