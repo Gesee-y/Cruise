@@ -29,8 +29,34 @@ notif.connect(cb)
 notif.connect(cb)
 
 proc run_bench_emission(n:int) =
-  benchmark "emission",n:
+  notifier notif(a:int, b:int)
+  
+  benchmark "emission without listeners",n:
     notif.emit((1,2))
+
+  for i in 1..1:
+    notif.connect(cb)
+
+  benchmark "emission with 1 listeners",n:
+    notif.emit((1,2))
+
+  for i in 1..9:
+    notif.connect(cb)
+
+  benchmark "emission with 10 listeners",n:
+    notif.emit((1,2))
+
+  for i in 1..90:
+    notif.connect(cb)
+
+  benchmark "emission with 100 listeners",n:
+    notif.emit((1,2))
+
+benchmark "emission deferred", SAMPLE:
+  notif.emitDefer((1,2))
+
+benchmark "defer flush",SAMPLE*100:
+  notif.flush()
 
 run_bench_emission(SAMPLE)
 
