@@ -1,22 +1,20 @@
 # Cruise: DAG
 
-Graph theory has been an ancient and well known subject. It's purpose is to study **graphs** which are structures that model pairwise relationships between objects. These object are called **vertices** and the links between them are **edges**.
+Graph theory is an ancient and well-known subject. Its purpose is to study **graphs**, which are structures that model pairwise relationships between objects. These objects are called **vertices**, and the links between them are **edges**.
 
-Looking at this closely, we can see that games more or less fit into the graph model:
+Looking closely, we can see that games naturally fit into the graph model:
 
-- We have multiple systems (audio, logics, physics, rendering, etc)
-- Linked between them by dependencies (render needs physics, etc)
+* They consist of multiple systems (audio, logic, physics, rendering, etc.)
+* These systems are linked by dependencies (e.g., rendering depends on physics)
 
-This way, we see that we can reasonably model our game with a graph but bot any graph, a **Directed Acyclic Graph** which is a subtype of graph with 2 guardrails:
+In this context, we can model a game using a graph, but not just any graph: a **Directed Acyclic Graph (DAG)**, which is a type of graph with two key constraints:
 
-- There are no cycles
-- There is a direction to travel to node A to node B
+* There are no cycles
+* Edges have a direction, from node A to node B
 
-Why this matters ?
-Because it ensure there is no deadlocks or impossible execution path while trying to execute or systems in parallel.
-Next it ensure that there is an order between systems execution.
+Why does this matter?
+Because it ensures there are no deadlocks or impossible execution paths when running systems in parallel. It also enforces a clear order of execution between systems.
 
-More formally we will say that we modelled our game as a set of systems linked between them by unilateral dependencies, which forms a DAG.
-This way using a topological sort, we are able to compute the optimal execution path for them and even leverage parallelism for optimal execution.
+More formally, we model our game as a set of systems linked by one-way dependencies, forming a DAG. Using a topological sort, we can compute the optimal execution order and even leverage parallelism for maximum efficiency.
 
-That's a brief overview of how Cruise handles your games.
+This is a brief overview of how Cruise manages your games.
