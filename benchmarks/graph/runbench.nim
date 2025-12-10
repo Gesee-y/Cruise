@@ -21,8 +21,8 @@ template benchmark(benchmarkName: string, sample:int, code: untyped) =
 const
   N = 1000
   M = 1000
-  samples = 10000
-
+  samples = 1000000
+#[
 #############################################################################
 # benchmark : add_vertex
 #############################################################################
@@ -72,14 +72,17 @@ benchmark("rem_vertex", samples):
 #############################################################################
 # benchmark : topo_sort
 #############################################################################
-var g5: DiGraph
+]#var g5: DiGraph
 for i in 1..N:
   discard g5.add_vertex()
 for i in 0..<M:
   discard g5.add_edge(i mod N, (i+1) mod N)
 
-benchmark("topo_sort", samples):
-  let res = g5.topo_sort()
+benchmark("DFS_topo_sort", samples):
+  discard g5.DFSTopoSort()
+
+benchmark("Kahn_topo_sort", samples):
+  discard g5.topoSort()
 
 #############################################################################
 # benchmark : cycle detection

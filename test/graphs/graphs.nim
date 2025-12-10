@@ -64,7 +64,7 @@ suite "DiGraph basic operations":
     discard g.add_edge(a, c)
     discard g.add_edge(b, c)
 
-    let sorted = g.topo_sort()
+    let sorted = g.DFSTopoSort()
     # Valid topological order must respect a → b → c
     let pos = proc(x:int): int = sorted.find(x)
 

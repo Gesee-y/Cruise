@@ -2,6 +2,7 @@
 ############################################################# GRAPHS IMPLEMENTATION ################################################################
 ####################################################################################################################################################
 
+import algorithm
 
 # digraph.nim
 # Directed graph (dynamic) with O(1) edge removal via swap-remove + back-index.
@@ -19,6 +20,8 @@ type
     inedges: seq[seq[EdgeInfo]]  # parent lists
     indegrees: seq[int]
     free_list: seq[int]
+    sort_cache: seq[int]
+    dirty: bool
 
 # ---------- Construction ----------
 
@@ -31,6 +34,15 @@ proc newGraph(initialNodes = 0): DiGraph =
     result.outedges[i] = @[]
     result.inedges[i] = @[]
     result.indegrees[i] = 0
+
+# ----------- Iterators ----------
+
+iterator indexIterator(s:seq[seq[EdgeInfo]], v:int):int =
+  for info in s[v]:
+    let idx:int = info.idx
+    yield idx
+
+# ----------- Utilities ----------
 
 proc isValid(d: DiGraph, v: int): bool =
   result = v >= 0 and v < d.indegrees.len and d.indegrees[v] >= 0
@@ -102,6 +114,7 @@ proc has_cycle(d:DiGraph):bool =
 # ---------- Vertex ops ----------
 
 proc add_vertex(d: var DiGraph): int =
+  d.dirty = true
   if d.free_list.len > 0:
     let id = d.free_list.pop()
     d.outedges[id].setLen(0)
@@ -117,6 +130,8 @@ proc add_vertex(d: var DiGraph): int =
 
 proc rem_vertex(d: var DiGraph, v: int) =
   if not isValid(d, v): return
+  d.dirty = true
+
   # collect parents and children indices (we iterate copies because removals mutate lists)
   var parents = newSeq[int]()
   for e in d.inedges[v]:
@@ -183,6 +198,7 @@ proc add_edge(d: var DiGraph, u, v: int): bool =
   if reachable(d, v, u):
     return false
 
+  d.dirty = true
   let posChild = d.outedges[u].len
   let posParent = d.inedges[v].len
 
@@ -193,6 +209,8 @@ proc add_edge(d: var DiGraph, u, v: int): bool =
 
 proc rem_edge(d: var DiGraph, u, v: int) =
   if not isValid(d,u) or not isValid(d,v): return
+  
+  d.dirty = true
   let posChild = findPosChild(d, u, v)
   if posChild == -1: return
   let backIdx = d.outedges[u][posChild].back
@@ -202,31 +220,55 @@ proc rem_edge(d: var DiGraph, u, v: int) =
   dec d.indegrees[v]
 
 
-proc topo_sort(d:DiGraph):seq[int] =
-  var indegrees = d.indegrees
+template DFSTopoSort*(d): untyped =
 
-  var queue:seq[int] = newSeq[int](0)
-  var res:seq[int] = newSeq[int](0)
+  ## Eval to a topological sort of the graph, or `len==0 seq` if cyclic.
+  if d.dirty:                      # scope for `procs`
+    var did = newSeq[bool](d.indegrees.len)     # Could save space with `result: HashSet[I]` or
+    var result: seq[int]            #..just `seq[T].contains` for really small TCs.
+    
+    proc visit(x: int) =          # Depth First Search (DFS)
+      did[x] = true             # Mark current node as visited.
+      for y in indexIterator(d.outedges,x):    # Recurse to all kids of this node
+        if not did[y]: visit(y)
+      result.add x              # Add node to stack storing reversed result                                                            
+    for b in 0..<d.indegrees.len:
+      if not did[b]: visit(b)
+    result.reverse
+    
+    d.sort_cache = result
+    d.dirty = false
 
-  var queue_cursor:int = 0
+  d.sort_cache
 
-  for idx, v in indegrees:
-    if v == 0:
-      queue.add(idx)
+template topo_sort(d:DiGraph):untyped =
+  if d.dirty:
+    var indegrees = d.indegrees
 
-  while queue_cursor < queue.len:
-    let v = queue[queue_cursor]
-    res.add(v)
-    queue_cursor += 1
+    var queue:seq[int]
+    var result:seq[int]
 
-    for info in d.outedges[v]:
-      let i = info.idx
-      indegrees[i] -= 1
+    var queue_cursor:int = 0
 
+    for i in 0..<indegrees.len:
       if indegrees[i] == 0:
         queue.add(i)
 
-  return res
+    while queue_cursor < queue.len:
+      let v = queue[queue_cursor]
+      result.add(v)
+      inc queue_cursor
+
+      for i in indexIterator(d.outedges,v):
+        dec indegrees[i]
+
+        if indegrees[i] == 0:
+          queue.add(i)
+
+    d.sort_cache = result
+    d.dirty = false
+
+  d.sort_cache
 
 # ---------- Debug helpers ----------
 

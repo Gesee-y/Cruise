@@ -43,4 +43,3 @@ CPU Time [rem_vertex] 39.800us with 0.0Kb
 CPU Time [topo_sort] 18.900us with 12.0Kb
 CPU Time [has_cycle] 14.199us with 0.0Kb
 ```
-
