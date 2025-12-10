@@ -90,7 +90,7 @@ proc has_cycle(d:DiGraph):bool =
     let v = queue[queue_cursor]
     queue_cursor += 1
 
-    for info in d.inedges[v]:
+    for info in d.outedges[v]:
       let i = info.idx
       indegrees[i] -= 1
 

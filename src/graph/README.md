@@ -17,4 +17,30 @@ Because it ensures there are no deadlocks or impossible execution paths when run
 
 More formally, we model our game as a set of systems linked by one-way dependencies, forming a DAG. Using a topological sort, we can compute the optimal execution order and even leverage parallelism for maximum efficiency.
 
-This is a brief overview of how Cruise manages your games.
+## Relevant operations
+
+- Topological sort: with Kahn's algorithm
+- Cycle detection
+- Add/remove vertex/edge
+
+## Performances
+
+Some measurment performed on this setup
+
+- Windows 10
+- CPU Intel Core i5 @2.2GHz
+- 4 cores
+- RAM: 4 Gb
+- Compiled with nim -d:danger
+- 1000 vertices
+- 1000 edges
+
+```
+CPU Time [add_vertex] 63.200us with 56.3148Kb
+CPU Time [add_edge] 63.299us with 0.0Kb
+CPU Time [rem_edge] 43.600us with 0.0Kb
+CPU Time [rem_vertex] 39.800us with 0.0Kb
+CPU Time [topo_sort] 18.900us with 12.0Kb
+CPU Time [has_cycle] 14.199us with 0.0Kb
+```
+

@@ -19,9 +19,9 @@ template benchmark(benchmarkName: string, sample:int, code: untyped) =
     echo "CPU Time [", benchmarkName, "] ", elapsed*1e9, "ns with ", allocated/1024, "Kb"
 
 const
-  N = 1
-  M = 1
-  samples = 1000000
+  N = 1000
+  M = 1000
+  samples = 10000
 
 #############################################################################
 # benchmark : add_vertex
