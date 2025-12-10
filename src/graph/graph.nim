@@ -207,17 +207,19 @@ proc add_edge(d: var DiGraph, u, v: int): bool =
   inc d.indegrees[v]
   return true
 
-proc rem_edge(d: var DiGraph, u, v: int) =
-  if not isValid(d,u) or not isValid(d,v): return
+proc rem_edge(d: var DiGraph, u, v: int):bool =
+  if not isValid(d,u) or not isValid(d,v): return false
   
   d.dirty = true
   let posChild = findPosChild(d, u, v)
-  if posChild == -1: return
+  if posChild == -1: return false
   let backIdx = d.outedges[u][posChild].back
   # swap-remove both sides (order: child then parent)
   swapPopChild(d, u, posChild)
   swapPopParent(d, v, backIdx)
   dec d.indegrees[v]
+
+  return true
 
 
 template DFSTopoSort*(d): untyped =
