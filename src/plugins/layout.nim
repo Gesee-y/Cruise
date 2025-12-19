@@ -6,7 +6,7 @@ type
   DataLayout = ref object of PluginNode
   DataChange = object of RootObj
 
-method getChanges():DataChange =
+method getChanges(dl:DataLayout):DataChange {.base.} =
   var c:DataChange
   return c
 

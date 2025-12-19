@@ -34,6 +34,8 @@ type
 
   NullPluginNode = ref object of PluginNode
 
+include "layout.nim"
+
 template getStatus(s:typed):untyped = s.status
 template setStatus(s:typed, st:PluginStatus) = 
   s.status = st
@@ -44,7 +46,11 @@ method shutdown(p:PluginNode) {.base.} = p.setStatus(PLUGIN_OFF)
 method merge(p:PluginNode, p2:PluginNode):PluginNode {.base.} = p
 method getObject(p:PluginNode):int {.base.} = 0
 method getCapability(p:PluginNode):int {.base.} = 0
-method asKey(p:PluginNode):string {.base.} = $(p.getObject.typeof)
+method asKey(p:PluginNode):string {.base.} = $(p.typeof)
+
+macro makeAsKey(name) =
+  return quote do:
+    method asKey(p:`name`):string = $`name`
 
 proc newNullPluginNode():NullPluginNode =
   var v:NullPluginNode

@@ -37,11 +37,12 @@ template hasAllDepsInitialized(s:typed):untyped =
 
 
 #template hasdeaddeps(s:typed):untyped = any(isnothing, values(_getdata(s.deps)))
-template getDependency(n:typed, d:string) = 
-  if n.deps.hasKey(d): 
-    return n.deps[d] 
-    #else: error("Dependency $n not found in node")
+template getDependency[T](n:typed):untyped = 
+  let d = $T
+  if not n.deps.hasKey(d): 
+    raise newException(OSError, "Dependency $n not found in node")
 
+  T(n.deps[d])
 #add_status_callback(f, p::CRPluginNode) = connect(f, p.status)
 
 template getNodeid(n:typed, s:string):untyped =

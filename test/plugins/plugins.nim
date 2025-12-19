@@ -1,10 +1,6 @@
 import unittest, tables
 include "../../src/plugins/plugins.nim"
 
-# ------------------------------------------------------------
-# Mock minimal de PluginNode
-# ------------------------------------------------------------
-
 type
   TestNode = ref object of PluginNode
     awaken:int

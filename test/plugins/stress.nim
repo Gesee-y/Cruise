@@ -7,8 +7,8 @@ type
     failChance:float
 
 method update(n:StressNode) =
-  inc n.updated
   if rand(0.0..1.0) < n.failChance:
+  inc n.updated
     raise newException(ValueError, "random fail")
 
 method getObject(n:StressNode):int = n.id
@@ -18,8 +18,8 @@ proc newStressNode(failChance=0.1): StressNode =
     enabled:true,
     mainthread:false,
     status:PLUGIN_OFF,
-    deps:initTable[string, PluginNode](),
     failChance:failChance
+    deps:initTable[string, PluginNode](),
   )
 
 suite "Stress tests for Plugin system":
@@ -32,15 +32,12 @@ suite "Stress tests for Plugin system":
     for _ in 0..<N:
       discard addSystem(p, newStressNode(0.2))
 
-    # Ajouter des dépendances aléatoires, y compris circulaires
     for i in 0..<N:
       let target = rand(0..<N)
-      discard addDependency(p, i, target)  # ok si edge déjà existant
+      discard addDependency(p, i, target) 
 
-    # Exécution smap : doit capturer toutes les erreurs
     smap(update, p)
 
-    # Vérifier que chaque node a été exécuté au moins une fois ou a une erreur
     for n in p.idtonode:
       check StressNode(n).updated >= 0
 
@@ -50,7 +47,6 @@ suite "Stress tests for Plugin system":
     for _ in 0..<N:
       discard addSystem(p, newStressNode(0.5))
 
-    # pmap devrait gérer correctement les nodes qui échouent
     pmap(update, p)
 
     var failedCount = 0
@@ -59,7 +55,7 @@ suite "Stress tests for Plugin system":
         inc failedCount
 
     echo "Stress test finished, failed nodes:", failedCount
-    check failedCount >= 0  # juste pour s'assurer que la boucle s'exécute
+    check failedCount >= 0
 
 type
   ExtremeNode = ref object of PluginNode
@@ -88,28 +84,22 @@ suite "Extreme stress test - 200+ nodes, cycles, random failures":
     var p: Plugin
     const N = 250
 
-    # Création des nodes
     for _ in 0..<N:
       discard addSystem(p, newExtremeNode())
 
-    # Ajouter des dépendances aléatoires, avec cycles forcés
     for i in 0..<N:
       let target = rand(0..<N)
-      discard addDependency(p, i, target)  # cycles possibles
+      discard addDependency(p, i, target)
 
-      # Ajouter un petit cluster aléatoire
       for _ in 0..<3:
         let t2 = rand(0..<N)
         discard addDependency(p, i, t2)
 
-    # Calculer les niveaux parallèles (teste computeParallelLevel)
     computeParallelLevel(p)
     check p.parallel_cache.len > 0
 
-    # Exécution pmap sur tout le graph
     pmap(update, p)
 
-    # Compter nodes échoués et nodes exécutés
     var failedCount = 0
     var executedCount = 0
     for n in p.idtonode:
@@ -123,4 +113,4 @@ suite "Extreme stress test - 200+ nodes, cycles, random failures":
     echo "Total nodes failed:", failedCount
 
     check executedCount >= N
-    check failedCount >= 0  # juste pour s'assurer que les erreurs sont capturées
+    check failedCount >= 0
