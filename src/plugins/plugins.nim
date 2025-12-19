@@ -52,8 +52,21 @@ macro makeAsKey(name) =
   return quote do:
     method asKey(p:`name`):string = $`name`
 
+macro gameLogic(name, logic:untyped) =
+  return quote do:
+    type
+      `name` = ref object of PluginNode
+
+    method update(self:`name`) =
+      `logic`
+
+    makeAsKey(`name`)
+  
 proc newNullPluginNode():NullPluginNode =
   var v:NullPluginNode
   return v
 
 include "operations.nim"
+
+gameLogic tst:
+  echo "0"

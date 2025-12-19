@@ -24,11 +24,11 @@ This architecture offers several advantages:
 
 ## Features
 
-- ~~**Secure and flexible plugin system**: Built around a DAG (Direct Acyclic Graph), it allows you to extend Cruise, share your own plugin and collaborate without too much hassle. Each system of the plugin have his own inteface to safely interact with his dependencies.~~
+- **Secure and flexible plugin system**: Built around a DAG (Direct Acyclic Graph), it allows you to extend Cruise, share your own plugin and collaborate without too much hassle. Each system of the plugin have his own inteface to safely interact with his dependencies.
 
-- ~~**Optimal system scheduling**: Through topological sort, Cruise ensure your systems are executed in the most efficient way.~~
+- **Optimal system scheduling**: Through topological sort, Cruise ensure your systems are executed in the most efficient way.
 
-- ~~**Game logics as first class citizens**: Your customs systems have as much power as the core ones. They are easy to define, are automatically scheduled.~~
+- **Game logics as first class citizens**: Your customs systems have as much power as the core ones. They are easy to define, are automatically scheduled.
 
 - **Event System**: Cruise provides you 2 event system, a lightweight synchronous one that can be use for simple cases, and a complex one leveraging the full powers of reactive programming such as merging, filtering, delays, throttling,  etc.
 

@@ -64,9 +64,23 @@ inc[].value = 1
 
 With this approach, multiple independent plugins can interact safely, without risking corruption of internal state.
 
+## Game logics
+
+Game logics can easily be created as systems in the graph. They are as important as any other system.
+Since no one probably want to write to much boilerplate just for a logic so we provide the `gameLogic` macro:
+
+```nim
+gameLogic MyLogic:
+  deps = getDependency[SomeDepsType](self)
+
+  ## Some code
+
+var logic:MyLogic
+```
+
 ## World state
 
-It's ensured through a second DAG, a **Data state graph**, so since every system can manage his data as it wants, we have a problem with coherency between them. If I delete a node in the prop system, I also want the collider in the physic system to disappear. So in order to achieve that, we use a graph we each data layout pass his structural changes to the next ones.
+It's ensured through a second DAG, a **data store graph**, so since every system can manage his data as it wants, we have a problem with coherency between them. If I delete a node in the prop system, I also want the collider in the physic system to disappear. So in order to achieve that, we use a graph we each data layout pass his structural changes to the next ones.
 Kinda like this
 
 ```nim
@@ -105,3 +119,7 @@ method update(lay: var PhysicLayout) =
     let n = tree.getNode(id)
     # Does mixed stuff between ECS and SceneTree
 ```
+
+So in this snippet, we say that `SceneTreeLayout` derived from the `ECSLayout`. The `ECSLayout` owns the data and `SceneTreeLayout` just add hierarchy and some metadata.
+For the `PhysicLayout`, it derive from both the `ECSLayout` and `SceneTreeLayout` to combine them into a usable structure.
+That's how the data store graph works

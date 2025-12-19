@@ -31,7 +31,7 @@ method getChanges(l: MockECSLayout): MockDataChange =
 method update(l: MockSceneTreeLayout) =
   let ecs = getDependency[MockECSLayout](l) # récupère l’ECSLayout
   let changes = MockDataChange(ecs.getChanges())
-  
+
   for added in changes.added:
     l.addedNodes.add(added)
   for removed in changes.deleted:
@@ -42,15 +42,11 @@ method update(l: MockPhysicLayout) =
   let tree = getDependency[MockSceneTreeLayout](l)
   let changes = MockDataChange(ecs.getChanges())
 
-  # On synchronise les noeuds physiques avec ECS et SceneTree
   for id in changes.added:
     if not tree.addedNodes.contains(id):
       continue
     l.physicsNodes.add(id)
 
-# ------------------------------------------------------------
-# Proc helper pour créer un DataChange simulé
-# ------------------------------------------------------------
 proc newDataChange(addedNodes, deletedNodes: seq[int]): MockDataChange =
   var c: MockDataChange
   # On simule les champs added/deleted
