@@ -32,7 +32,7 @@ mapper.connect(onMapped)
 numbers.emit((value: 5))  # Prints "Doubled: 10"
 ```
 ]##
-template map*[T,L](n1:Notifier[T,L], fn, R) =
+template map*[T,L](n1:Notifier[T,L], fn, R):untyped =
   
   notifier mapper(ret:R)
   enable_value(mapper)
@@ -42,6 +42,7 @@ template map*[T,L](n1:Notifier[T,L], fn, R) =
     mapper.emit(res))
   
   n1.connect(f)
+  mapper
 
 ##[
 Filter emitted values based on a predicate function.
@@ -73,7 +74,7 @@ numbers.emit((value: 4))  # Prints "Even number: 4"
 numbers.emit((value: 5))  # Nothing printed
 ```
 ]##
-template filter*[T,L](src: Notifier[T,L], fn:untyped) =
+template filter*[T,L](src: Notifier[T,L], fn:untyped):untyped =
   var filt {.inject.} = newNotifier[T,L]()
   enable_value(filt)
 
@@ -83,6 +84,7 @@ template filter*[T,L](src: Notifier[T,L], fn:untyped) =
       filt.emit(allarg)
   )
   src.connect(f)
+  filt
 
 ##[
 Accumulate values from a notifier using a folding function.

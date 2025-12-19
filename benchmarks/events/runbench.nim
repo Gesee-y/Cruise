@@ -6,16 +6,19 @@ const SAMPLE = 10000
 template benchmark(benchmarkName: string, sample:int, code: untyped) =
   block:
     var elapsed = 0.0
+    var allocated = 0.0
     code
 
     for i in 1..sample:
+      let m0 = getOccupiedMem()
       let t0 = cpuTime()
       code
       elapsed += cpuTime() - t0
+      allocated += (getOccupiedMem() - m0).float
     
     elapsed /= sample.float
-    #let elapsedStr = elapsed.formatFloat(format = ffDecimal, precision = 9)
-    echo "CPU Time [", benchmarkName, "] ", elapsed*pow(10.0,9.0).float, "ns"
+    allocated /= sample.float
+    echo "CPU Time [", benchmarkName, "] ", elapsed*pow(10.0,9.0).float, "ns with ", allocated/1024, "Kb"
 
 var added = 0
 proc cb(x:int, t:int) = discard
@@ -52,11 +55,11 @@ proc run_bench_emission(n:int) =
   benchmark "emission with 100 listeners",n:
     notif.emit((1,2))
 
-benchmark "emission deferred", SAMPLE:
-  notif.emitDefer((1,2))
+#benchmark "emission deferred", SAMPLE:
+#  notif.emitDefer((1,2))
 
-benchmark "defer flush",SAMPLE*100:
-  notif.flush()
+#benchmark "defer flush",SAMPLE*100:
+#  notif.flush()
 
 run_bench_emission(SAMPLE)
 
