@@ -189,7 +189,7 @@ proc reachable(d: DiGraph, start, target: int): bool =
 # Add directed edge u -> v if it doesn't create a cycle.
 # Returns true if added, false otherwise.
 proc add_edge(d: var DiGraph, u, v: int): bool =
-  if not isValid(d,u) or not isValid(d,v): return false
+  if not isValid(d,u) or not isValid(d,v) or u == v: return false
   # if edge already exists, nothing to do
   if findPosChild(d, u, v) >= 0:
     return true
@@ -243,12 +243,12 @@ template DFSTopoSort*(d): untyped =
 
   d.sort_cache
 
-template topo_sort(d:DiGraph):untyped =
+template topo_sort(d:var DiGraph):untyped =
   if d.dirty:
     var indegrees = d.indegrees
 
     var queue:seq[int]
-    var result:seq[int]
+    var res:seq[int]
 
     var queue_cursor:int = 0
 
@@ -258,7 +258,7 @@ template topo_sort(d:DiGraph):untyped =
 
     while queue_cursor < queue.len:
       let v = queue[queue_cursor]
-      result.add(v)
+      res.add(v)
       inc queue_cursor
 
       for i in indexIterator(d.outedges,v):
@@ -267,7 +267,7 @@ template topo_sort(d:DiGraph):untyped =
         if indegrees[i] == 0:
           queue.add(i)
 
-    d.sort_cache = result
+    d.sort_cache = res
     d.dirty = false
 
   d.sort_cache
