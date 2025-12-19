@@ -104,5 +104,4 @@ method update(lay: var PhysicLayout) =
   for (id, transform, physic) in query(world, Physic & Transform): # assuming these components exist
     let n = tree.getNode(id)
     # Does mixed stuff between ECS and SceneTree
-changes = 
 ```
