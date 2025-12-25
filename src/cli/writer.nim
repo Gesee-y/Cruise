@@ -12,6 +12,12 @@ type
     CLIQuit
     CLIReturn
     CLINone
+  
+  KeyKind* = enum
+    kkNone, kkArrow, kkEscape, kkEnter, kkChar, kkBackspace
+
+  ArrowKey = enum
+    ArrowUp, ArrowDown, ArrowLeft, ArrowRight
 
   ColorScheme = object
     success:ForegroundColor
@@ -22,21 +28,27 @@ type
     weird:ForegroundColor
     note:ForegroundColor
 
+  CLIHistory = object
+    data:seq[string]
+    index:int
+
   CLIWriter = object
     current_text:string
     active:bool
-
-  KeyKind* = enum
-    kkNone, kkArrow, kkEscape, kkEnter, kkChar, kkBackspace
-
-  ArrowKey = enum
-    ArrowUp, ArrowDown, ArrowLeft, ArrowRight
+    selected:int
+    history:CLIHistory
 
   Key* = object
     case kind*: KeyKind
     of kkArrow: arrow: ArrowKey
     of kkChar: value*: char
     else: discard
+
+proc newCLIHistory():CLIHistory =
+  return CLIHistory(data:newSeq[string](), index: -1)
+
+proc newCLIWriter():CLIWriter =
+  return CLIWriter(current_text:"", active:false, selected: -1, history:newCLIHistory())
 
 when defined(windows):
   proc getRawChar(): int {.importc: "_getch", header: "<conio.h>".}
@@ -112,9 +124,55 @@ proc printBanner(n:int=0, m:int=0, u:int=0) =
 proc printPrompt(name:string="cruise", sym:string=">") =
   styledWrite stdout, styleBright, fgCyan, name&sym&" "
 
+proc moveCursor(cw:var CLIWriter, key:Key, current_y:int, xpos:int, pos:tuple[x:int, y:int]) =
+  let tw = terminalWidth()
+
+
+  case key.arrow:
+    of ArrowUp:
+      if current_y == 0 and (cw.history.index < cw.history.data.len):
+        cw.current_text = cw.history.data[cw.history.index]
+        cw.history.index -= 1
+        stdout.cursorBackward(pos.x-PROMPT_NAME.len)
+        stdout.write(cw.current_text)
+      else:
+        if cw.selected + PROMPT_NAME.len >= tw:
+          stdout.cursorUp()
+          cw.selected -= tw
+
+    of ArrowDown:
+      if (current_y == cw.current_text.len mod tw) and (cw.history.index < cw.history.data.len-1):
+        cw.current_text = cw.history.data[cw.history.index+1]
+        cw.history.index += 1
+        stdout.cursorBackward(pos.x-PROMPT_NAME.len)
+        stdout.write(cw.current_text)
+      else:
+        if current_y < cw.current_text.len mod tw:
+          cw.selected += tw
+          stdout.cursorDown()
+
+    of ArrowLeft:
+      if cw.selected > -1: 
+        if pos.x > 0:
+          cursorBackward()
+        else:
+          cursorUp()
+          setCursorXpos(tw-1)
+        cw.selected -= 1
+    of ArrowRight:
+      if cw.selected+1 < cw.current_text.len: 
+        if pos.x < tw-1:
+          cursorForward()
+        else:
+          cursorDown()
+          setCursorXpos(0)
+        cw.selected += 1
+
 proc takeChar(cw:var CLIWriter):CLICharAction =
 
-  let pos = getCursorPos().x - PROMPT_NAME.len
+  let cursorPos = getCursorPos()
+  var current_y = (cw.selected + PROMPT_NAME.len) mod terminalWidth()
+  var xpos = (cursorPos.x + terminalWidth()*current_y) - PROMPT_NAME.len
   var key = getKey()
   var action:CLICharAction = CLINone
 
@@ -123,34 +181,56 @@ proc takeChar(cw:var CLIWriter):CLICharAction =
   case key.kind:
     of kkEnter:
       action = CLIReturn
+      setCursorXpos(0)
+      let intery = (cw.current_text.len div terminalWidth())-current_y
+      if intery > 0:
+        cursorDown(intery)
+      cw.history.data.add(cw.current_text)
+      cw.history.index += 1
     of kkEscape:
       action = CLIQuit
     of kkArrow:
-      case key.arrow:
-        of ArrowUp:
-          discard
-        of ArrowDown:
-          discard
-        of ArrowLeft:
-          if pos > 0: cursorBackward()
-        of ArrowRight:
-          if pos < cw.current_text.len: cursorForward()
-    of kkChar:
-      cw.current_text.insert(""&key.value,pos)
-      stdout.cursorBackward(pos)
+      moveCursor(cw, key, current_y, xpos, cursorPos)
+    of kkBackspace, kkChar:
+      var offs = 1
+      if key.kind == kkChar:
+        cw.current_text.insert(""&key.value,cw.selected+1)
+        cw.selected += 1
+      elif cw.selected > -1:
+        cw.current_text.delete(cw.selected..cw.selected)
+        cw.selected -= 1
+        offs = -1
+      elif cw.current_text.len == 0:
+        return action
+
+      var up = (cw.selected + PROMPT_NAME.len) div terminalWidth()
+      var down = ((cw.current_text.len-1 + PROMPT_NAME.len) div terminalWidth()) - up
+
+      while up > 0:
+        cursorUp()
+        up -= 1
+
+      setCursorXpos(PROMPT_NAME.len)
+
       stdout.write(cw.current_text)
+      if key.kind == kkBackspace: stdout.write(" ")
+      setCursorXpos((cursorPos.x+offs) mod terminalWidth())
+
+      while down > 0:
+        cursorUp()
+        down -= 1
     else: discard
 
   return action
 
 proc startSession() =
   printBanner()
-  var writer = CLIWriter(current_text:"", active:true)
+  var writer = newCLIWriter()
+  writer.active = true
   var last_action = CLIReturn
 
   while writer.active:
     if last_action == CLIReturn:
-      stdout.write('\n')
       printPrompt()
       writer.current_text = ""
     elif last_action == CLIQuit:
