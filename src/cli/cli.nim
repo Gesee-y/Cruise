@@ -15,7 +15,7 @@ So now we first need our interface to write things. So we need:
 Let's 
 ]#
 
-import parseopt, os, strutils, terminal, typetraits, posix, selectors
+import strutils, terminal, macros, tables
 
 type
   CLICharAction = enum
@@ -109,21 +109,27 @@ const CHECK = "✓"
 
 include "utilities.nim"
 include "writer.nim"
+include "commands.nim"
 
 proc startSession() =
   printBanner()
+  printPrompt()
   var writer = newCLIWriter()
   writer.active = true
-  var last_action = CLIReturn
+  var last_action = CLINone
 
-  #while writer.active:
-  #  if last_action == CLIReturn:
-  #    printPrompt()
-  #    writer.current_text = ""
-  #  elif last_action == CLIQuit:
-  #    writer.active = false
-  #  last_action = takeChar(writer)
-
-  let res = menuMCQ(["Option 1", "Option 2", "Option 3"])
+  while writer.active:
+    if last_action == CLIReturn:
+      stdout.write("\n")
+      let cmd_data = parseCommand(writer.current_text)
+      execCommand(cmd_data)
+      stdout.write("\n")
+      setCursorXPos(0)
+      eraseLine()
+      printPrompt()
+      writer.current_text = ""
+    elif last_action == CLIQuit:
+      writer.active = false
+    last_action = takeChar(writer)
 
 startSession()

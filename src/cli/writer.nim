@@ -5,8 +5,6 @@
 ## So we need a writer, something that write text.
 ## Since it's not a text writer, let's set up the DSL
 
-import terminal, posix
-
 type
   CLIHistory = object
     data:seq[string]
@@ -108,6 +106,7 @@ proc takeChar(cw:var CLIWriter):CLICharAction =
         cursorDown(intery)
       cw.history.data.add(cw.current_text)
       cw.history.index += 1
+      cw.selected = -1
     of kkEscape:
       action = CLIQuit
     of kkArrow:

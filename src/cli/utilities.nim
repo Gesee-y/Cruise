@@ -44,4 +44,4 @@ proc menuMCQ(data:openArray[string]):int =
     setCursorXPos(0) 
 
 proc progressBar(status:int) =
-  stdout.styledWriteLine(fgRed, "0% ", fgWhite, '='.repeat i-1, '>', "|".align(100-i), if i > 50: fgGreen else: fgYellow, "\t", $i , "%")
+  stdout.styledWriteLine(fgRed, "0% ", fgWhite, '='.repeat status-1, ">", "|".align(100-status), if status > 50: fgGreen else: fgYellow, "\t", $status , "%")
