@@ -30,7 +30,7 @@ This architecture offers several advantages:
 
 - **Game logics as first class citizens**: Your customs systems have as much power as the core ones. They are easy to define, are automatically scheduled.
 
-- **CLI tool**: To manage plugins, get them, solve dependencies, etc. ![Cruise CLI overview](https://github.com/Gesee-y/Cruise/blob/main/assets/cruise_cli.png)
+- **CLI tool**: To manage plugins, get them, solve dependencies, etc. ![Cruise CLI overview](https://github.com/Gesee-y/Cruise/blob/main/assets%2Fcruise_cli.PNG)
 
 - **Event System**: Cruise provides you 2 event system, a lightweight synchronous one that can be use for simple cases, and a complex one leveraging the full powers of reactive programming such as merging, filtering, delays, throttling,  etc.
 
