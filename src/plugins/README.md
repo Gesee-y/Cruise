@@ -123,3 +123,8 @@ method update(lay: var PhysicLayout) =
 So in this snippet, we say that `SceneTreeLayout` derived from the `ECSLayout`. The `ECSLayout` owns the data and `SceneTreeLayout` just add hierarchy and some metadata.
 For the `PhysicLayout`, it derive from both the `ECSLayout` and `SceneTreeLayout` to combine them into a usable structure.
 That's how the data store graph works
+
+## Layouts
+
+In other to allow 0 cost for the derived data layout, we use inlining and metaprogramming.
+We define a layout around some simple CRUD operations,
