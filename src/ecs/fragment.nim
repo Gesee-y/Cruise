@@ -2,33 +2,20 @@
 ############################################################## FRAGMENT ARRAYS #####################################################################
 ####################################################################################################################################################
 
-import macros, typetraits
+import macros
 
 type
-  Fragment[N:static int, T] = object
-    data:array[N, T]
-    offset:int
-
   SoAFragment[N:static int, T, B] = ref object
     data:T
     offset:int
 
-  FragmentArray[N:static int, T] = object
-    blocks:seq[Fragment[N,T]]
-
   SoAFragmentArray[N:static int, T, B] = object
     blocks:seq[SoAFragment[N,T,B]]
-
-  Test = object
-    x:int
-    y:float
 
 const
   BLK_MASK = (1 shl 32) - 1
   BLK_SHIFT = 32
-
-proc newFromType(T:typedesc): ref T {.compileTime.} =
-  new(result)
+  DEFAULT_BLK_SIZE = 4096
 
 proc toSoATuple(T:NimNode, N:int):NimNode  =
   ## This macro transform a type into a tuple compatible for the SoA fragmebt
@@ -131,39 +118,20 @@ macro toObjectMod(T:typedesc, c:untyped, idx:untyped, v:untyped) =
   return quote("@") do:
     `@res`
 
-macro swapVals(T:typedesc, c:untyped, c2:untyped, idx:untyped, idx2:untyped) =
-  var res = newNimNode(nnkStmtList)
-  let ty = T.getType()[1].getType()[2]
+template swapVals(b: untyped, i, j:int|uint) =
+  let tmp = b[i]
+  b[i] = b[j]
+  b[j] = tmp
 
-  for f in ty:
-    var asg = newNimNode(nnkAsgn)
-    var brack = newNimNode(nnkBracketExpr)
-    var brack2 = newNimNode(nnkBracketExpr)
-    var dot1 = newNimNode(nnkDotExpr)
-    var dot2 = newNimNode(nnkDotExpr)
-
-    dot1.add(c)
-    dot1.add(ident(f.strVal))
-    brack.add(dot1)
-    brack.add(idx)
-    asg.add(brack)
-
-    dot2.add(c2)
-    dot2.add(ident(f.strVal))
-    brack2.add(dot2)
-    brack2.add(idx2)
-    asg.add(brack2)
-    res.add(asg)
-
-  return quote("@") do:
-    `@res`
+proc overrideVals[N,T,B](b: var SoAFragment[N,T,B], i, j:int|uint) =
+  b[i] = b[j]
 
 proc newBlock[N,T,B](f: var SoAFragmentArray[N, T, B], offset:int):bool =
   var blk: SoAFragment[N,T,B]
   new(blk)
   blk.offset = offset
   
-  if f.blocks.len == 0:
+  if f.blocks.len == 0 or offset >= N+f.blocks[^1].offset:
     f.blocks.add(blk)
     return true
 
@@ -172,42 +140,34 @@ proc newBlock[N,T,B](f: var SoAFragmentArray[N, T, B], offset:int):bool =
 
   while left < right:
     let center = (left + right) div 2
-    if f.blocks[center].offset < offset:
+    if f.blocks[center].offset > offset:
       right = center - 1
-    elif f.blocks[center].offset > offset:
+    elif f.blocks[center].offset < offset:
       left = center + 1
     else: return false
 
-  if f.blocks[left].offset - offset < N:
+  if offset - f.blocks[left].offset < N:
     return false
 
   f.blocks.insert(blk, left)
   return true
 
+proc getBlockIdx[N,T,B](f:SoAFragmentArray[N,T,B], i:int):int =
+  return i div N
+
 proc getBlock[N,T,B](f:SoAFragmentArray[N,T,B], i:int):SoAFragment[N,T,B] =
-  var right = f.blocks.len-1
-  var left = 0
+  return f.blocks[getBlockIdx(f, i)]
 
-  while left <= right:
-    let center = (left + right) div 2
-    if (0 <= i - f.blocks[center].offset) and (i - f.blocks[center].offset < N):
-      return f.blocks[center]
-
-    if f.blocks[center].offset < i:
-      right = center - 1
-    elif f.blocks[center].offset > i:
-      left = center + 1
-
-proc getBlock[N,T,B](f:SoAFragmentArray[N,T,B], i:uint):SoAFragment[N,T,B] =
-  return f.blocks[(i shr BLK_SHIFT) and BLK_MASK]
+template getBlock[N,T,B](f:SoAFragmentArray[N,T,B], i:uint):SoAFragment[N,T,B] =
+  f.blocks[(i shr BLK_SHIFT) and BLK_MASK]
 
 proc `[]`[N,T,B](blk:SoAFragment[N,T,B], i:int|uint):B =
-  var res:Test
+  var res:B
   toObject(res, B, blk.data, i)
 
   return res
 
-proc `[]=`[N,T,B](blk:var SoAFragment[N,T,B], i:int|uint, v:B) =
+template `[]=`[N,T,B](blk:var SoAFragment[N,T,B], i:int|uint, v:B) =
   toObjectMod(B, blk.data, i, v)
 
 proc `[]`[N,T,B](f:SoAFragmentArray[N,T,B], i:int):B =
@@ -216,7 +176,7 @@ proc `[]`[N,T,B](f:SoAFragmentArray[N,T,B], i:int):B =
 
 proc `[]=`[N,T,B](f:var SoAFragmentArray[N,T,B], i:int, v:B) =
   var blk = getBlock(f,i)
-  blk[i-blk.offset] = v
+  f.blocks[i div N][i mod N] = v
 
 proc `[]`[N,T,B](f:SoAFragmentArray[N,T,B], i:uint):B =
   let blk = (i shr BLK_SHIFT) and BLK_MASK
@@ -224,7 +184,7 @@ proc `[]`[N,T,B](f:SoAFragmentArray[N,T,B], i:uint):B =
 
   return f.blocks[blk][idx]
 
-proc `[]=`[N,T,B](f:SoAFragmentArray[N,T,B], i:uint, v:B) =
+proc `[]=`[N,T,B](f:var SoAFragmentArray[N,T,B], i:uint, v:B) =
   let blk = (i shr BLK_SHIFT) and BLK_MASK
   let idx = i and BLK_MASK
 
@@ -250,18 +210,3 @@ iterator pairs[N,T,B](f:SoAFragmentArray[N,T,B]):(int,B) =
     for i in 0..<N:
       yield (i+blk.offset,blk[i])
   
-
-SoAFragArr 4096:
-  var a:Test
-
-echo newBlock(a, 0)
-echo a.blocks[0].offset
-var t = a[0]
-echo t
-t.x = 1
-a[0] = t
-echo a[0]
-var blk = a.blocks[0]
-blk.data.y[0] = 2
-echo a[0]
-#echo getField(t, x)
