@@ -47,7 +47,7 @@ This architecture offers several advantages:
 If you want to support the dev behind this project you can make donations. But because of geographic restrictions, donations can't be made through regular platforms loke "buy me a coffee" since Stripe and PayPal aren't supported. So the alternatives are:
 
 - [Binance](
-https://s.binance.com/KvfmIsbC): Use the link or this ![QR code](https://github.com/Gesee-y/Cruise/assets/qr.png)
+https://s.binance.com/KvfmIsbC): Use the link or this [QR code](https://github.com/Gesee-y/Cruise/assets/qr-image-1767409833813.png)
 
 - Payoneer: You can write at gesee37@gmail.com for this process
 
