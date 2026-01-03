@@ -42,6 +42,15 @@ This architecture offers several advantages:
 
 - **Build your own engine**: Since Cruise is just a minimal core, you can just choose the set of plugins (or build your own) that perfectly match your use case.
 
+## Donations
+
+If you want to support the dev behind this project you can make donations. But because of geographic restrictions, donations can't be made through regular platforms loke "buy me a coffee" since Stripe and PayPal aren't supported. So the alternatives are:
+
+- [Binance](
+https://s.binance.com/KvfmIsbC): Use the link or this ![QR code](https://github.com/Gesee-y/Cruise/assets/qr.png)
+
+- Payoneer: You can write at gesee37@gmail.com for this process
+
 ## License
 
 This package is licenced under the MIT License, you are free to use it as you wish.
