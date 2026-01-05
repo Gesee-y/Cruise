@@ -2,9 +2,10 @@
 ######################################################################## ECS TABLE #################################################################
 ####################################################################################################################################################
 
-import tables, bitops
+import tables, bitops, typetraits
 include "fragment.nim"
 include "registry.nim"
+include "entity.nim"
 
 const
   MAX_COMPONENT_LAYER = 4
@@ -30,6 +31,8 @@ type
 
   ECSWorld = object
     registry:ComponentRegistry
+    entities:seq[Entity]
+    sparse_entities:seq[Entity]
     archetypes:Table[ArchetypeMask, TablePartition]
     pooltype:Table[string, int]
     free_list:seq[int]
@@ -60,12 +63,18 @@ include "mask.nim"
 proc isEmpty(t:TableRange):bool = t.r.s == t.r.e
 
 proc resize(world: var ECSWorld, n:int) =
+  world.max_index = DEFAULT_BLK_SIZE*n
   for entry in world.registry.entries:
     entry.resizeOp(entry.rawPointer, n)
 
+  world.entities.setLen(world.max_index)
+
 proc upsize(world: var ECSWorld, n:int) =
+  world.max_index += DEFAULT_BLK_SIZE*n
   for entry in world.registry.entries:
     entry.resizeOp(entry.rawPointer, world.blockCount + n)
+
+  world.entities.setLen(world.max_index)
 
 proc blockCount(world: ECSWorld):int =
   return world.blockCount
@@ -91,8 +100,8 @@ proc createPartition(table: var ECSWorld, arch:ArchetypeMask):TablePartition =
 
   return table.archetypes[arch]
 
-proc allocateNewBlocks(table: var ECSWorld, count:int, res: var seq[Range], 
-  partition:var TablePartition, arch:ArchetypeMask, components:varargs[int]) =
+proc allocateNewBlocks(table: var ECSWorld, count:int, res: var seq[(int, Range)], 
+  partition:var TablePartition, arch:ArchetypeMask, components:varargs[int]):seq[(int, Range)] =
   
   var n = count
   let s = n div DEFAULT_BLK_SIZE
@@ -102,17 +111,18 @@ proc allocateNewBlocks(table: var ECSWorld, count:int, res: var seq[Range],
   table.archetypes[arch] = partition
   upsize(table, s+1)
 
-  for i in 0..<s:
+  for i in 0..s:
     var trange:TableRange
     let s = DEFAULT_BLK_SIZE*bc
     let e = s+min(n, DEFAULT_BLK_SIZE)
     
-    res.add(Range(s:s,e:e))
+    res.add((bc, Range(s:s,e:e)))
     trange.r.s = s
     trange.r.e = e
     trange.block_idx = bc
     partition.zones[i] = trange
-    partition.fill_index += 1
+    if n >= DEFAULT_BLK_SIZE:
+      partition.fill_index += 1
 
     for id in components:
       var entry = table.registry.entries[id]
@@ -122,19 +132,19 @@ proc allocateNewBlocks(table: var ECSWorld, count:int, res: var seq[Range],
 
     n -= DEFAULT_BLK_SIZE
     inc bc
-  
 
-proc allocateEntities(table: var ECSWorld, n:int, arch:ArchetypeMask, components:seq[int]):seq[Range] =
-  var res:seq[Range]
+  return res
+
+proc allocateEntities(table: var ECSWorld, n:int, arch:ArchetypeMask, components:seq[int]):seq[(int, Range)] =
+  var res:seq[(int, Range)]
   if n < 1: return res
   
   if not table.archetypes.haskey(arch):
     var partition:TablePartition
     new(partition)
     partition.components = getComponentsFromSig(table, arch)
-    allocateNewBlocks(table, n, res, partition, arch, components)
 
-    return res
+    return allocateNewBlocks(table, n, res, partition, arch, components)
 
   var m = n
   var partition = table.archetypes[arch]
@@ -144,12 +154,14 @@ proc allocateEntities(table: var ECSWorld, n:int, arch:ArchetypeMask, components
     let r = DEFAULT_BLK_SIZE*id - e
     partition.zones[partition.fill_index].r.e += min(m, r)
     
-    res.add(Range(s:e,e:e+r))
+    res.add((id, Range(s:e,e:e+r)))
     m -= r
     partition.fill_index += 1
 
   if m > 0:
-    allocateNewBlocks(table, m, res, partition, arch, components)
+    var r = allocateNewBlocks(table, m, res, partition, arch, components)
+    for i in r:
+      res.add(i)
 
   return res
 
@@ -230,3 +242,4 @@ proc changePartition(table: var ECSWorld, i:int, oldArch:ArchetypeMask, newArch:
       var entry = table.registry.entries[id]
       entry.newBlockOp(entry.rawPointer, table.max_index)
 
+include "operations.nim"

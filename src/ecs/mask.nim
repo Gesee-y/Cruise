@@ -47,3 +47,11 @@ template getBit(a:var ArchetypeMask, i,j:int):uint =
 template getBit(a:var ArchetypeMask, i:int):uint =
   let s = sizeof(uint)*8
   a.getBit(i div s, i mod s)
+
+proc maskOf(ids: varargs[int]): ArchetypeMask =
+  var m: ArchetypeMask
+  for id in ids:
+    let layer = id div (sizeof(uint)*8)
+    let bit   = id mod (sizeof(uint)*8)
+    m[layer] = m[layer] or (1.uint shl bit)
+  return m

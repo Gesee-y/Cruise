@@ -18,6 +18,8 @@ type
 
 template registerComponent[B](registry:ComponentRegistry) =
   var frag = newSoAFragArr(B, DEFAULT_BLK_SIZE)
+
+  GC_ref(frag)
   let pt = cast[pointer](frag)
 
   let res = proc (p:pointer, n:int) =

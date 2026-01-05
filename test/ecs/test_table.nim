@@ -34,14 +34,6 @@ proc newWorld(): ECSWorld =
 
   return w
 
-proc maskOf(ids: varargs[int]): ArchetypeMask =
-  var m: ArchetypeMask
-  for id in ids:
-    let layer = id div (sizeof(uint)*8)
-    let bit   = id mod (sizeof(uint)*8)
-    m[layer] = m[layer] or (1.uint shl bit)
-  m
-
 ############################################
 # TESTS
 ############################################
