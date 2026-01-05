@@ -6,10 +6,12 @@ type
   Vec3 = object
     x, y, z: float32
 
-const S = 1024
+const S = 4096
 
 SoAFragArr(S):
   var vecs: Vec3
+
+new(vecs)
 
 const SAMPLE = 100000
 const N = 10000
@@ -77,3 +79,10 @@ benchmark("Mass Update 10k", SAMPLE):
   for i in idx:
     vecs[i] = Vec3(x: 1.0, y: 2.0, z: 3.0)
 
+benchmark("MQuery iter 10k", SAMPLE):
+  for blk in vecs.blocks:
+    var x:ref array[S,float32] = blk.data.x
+    var y = blk.data.y
+    for i in 0..<S:
+      x[i] += x[i]
+      y[i] += y[i]
