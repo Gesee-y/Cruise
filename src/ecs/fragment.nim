@@ -142,10 +142,12 @@ template overrideVals(b: untyped, i, j:int|uint) =
 proc getDataType[N,T,B](f: SoAFragmentArray[N,T,B]):typedesc[B] = B
 
 proc newSparseBlock[N,T,B](f: var SoAFragmentArray[N,T,B], offset:int) =
-  var blk: SoAFragment[sizeof(uint),T,B]
+  var blk: SoAFragment[sizeof(uint)*8,T,B]
   new(blk)
+  var i = offset div sizeof(uint)*8
+  if i= > f.sparse.len: f.sparse.setLen(i)
   blk.offset = offset
-  f.sparse.add(blk)
+  f.sparse[i] = blk
  
 proc freeSparseBlock[N,T,B](f: var SoAFragmentArray[N,T,B], i:int) =
   f.sparse[i] = nil

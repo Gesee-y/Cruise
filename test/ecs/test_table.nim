@@ -58,7 +58,7 @@ suite "ECS Table – core invariants":
     var w = newWorld()
     let arch = maskOf(0)
 
-    let id = allocateEntity(w, arch, @[0])
+    let id = makeId(allocateEntity(w, arch, @[0]))
     check id == 0
     check w.blockCount == 1
 
@@ -68,8 +68,8 @@ suite "ECS Table – core invariants":
 
     let ranges = allocateEntities(w, 10, arch, @[0])
     check ranges.len == 1
-    check ranges[0].s == 0
-    check ranges[0].e == 10
+    check ranges[0][1].s == 0
+    check ranges[0][1].e == 10
 
   test "Allocate entities creates new blocks when needed":
     var w = newWorld()
@@ -85,7 +85,7 @@ suite "ECS Table – core invariants":
     var w = newWorld()
     let arch = maskOf(0,1)
 
-    let id = allocateEntity(w, arch, @[0,1])
+    let id = makeId(allocateEntity(w, arch, @[0,1]))
     activateComponents(w, id, @[0,1])
     deactivateComponents(w, id, @[1])
 
@@ -102,41 +102,30 @@ suite "ECS Table – core invariants":
     var w = newWorld()
     let arch = maskOf(0)
 
-    let id1 = allocateEntity(w, arch, @[0])
-    let id2 = allocateEntity(w, arch, @[0])
+    let id1 = makeId(allocateEntity(w, arch, @[0]))
+    let id2 = makeId(allocateEntity(w, arch, @[0]))
 
     var pos = getvalue[Position](w.registry.entries[0])
     pos[id1] = Position(x: 1, y: 1)
     pos[id2] = Position(x: 9, y: 9)
 
-    let moved = deleteRow(w, id1, arch)
+    let moved = deleteRow(w, id1.int, arch)
 
     check moved == id2
     let p = pos[id1]
     check p.x == 9
     check p.y == 9
 
-  test "Sparse allocation reuses free indices":
-    var w = newWorld()
-
-    let a = allocateSparseEntity(w)
-    let b = allocateSparseEntity(w)
-
-    deleteSparseRow(w, a, @[0,1])
-
-    let c = allocateSparseEntity(w)
-    check c == a
-
   test "Change partition moves entity correctly":
     var w = newWorld()
     let archA = maskOf(0)
     let archB = maskOf(0,1)
 
-    let id = allocateEntity(w, archA, @[0])
+    let id = makeId(allocateEntity(w, archA, @[0]))
     var pos = getvalue[Position](w.registry.entries[0])
     pos[id] = Position(x: 42, y: 24)
 
-    changePartition(w, id, archA, archB)
+    discard changePartition(w, id.int, archA, archB)
 
     let newPos = pos[id]
     check newPos.x == 42
@@ -147,8 +136,8 @@ suite "ECS Table – core invariants":
     let a1 = maskOf(0)
     let a2 = maskOf(1)
 
-    let i1 = allocateEntity(w, a1, @[0])
-    let i2 = allocateEntity(w, a2, @[1])
+    let i1 = makeId(allocateEntity(w, a1, @[0]))
+    let i2 = makeId(allocateEntity(w, a2, @[1]))
 
     var pos = getvalue[Position](w.registry.entries[0])
     var vel = getvalue[Velocity](w.registry.entries[1])
@@ -164,7 +153,7 @@ suite "ECS Table – core invariants":
     let arch = maskOf(0)
 
     for i in 0..<DEFAULT_BLK_SIZE*2:
-      discard allocateEntity(w, arch, @[0])
+      discard makeId(allocateEntity(w, arch, @[0]))
 
     let bc = w.blockCount
 

@@ -41,6 +41,13 @@ template setBit(a:var ArchetypeMask, i:int) =
   let s = sizeof(uint)*8
   a.setBit(i div s, i mod s)
 
+template unSetBit(a:var ArchetypeMask, i,j:int) =
+  a[i] = a[i] and not 1.uint shl j
+
+template unSetBit(a:var ArchetypeMask, i:int) =
+  let s = sizeof(uint)*8
+  a.unSetBit(i div s, i mod s)
+
 template getBit(a:var ArchetypeMask, i,j:int):uint =
   (a[i] shr j) and 1
 

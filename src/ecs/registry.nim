@@ -8,9 +8,14 @@ type
     resizeOp: proc (p:pointer, n:int)
     newBlockAtOp: proc (p:pointer, i:int)
     newBlockOp: proc (p:pointer, offset:int)
+    newSparseBlockOp: proc(p:pointer, offset:int)
     activateBitOp: proc (p:pointer, i:int)
     deactivateBitOp: proc (p:pointer, i:int)
-    overrideValsOp: proc (p:pointer, i:int, j:int)
+    overrideValsOp: proc (p:pointer, i:uint, j:uint)
+    getSparseMask: proc (p:pointer):uint
+    setSparseMask: proc (p:pointer, m:uint)
+    activateSparseBit: proc (p:pointer, i:uint)
+    deactivateSparseBit: proc (p:pointer, i:uint)
 
   ComponentRegistry = ref object
     entries:seq[ComponentEntry]
@@ -34,6 +39,10 @@ template registerComponent[B](registry:ComponentRegistry) =
     var fr = castTo(p, B, DEFAULT_BLK_SIZE)
     discard fr.newBlock(offset)
 
+  let newSparseBlk = proc (p:pointer, offset:int) =
+    var fr = castTo(p, B, DEFAULT_BLK_SIZE)
+    fr.newSparseBlock(offset)
+
   let actBit = proc (p:pointer, i:int) =
     var fr = castTo(p, B, DEFAULT_BLK_SIZE)
     fr.activateBit(i)
@@ -42,18 +51,27 @@ template registerComponent[B](registry:ComponentRegistry) =
     var fr = castTo(p, B, DEFAULT_BLK_SIZE)
     fr.deactivateBit(i)
 
-  let overv = proc (p:pointer, i,j:int) =
+  let overv = proc (p:pointer, i,j:uint) =
     var fr = castTo(p, B, DEFAULT_BLK_SIZE)
     fr.overrideVals(i, j)
+
+  let getsmask = proc (p:pointer):uint =
+    var fr = castTo(p, B, DEFAULT_BLK_SIZE)
+    return fr.sparseMask
+
+  let setsmask = proc (p:pointer, m:uint) =
+    var fr = castTo(p, B, DEFAULT_BLK_SIZE)
+    fr.sparseMask = m
 
   var entry:ComponentEntry
   entry.rawPointer = pt
   entry.resizeOp = res
   entry.newBlockAtOp = newBlkAt
   entry.newBlockOp = newBlk
+  entry.newSparseBlockOp = newSparseBlk
   entry.activateBitOp = actBit
   entry.deactivateBitOp = deactBit
-  entry.overrideValsOp = overv
+  entry.overrideValsOp = overv                                                            
 
   registry.cmap[$B] = registry.entries.len
   registry.entries.add(entry)
