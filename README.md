@@ -34,6 +34,8 @@ This architecture offers several advantages:
 
 - **Event System**: Cruise provides you 2 event system, a lightweight synchronous one that can be use for simple cases, and a complex one leveraging the full powers of reactive programming such as merging, filtering, delays, throttling,  etc.
 
+- **Optional ECS**: Cruise provides a high performances, optional ECS based on a fragmented storage. Allowing to mimick archetypes and sparse sets in the same structure without losing the best of both.
+
 - ~~**Temporary storage**: To easily share data among your systems, it also support TTL (Time To Live) for data and provides events and serialization support~~
 
 - ~~**Multiple clear interfaces**: [ECS](https://github.com/Gesee-y/ECSInterface), SceneTree, [Rendering](https://github.com/Gesee-y/Horizons) , [windowing and events](https://github.com/Gesee-y/Outdoors). All clear and set for you to overload with bunch of premade implementations available.~~
