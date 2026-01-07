@@ -13,6 +13,7 @@ type
     deactivateBitOp: proc (p:pointer, i:int)
     overrideValsOp: proc (p:pointer, i:uint, j:uint)
     getSparseMaskOp: proc (p:pointer):seq[uint]
+    getSparseChunkMaskOp: proc(p:pointer, i:int):uint
     setSparseMaskOp: proc (p:pointer, m:seq[uint])
     activateSparseBitOp: proc (p:pointer, i:uint)
     deactivateSparseBitOp: proc (p:pointer, i:uint)
@@ -59,6 +60,10 @@ template registerComponent[B](registry:ComponentRegistry) =
     var fr = castTo(p, B, DEFAULT_BLK_SIZE)
     return fr.sparseMask
 
+  let getscmask = proc (p:pointer, i:int):uint =
+    var fr = castTo(p, B, DEFAULT_BLK_SIZE)
+    return fr.sparse[i].mask
+
   let setsmask = proc (p:pointer, m:seq[uint]) =
     var fr = castTo(p, B, DEFAULT_BLK_SIZE)
     fr.sparseMask = m
@@ -81,6 +86,7 @@ template registerComponent[B](registry:ComponentRegistry) =
   entry.deactivateBitOp = deactBit
   entry.overrideValsOp = overv
   entry.getSparseMaskOp = getsmask
+  entry.getSparseChunkMaskOp = getscmask
   entry.setSparseMaskOp = setsmask
   entry.deactivateSparseBitOp = deactSparseBit
   entry.activateSparseBitOp = actSparseBit

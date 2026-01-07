@@ -20,6 +20,7 @@ type
 
 proc setupWorld(): ECSWorld =
   var w: ECSWorld
+  new(w)
   new(w.registry)
   registerComponent[Position](w.registry)
   registerComponent[Velocity](w.registry)
@@ -35,7 +36,7 @@ suite "ECS Table allocation":
     var w = setupWorld()
     let arch = maskOf(0)
 
-    let (bid, r) = w.allocateEntity(arch, @[0])
+    let (bid, r) = w.allocateEntity(arch)
 
     check r.e - r.s == 1
     check bid == 0
@@ -44,7 +45,7 @@ suite "ECS Table allocation":
     var w = setupWorld()
     let arch = maskOf(0)
 
-    let res = w.allocateEntities(DEFAULT_BLK_SIZE + 10, arch, @[0])
+    let res = w.allocateEntities(DEFAULT_BLK_SIZE + 10, arch)
 
     check res.len == 2
     check res[0][1].e == DEFAULT_BLK_SIZE
@@ -54,7 +55,7 @@ suite "ECS Table allocation":
     var w = setupWorld()
     let arch = maskOf(0, 1)
 
-    let (bid, r) = w.allocateEntity(arch, @[0,1])
+    let (bid, r) = w.allocateEntity(arch)
     let id = makeId((bid, r))
 
     w.activateComponents(id, @[0,1])
@@ -70,8 +71,8 @@ suite "ECS Table allocation":
     var w = setupWorld()
     let arch = maskOf(0)
 
-    let (_, r1) = w.allocateEntity(arch, @[0])
-    let (_, r2) = w.allocateEntity(arch, @[0])
+    let (_, r1) = w.allocateEntity(arch)
+    let (_, r2) = w.allocateEntity(arch)
 
     let id1 = r1.e-1
     let id2 = r2.e-1
@@ -125,7 +126,7 @@ suite "ECS Table partition changes":
     let archA = maskOf(0)
     let archB = maskOf(0,1)
 
-    let (_, r) = w.allocateEntity(archA, @[0])
+    let (_, r) = w.allocateEntity(archA)
     let id = r.e-1
 
     var pos = getvalue[Position](w.registry.entries[0])
@@ -141,8 +142,8 @@ suite "ECS Table partition changes":
     var w = setupWorld()
 
     let arch = maskOf(0)
-    let (_, r1) = w.allocateEntity(arch, @[0])
-    let (_, r2) = w.allocateEntity(arch, @[0])
+    let (_, r1) = w.allocateEntity(arch)
+    let (_, r2) = w.allocateEntity(arch)
 
     discard w.deleteRow(r1.e-1, arch)
 

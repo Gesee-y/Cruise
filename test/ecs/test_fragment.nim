@@ -1,5 +1,4 @@
 include "../../src/ecs/fragment.nim"
-import unittest
 
 ############################################
 # Test component
@@ -150,7 +149,7 @@ suite "SoAFragmentArray core behavior":
     var f = newSoAFragArr(TestComp,8)
 
     f.newSparseBlock(0, 0)
-    f.activateSparseBit(3)
+    f.activateSparseBit(3'u)
 
     check (f.sparse[0].mask and (1'u shl 3)) != 0
     check f.sparseMask[0] != 0
