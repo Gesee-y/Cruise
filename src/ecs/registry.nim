@@ -8,14 +8,14 @@ type
     resizeOp: proc (p:pointer, n:int)
     newBlockAtOp: proc (p:pointer, i:int)
     newBlockOp: proc (p:pointer, offset:int)
-    newSparseBlockOp: proc(p:pointer, offset:int)
+    newSparseBlockOp: proc(p:pointer, offset:int, m:uint)
     activateBitOp: proc (p:pointer, i:int)
     deactivateBitOp: proc (p:pointer, i:int)
     overrideValsOp: proc (p:pointer, i:uint, j:uint)
-    getSparseMask: proc (p:pointer):uint
-    setSparseMask: proc (p:pointer, m:uint)
-    activateSparseBit: proc (p:pointer, i:uint)
-    deactivateSparseBit: proc (p:pointer, i:uint)
+    getSparseMaskOp: proc (p:pointer):uint
+    setSparseMaskOp: proc (p:pointer, m:uint)
+    activateSparseBitOp: proc (p:pointer, i:uint)
+    deactivateSparseBitOp: proc (p:pointer, i:uint)
 
   ComponentRegistry = ref object
     entries:seq[ComponentEntry]
@@ -39,9 +39,9 @@ template registerComponent[B](registry:ComponentRegistry) =
     var fr = castTo(p, B, DEFAULT_BLK_SIZE)
     discard fr.newBlock(offset)
 
-  let newSparseBlk = proc (p:pointer, offset:int) =
+  let newSparseBlk = proc (p:pointer, offset:int, m:uint) =
     var fr = castTo(p, B, DEFAULT_BLK_SIZE)
-    fr.newSparseBlock(offset)
+    fr.newSparseBlock(offset, m)
 
   let actBit = proc (p:pointer, i:int) =
     var fr = castTo(p, B, DEFAULT_BLK_SIZE)
@@ -63,6 +63,14 @@ template registerComponent[B](registry:ComponentRegistry) =
     var fr = castTo(p, B, DEFAULT_BLK_SIZE)
     fr.sparseMask = m
 
+  let actSparseBit = proc (p:pointer, i:int) =
+    var fr = castTo(p, B, DEFAULT_BLK_SIZE)
+    fr.activateSparseBit(i)
+
+  let deactSparseBit = proc (p:pointer, i:int) =
+    var fr = castTo(p, B, DEFAULT_BLK_SIZE)
+    fr.deactivateSparseBit(i)
+
   var entry:ComponentEntry
   entry.rawPointer = pt
   entry.resizeOp = res
@@ -71,7 +79,11 @@ template registerComponent[B](registry:ComponentRegistry) =
   entry.newSparseBlockOp = newSparseBlk
   entry.activateBitOp = actBit
   entry.deactivateBitOp = deactBit
-  entry.overrideValsOp = overv                                                            
+  entry.overrideValsOp = overv
+  entry.getSparseMaskOp = getsmask
+  entry.setSparseMaskOp = setsmask
+  entry.deactivateSparseBitOp = deactSparseBit
+  entry.activateSparseBitOp = actSparseBit
 
   registry.cmap[$B] = registry.entries.len
   registry.entries.add(entry)

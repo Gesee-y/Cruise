@@ -182,15 +182,25 @@ proc allocateEntities(table: var ECSWorld, n:int, arch:ArchetypeMask, components
 
 proc allocateEntity(table: var ECSWorld, arch:ArchetypeMask, components:seq[int]):(uint, Range) = allocateEntities(table, 1, arch, components)[0]
 
-proc activateComponents(table: var ECSWorld, i:int|uint, components:seq[int]) =
+template activateComponents(table: var ECSWorld, i:int|uint, components:seq[int]) =
   for id in components:
     var entry = table.registry.entries[id]
     entry.activateBitOp(entry.rawPointer, i.int)
 
-proc deactivateComponents(table: var ECSWorld, i:int|uint, components:seq[int]) =
+template deactivateComponents(table: var ECSWorld, i:int|uint, components:seq[int]) =
   for id in components:
     var entry = table.registry.entries[id]
     entry.deactivateBitOp(entry.rawPointer, i.int)
+
+template activateComponentsSparse(table: var ECSWorld, i:int|uint, components:seq[int]) =
+  for id in components:
+    var entry = table.registry.entries[id]
+    entry.activateSparseBitOp(entry.rawPointer, i.int)
+
+template deactivateComponentsSparse(table: var ECSWorld, i:int|uint, components:seq[int]) =
+  for id in components:
+    var entry = table.registry.entries[id]
+    entry.deactivateSparseBitOp(entry.rawPointer, i.int)
 
 proc allocateSparseEntities(table: var ECSWorld, count:int, components:seq[int]):seq[Range] =
   var res:seq[Range]
@@ -200,8 +210,12 @@ proc allocateSparseEntities(table: var ECSWorld, count:int, components:seq[int])
   while n > 0 and free_cursor >= 0:
     let i = table.free_list[free_cursor]
     res.add(Range(s:i.int,e:i.int+1))
+    
+    activateComponentsSparse(table, i, components)
+
     free_cursor -= 1
     n -= 1
+
 
   table.free_list.setLen(free_cursor+1)
 
@@ -212,8 +226,9 @@ proc allocateSparseEntities(table: var ECSWorld, count:int, components:seq[int])
     n -= sizeof(uint)*8
 
     for id in components:
+      let m = (1.uint shl (toAdd+1)) - 1
       var entry = table.registry.entries[id]
-      entry.newSparseBlockOp(entry.rawPointer, table.max_index+1)
+      entry.newSparseBlockOp(entry.rawPointer, table.max_index+1, m)
 
   return res
 
@@ -228,6 +243,7 @@ proc deleteRow(table: var ECSWorld, i:int, arch:ArchetypeMask):uint =
   for id in partition.components:
     var entry = table.registry.entries[id]
     entry.overrideValsOp(entry.rawPointer, makeId(i), makeId(last))
+    entry.deactivateBitOp(entry.rawPointer, i.int)
 
   partition.zones[partition.fill_index].r.e -= 1
 
@@ -235,7 +251,7 @@ proc deleteRow(table: var ECSWorld, i:int, arch:ArchetypeMask):uint =
 
 proc deleteSparseRow(table: var ECSWorld, i:uint, components:seq[int]) =
   table.free_list.add(i)
-  deactivateComponents(table, i, components)
+  deactivateComponentsSparse(table, i, components)
   
 proc changePartition(table: var ECSWorld, i:int, oldArch:ArchetypeMask, newArch:ArchetypeMask):(int, int, int) =
   var oldPartition = table.archetypes[oldArch]
