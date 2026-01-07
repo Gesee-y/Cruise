@@ -2,20 +2,20 @@
 ############################################################# ECS OPERATIONS ######################################################################
 ################################################################################################################################################### 
 
-template createEntity(world:var EcsWorld, component:varargs[typed]):Entity =
+template createEntity(world:var EcsWorld, component:varargs):untyped =
   var e = newEntity()
   var cids:seq[int]
 
   for c in component:
     cids.add(world.registry.cmap[$typeof(c)])
 
-  let arch = maskOf(component)
-  let bid, id = allocateEntity(world, arch, cids)
-  e.id = (bid shl 32) or id
+  let arch = maskOf(cids)
+  let (bid, id) = allocateEntity(world, arch)
+  e.id = (bid shl 32) or (id.e-1).uint
   e.archetype = arch
-  world.entities[id] = e
+  world.entities[e.id] = e
 
-  return e
+  e
 
 template deleteEntity(world:var EcsWorld, e:Entity) =
   let l = deleteRow(world, e.id and ((1.uint << 32)-1), e.arch)

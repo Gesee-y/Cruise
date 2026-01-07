@@ -33,15 +33,6 @@ suite "ECS Query System":
   ## MASK ITERATOR
   ###########################################################################
 
-  test "MaskIterator iterates bits in order":
-    var it = initMaskIterator(0b101101'u)
-    var res: seq[int]
-
-    for v in it:
-      res.add(v)
-
-    check res == @[0, 2, 3, 5]
-
   test "maskIter iterator works":
     let mask = 0b10010010'u
     let res = toSeq(mask.maskIter)

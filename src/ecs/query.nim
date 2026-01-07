@@ -14,49 +14,16 @@ type
     components: seq[QueryComponent]
     includeMask: ArchetypeMask
     excludeMask: ArchetypeMask
-  
-  DenseQueryResult = object
-    blockIdx: int
-    r: Range
-    partition: TablePartition
-  
-  MaskIterator = object
-    mask: uint
-    position: int
-  
-  SparseQueryResult = object
-    chunkIdx: int
-    iter: MaskIterator
 
 ####################################################################################################################################################
 ################################################################### MASK ITERATOR ##################################################################
 ####################################################################################################################################################
-
-proc initMaskIterator(mask: uint): MaskIterator =
-  result.mask = mask
-  result.position = 0
-
-proc hasNext(it: var MaskIterator): bool =
-  return it.mask != 0
-
-proc next(it: var MaskIterator): int =
-  let trailing = countTrailingZeroBits(it.mask)
-  it.position += trailing
-  let res = it.position
-  it.mask = it.mask shr (trailing + 1)
-  it.position += 1
-  return res
-
-iterator items(it: var MaskIterator): int =
-  while it.hasNext():
-    yield it.next()
 
 iterator maskIter(it: uint): int =
   var m = it
   while m != 0:
     yield countTrailingZeroBits(m)
     m = m and (m-1)
-
 
 ####################################################################################################################################################
 ################################################################### QUERY BUILDER ##################################################################
