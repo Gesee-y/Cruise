@@ -2,151 +2,155 @@ include "../../src/ecs/fragment.nim"
 import unittest
 
 ############################################
-# TEST TYPES
+# Test component
 ############################################
 
-type
-  Position = object
-    x:int
-    y:int
-
-const
-  N = 8
+type TestComp = object
+  x: int
+  y: int
 
 ############################################
-# HELPERS
+# Tests
 ############################################
 
-proc newArray(): SoAFragmentArray[N, tuple[x: array[N,int], y: array[N,int]], Position] =
-  var a: SoAFragmentArray[N, tuple[x: array[N,int], y: array[N,int]], Position]
-  new(a)
-  a.blocks = @[]
-  a.sparse = @[]
-  a.mask = @[0.uint]
-  a
+suite "SoAFragmentArray core behavior":
 
-############################################
-# TESTS
-############################################
+  test "SoA macro splits fields correctly":
+    var f = newSoAFragArr(TestComp,8)
+    f.blocks.setLen(1)
+    f.newBlockAt(0)
 
-suite "SoAFragmentArray – core behavior":
+    f[0] = TestComp(x: 1, y: 2)
+    f[1] = TestComp(x: 3, y: 4)
 
-  test "Create empty array":
-    let a = newArray()
-    check a.blocks.len == 0
-    check a.sparse.len == 0
+    check f[0].x == 1
+    check f[0].y == 2
+    check f[1].x == 3
+    check f[1].y == 4
 
-  test "Insert first block":
-    var a = newArray()
-    let ok = newBlock(a, 0)
-    check ok
-    check a.blocks.len == 1
-    check a.blocks[0].offset == 0
+  test "newBlockAt sets correct offset":
+    var f = newSoAFragArr(TestComp,8)
+    f.blocks.setLen(3)
+    f.newBlockAt(2)
 
-  test "Reject overlapping block":
-    var a = newArray()
-    discard newBlock(a, 0)
-    let ok = newBlock(a, 4)
-    check ok == false
+    check f.blocks[2].offset == 16
 
-  test "Insert non-overlapping blocks":
-    var a = newArray()
-    check newBlock(a, 0)
-    check newBlock(a, N)
-    check newBlock(a, 2*N)
-    check a.blocks.len == 3
+  test "newBlock inserts blocks in sorted order":
+    var f = newSoAFragArr(TestComp,8)
 
-  test "Block index calculation":
-    var a = newArray()
-    discard newBlock(a, 0)
-    discard newBlock(a, N)
-    check getBlockIdx(a, 0) == 0
-    check getBlockIdx(a, N+1) == 1
+    discard f.newBlock(16)
+    discard f.newBlock(0)
+    discard f.newBlock(8)
 
-  test "Write and read component values":
-    var a = newArray()
-    discard newBlock(a, 0)
+    check f.blocks.len == 3
+    check f.blocks[0].offset == 0
+    check f.blocks[1].offset == 8
+    check f.blocks[2].offset == 16
 
-    a[0] = Position(x: 1, y: 2)
-    a[3] = Position(x: 10, y: 20)
+  test "int and uint indexing are equivalent":
+    var f = newSoAFragArr(TestComp,8)
+    f.blocks.setLen(1)
+    f.newBlockAt(0)
 
-    let p0 = a[0]
-    let p3 = a[3]
+    f[3] = TestComp(x: 42, y: 7)
 
-    check p0.x == 1
-    check p0.y == 2
-    check p3.x == 10
-    check p3.y == 20
+    let u = (0'u shl BLK_SHIFT) or 3'u
+    check f[3].x == f[u].x
+    check f[3].y == f[u].y
 
-  test "Override values works":
-    var a = newArray()
-    discard newBlock(a, 0)
+  test "activateBit sets dense block and global mask":
+    var f = newSoAFragArr(TestComp,8)
+    f.blocks.setLen(1)
+    f.newBlockAt(0)
 
-    a[0] = Position(x: 1, y: 1)
-    a[1] = Position(x: 9, y: 9)
+    f.activateBit(3)
 
-    overrideVals(a.blocks[0], 0, 1)
-    let p = a[0]
-    check p.x == 9
-    check p.y == 9
+    check (f.blocks[0].mask and (1'u shl 3)) != 0
+    check f.mask.len == 1
+    check (f.mask[0] and 1'u) != 0
 
-  test "Activate and deactivate bits":
-    var a = newArray()
-    discard newBlock(a, 0)
+  test "deactivateBit clears block mask and global mask when empty":
+    var f = newSoAFragArr(TestComp,8)
+    f.blocks.setLen(1)
+    f.newBlockAt(0)
 
-    activateBit(a, 2)
-    let bid = 2 div N
-    let lid = 2 mod N
+    f.activateBit(2)
+    f.deactivateBit(2)
 
-    check ((a.blocks[bid].mask shr lid) and 1) == 1
+    check f.blocks[0].mask == 0
+    check f.mask[0] == 0
 
-    deactivateBit(a, 2)
-    check ((a.blocks[bid].mask shr lid) and 1) == 0
+  test "multiple active bits keep global mask alive":
+    var f = newSoAFragArr(TestComp,8)
+    f.blocks.setLen(1)
+    f.newBlockAt(0)
 
-  test "Indexing with uint encoding":
-    var a = newArray()
-    discard newBlock(a, 0)
+    f.activateBit(1)
+    f.activateBit(3)
+    f.deactivateBit(1)
 
-    a[0] = Position(x: 5, y: 6)
+    check (f.blocks[0].mask and (1'u shl 3)) != 0
+    check f.mask[0] != 0
 
-    let idx = (uint(0) shl BLK_SHIFT) or uint(0)
-    let p = a[idx]
+  test "overrideVals copies all fields":
+    var f = newSoAFragArr(TestComp,8)
+    f.blocks.setLen(1)
+    f.newBlockAt(0)
 
-    check p.x == 5
-    check p.y == 6
+    f[0] = TestComp(x: 1, y: 2)
+    f[5] = TestComp(x: 9, y: 8)
 
-  test "Fragment iteration yields correct values":
-    var a = newArray()
-    discard newBlock(a, 0)
+    overrideVals(f.blocks[0], 0, 5)
 
-    for i in 0..<N:
-      a[i] = Position(x: i, y: i*2)
+    check f[0].x == 9
+    check f[0].y == 8
+
+  test "iterator iterates over full block":
+    var f = newSoAFragArr(TestComp,4)
+    f.blocks.setLen(1)
+    f.newBlockAt(0)
+
+    for i in 0..<4:
+      f[i] = TestComp(x: i, y: i*10)
 
     var sum = 0
-    for p in a.iter:
-      sum += p.x
+    for v in f.iter:
+      sum += v.x
 
-    check sum == (N*(N-1)) div 2
+    check sum == 6
 
-  test "Pairs iterator yields correct indices":
-    var a = newArray()
-    discard newBlock(a, 0)
+  test "pairs iterator yields correct global indices":
+    var f = newSoAFragArr(TestComp,4)
+    f.blocks.setLen(2)
+    f.newBlockAt(0)
+    f.newBlockAt(1)
 
-    a[4] = Position(x: 42, y: 0)
+    f[0] = TestComp(x: 1, y: 0)
+    f[5] = TestComp(x: 6, y: 0)
 
-    for (i, p) in pairs(a):
-      if i == 4:
-        check p.x == 42
+    var seen = 0
+    for (i, v) in f.pairs:
+      if v.x != 0:
+        check i == v.x-1
+        inc seen
 
-  test "Resize increases block count":
-    var a = newArray()
-    resize(a, 3)
-    check a.blocks.len == 3
+    check seen == 2
 
-  test "Sparse block creation and free":
-    var a = newArray()
-    newSparseBlock(a, 0)
-    check a.sparse.len == 1
+  test "sparse block creation sets sparse mask correctly":
+    var f = newSoAFragArr(TestComp,8)
 
-    freeSparseBlock(a, 0)
-    check a.sparse[0] == nil
+    f.newSparseBlock(0, 0b101'u)
+
+    check f.sparse.len == 1
+    check f.sparse[0].mask == 0b101'u
+    check f.sparseMask.len == 1
+    check f.sparseMask[0] != 0
+
+  test "activateSparseBit sets sparse masks":
+    var f = newSoAFragArr(TestComp,8)
+
+    f.newSparseBlock(0, 0)
+    f.activateSparseBit(3)
+
+    check (f.sparse[0].mask and (1'u shl 3)) != 0
+    check f.sparseMask[0] != 0

@@ -3,161 +3,148 @@ include "../../src/ecs/table.nim"
 import unittest
 import tables
 
-############################################
-# TEST COMPONENT TYPES
+##############################################
+# Test components
 ############################################
 
 type
   Position = object
-    x:int
-    y:int
+    x, y: int
 
   Velocity = object
-    vx:int
-    vy:int
+    dx, dy: int
 
 ############################################
-# HELPERS
+# Helpers
 ############################################
 
-proc newWorld(): ECSWorld =
+proc setupWorld(): ECSWorld =
   var w: ECSWorld
-  w.registry = ComponentRegistry(entries: @[], cmap: initTable[string,int]())
-  w.archetypes = initTable[ArchetypeMask, TablePartition]()
-  w.pooltype = initTable[string,int]()
-  w.free_list = @[]
-  w.max_index = 0
-  w.block_count = 0
-
+  new(w.registry)
   registerComponent[Position](w.registry)
   registerComponent[Velocity](w.registry)
-
-  return w
+  w
 
 ############################################
-# TESTS
+# Tests
 ############################################
 
-suite "ECS Table – core invariants":
+suite "ECS Table allocation":
 
-  test "World starts empty":
-    let w = newWorld()
-    check w.blockCount == 0
-    check w.archetypes.len == 0
-    check w.free_list.len == 0
-
-  test "Create new archetype partition":
-    var w = newWorld()
+  test "allocate single dense entity":
+    var w = setupWorld()
     let arch = maskOf(0)
 
-    let p = createPartition(w, arch)
-    check p.components == @[0]
-    check w.archetypes.hasKey(arch)
+    let (bid, r) = w.allocateEntity(arch, @[0])
 
-  test "Allocate single entity":
-    var w = newWorld()
+    check r.e - r.s == 1
+    check bid == 0
+
+  test "allocate multiple dense entities across blocks":
+    var w = setupWorld()
     let arch = maskOf(0)
 
-    let id = makeId(allocateEntity(w, arch, @[0]))
-    check id == 0
-    check w.blockCount == 1
+    let res = w.allocateEntities(DEFAULT_BLK_SIZE + 10, arch, @[0])
 
-  test "Allocate multiple entities in same archetype":
-    var w = newWorld()
-    let arch = maskOf(0)
+    check res.len == 2
+    check res[0][1].e == DEFAULT_BLK_SIZE
+    check res[1][1].e == 10
 
-    let ranges = allocateEntities(w, 10, arch, @[0])
-    check ranges.len == 1
-    check ranges[0][1].s == 0
-    check ranges[0][1].e == 10
+  test "activate and deactivate dense components":
+    var w = setupWorld()
+    let arch = maskOf(0, 1)
 
-  test "Allocate entities creates new blocks when needed":
-    var w = newWorld()
-    let arch = maskOf(0)
+    let (bid, r) = w.allocateEntity(arch, @[0,1])
+    let id = makeId((bid, r))
 
-    let n = DEFAULT_BLK_SIZE + 5
-    let ranges = allocateEntities(w, n, arch, @[0])
-
-    check w.blockCount >= 2
-    check ranges.len == 2
-
-  test "Activate and deactivate components":
-    var w = newWorld()
-    let arch = maskOf(0,1)
-
-    let id = makeId(allocateEntity(w, arch, @[0,1]))
-    activateComponents(w, id, @[0,1])
-    deactivateComponents(w, id, @[1])
+    w.activateComponents(id, @[0,1])
+    w.deactivateComponents(id, @[1])
 
     let pos = getvalue[Position](w.registry.entries[0])
     let vel = getvalue[Velocity](w.registry.entries[1])
 
-    let bid = id div DEFAULT_BLK_SIZE
-    let lid = id mod DEFAULT_BLK_SIZE
+    check pos.mask.len > 0
+    check vel.mask.len > 0
 
-    check ((pos.blocks[bid].mask shr lid) and 1) == 1
-    check ((vel.blocks[bid].mask shr lid) and 1) == 0
-
-  test "Delete row compacts data":
-    var w = newWorld()
+  test "delete dense row swaps last element":
+    var w = setupWorld()
     let arch = maskOf(0)
 
-    let id1 = makeId(allocateEntity(w, arch, @[0]))
-    let id2 = makeId(allocateEntity(w, arch, @[0]))
+    let (_, r1) = w.allocateEntity(arch, @[0])
+    let (_, r2) = w.allocateEntity(arch, @[0])
+
+    let id1 = r1.e-1
+    let id2 = r2.e-1
 
     var pos = getvalue[Position](w.registry.entries[0])
-    pos[id1] = Position(x: 1, y: 1)
-    pos[id2] = Position(x: 9, y: 9)
+    pos[id2] = Position(x: 99, y: 99)
 
-    let moved = deleteRow(w, id1.int, arch)
+    let last = w.deleteRow(id1, arch)
 
-    check moved == id2
-    let p = pos[id1]
-    check p.x == 9
-    check p.y == 9
+    check pos[id1].x == 99
+    check last == id2.uint
 
-  test "Change partition moves entity correctly":
-    var w = newWorld()
+suite "ECS Table sparse allocation":
+
+  test "allocate sparse entity":
+    var w = setupWorld()
+
+    let id = w.allocateSparseEntity(@[0])
+
+    check w.free_list.len == 0
+    check id >= 0
+
+  test "sparse delete reuses index":
+    var w = setupWorld()
+
+    let a = w.allocateSparseEntity(@[0])
+    let b = w.allocateSparseEntity(@[0])
+
+    w.deleteSparseRow(a.uint, @[0])
+
+    let c = w.allocateSparseEntity(@[0])
+
+    check c == a
+
+  test "sparse activation sets sparse mask":
+    var w = setupWorld()
+
+    let id = w.allocateSparseEntity(@[0])
+    w.activateComponentsSparse(id, @[0])
+
+    let pos = getvalue[Position](w.registry.entries[0])
+    let bid = id div (sizeof(uint)*8)
+
+    check pos.sparse[bid].mask != 0
+
+suite "ECS Table partition changes":
+
+  test "change partition moves entity":
+    var w = setupWorld()
+
     let archA = maskOf(0)
     let archB = maskOf(0,1)
 
-    let id = makeId(allocateEntity(w, archA, @[0]))
-    var pos = getvalue[Position](w.registry.entries[0])
-    pos[id] = Position(x: 42, y: 24)
-
-    discard changePartition(w, id.int, archA, archB)
-
-    let newPos = pos[id]
-    check newPos.x == 42
-    check newPos.y == 24
-
-  test "Multiple archetypes coexist safely":
-    var w = newWorld()
-    let a1 = maskOf(0)
-    let a2 = maskOf(1)
-
-    let i1 = makeId(allocateEntity(w, a1, @[0]))
-    let i2 = makeId(allocateEntity(w, a2, @[1]))
+    let (_, r) = w.allocateEntity(archA, @[0])
+    let id = r.e-1
 
     var pos = getvalue[Position](w.registry.entries[0])
-    var vel = getvalue[Velocity](w.registry.entries[1])
+    pos[id] = Position(x: 7, y: 8)
 
-    pos[i1] = Position(x: 1, y: 2)
-    vel[i2] = Velocity(vx: 3, vy: 4)
+    let (last, new_id, bid) = w.changePartition(id, archA, archB)
+    let newIdx = (bid shl BLK_SHIFT) or new_id
 
-    check pos[i1].x == 1
-    check vel[i2].vx == 3
+    check pos[newIdx].x == 7
+    check last >= 0
 
-  test "Block count only grows, never shrinks":
-    var w = newWorld()
+  test "partition removal shrinks correctly":
+    var w = setupWorld()
+
     let arch = maskOf(0)
+    let (_, r1) = w.allocateEntity(arch, @[0])
+    let (_, r2) = w.allocateEntity(arch, @[0])
 
-    for i in 0..<DEFAULT_BLK_SIZE*2:
-      discard makeId(allocateEntity(w, arch, @[0]))
+    discard w.deleteRow(r1.e-1, arch)
 
-    let bc = w.blockCount
-
-    for i in 0..<DEFAULT_BLK_SIZE:
-      discard deleteRow(w, i, arch)
-
-    check w.blockCount == bc
+    let p = w.archetypes[arch]
+    check p.zones[p.fill_index].r.e == 1

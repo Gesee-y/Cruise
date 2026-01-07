@@ -195,12 +195,12 @@ template deactivateComponents(table: var ECSWorld, i:int|uint, components:seq[in
 template activateComponentsSparse(table: var ECSWorld, i:int|uint, components:seq[int]) =
   for id in components:
     var entry = table.registry.entries[id]
-    entry.activateSparseBitOp(entry.rawPointer, i.int)
+    entry.activateSparseBitOp(entry.rawPointer, i.uint)
 
 template deactivateComponentsSparse(table: var ECSWorld, i:int|uint, components:seq[int]) =
   for id in components:
     var entry = table.registry.entries[id]
-    entry.deactivateSparseBitOp(entry.rawPointer, i.int)
+    entry.deactivateSparseBitOp(entry.rawPointer, i.uint)
 
 proc allocateSparseEntities(table: var ECSWorld, count:int, components:seq[int]):seq[Range] =
   var res:seq[Range]
@@ -243,7 +243,6 @@ proc deleteRow(table: var ECSWorld, i:int, arch:ArchetypeMask):uint =
   for id in partition.components:
     var entry = table.registry.entries[id]
     entry.overrideValsOp(entry.rawPointer, makeId(i), makeId(last))
-    entry.deactivateBitOp(entry.rawPointer, i.int)
 
   partition.zones[partition.fill_index].r.e -= 1
 
@@ -253,7 +252,7 @@ proc deleteSparseRow(table: var ECSWorld, i:uint, components:seq[int]) =
   table.free_list.add(i)
   deactivateComponentsSparse(table, i, components)
   
-proc changePartition(table: var ECSWorld, i:int, oldArch:ArchetypeMask, newArch:ArchetypeMask):(int, int, int) =
+proc changePartition(table: var ECSWorld, i:int, oldArch:ArchetypeMask, newArch:ArchetypeMask):(uint, uint, uint) =
   var oldPartition = table.archetypes[oldArch]
 
   var newPartition = createPartition(table, newArch)
@@ -277,23 +276,23 @@ proc changePartition(table: var ECSWorld, i:int, oldArch:ArchetypeMask, newArch:
       entry.resizeOp(entry.rawPointer, table.blockCount+1)
       entry.newBlockAtOp(entry.rawPointer, table.blockCount)
 
-  let new_id = newPartition.zones[newPartition.fill_index].r.e mod DEFAULT_BLK_SIZE
-  let bid = newPartition.zones[newPartition.fill_index].block_idx
+  let new_id = (newPartition.zones[newPartition.fill_index].r.e mod DEFAULT_BLK_SIZE).uint
+  let bid = newPartition.zones[newPartition.fill_index].block_idx.uint
 
   if oldComponents.len < newComponents.len:
     for id in oldComponents:
       var entry = table.registry.entries[id]
-      entry.overrideValsOp(entry.rawPointer, (bid.uint shl BLK_SHIFT) or new_id.uint, i.uint)
+      entry.overrideValsOp(entry.rawPointer, (bid shl BLK_SHIFT) or new_id, i.uint)
   else:
     for id in newComponents:
       var entry = table.registry.entries[id]
-      entry.overrideValsOp(entry.rawPointer, (bid.uint shl BLK_SHIFT) or new_id.uint, i.uint)
+      entry.overrideValsOp(entry.rawPointer, (bid shl BLK_SHIFT) or new_id, i.uint)
 
   for id in oldComponents:
     var entry = table.registry.entries[id]
     entry.overrideValsOp(entry.rawPointer, i.uint, last.uint)
 
-  return (last, new_id, bid)
+  return (last.uint, new_id, bid)
 
 
 

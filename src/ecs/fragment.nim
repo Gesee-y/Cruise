@@ -12,7 +12,7 @@ type
 
   SoAFragmentArray[N:static int, T, B] = ref object
     blocks:seq[SoAFragment[N,T,B]]
-    sparse:seq[SoAFragment[sizeof(uint),T,B]]
+    sparse:seq[SoAFragment[sizeof(uint)*8,T,B]]
     mask:seq[uint]
     sparseMask:seq[uint]
 
@@ -188,7 +188,7 @@ proc newBlock[N,T,B](f: var SoAFragmentArray[N, T, B], offset:int):bool =
       left = center + 1
     else: return false
 
-  if offset - f.blocks[left].offset < N:
+  if offset - f.blocks[left].offset < N and offset - f.blocks[left].offset >= 0:
     return false
 
   f.blocks.insert(blk, left)
@@ -209,7 +209,7 @@ proc `[]`[N,T,B](blk:SoAFragment[N,T,B], i:int|uint):B =
 
   return res
 
-proc activateBit[N,T,B](f: var SoAFragmentArray[N,T,B], i:int) =
+proc activateBit[N,T,B](f: var SoAFragmentArray[N,T,B], i:int|uint) =
   let bid = i div N
   let lid = i mod N
   let mid = bid div sizeof(uint)*8
@@ -220,7 +220,7 @@ proc activateBit[N,T,B](f: var SoAFragmentArray[N,T,B], i:int) =
   f.mask[mid] = f.mask[mid] or (1.uint shl bid)
   f.blocks[bid].mask = f.blocks[bid].mask or (1.uint shl lid)
 
-proc deactivateBit[N,T,B](f: var SoAFragmentArray[N,T,B], i:int) =
+proc deactivateBit[N,T,B](f: var SoAFragmentArray[N,T,B], i:int|uint) =
   let bid = i div N
   let lid = i mod N
   let mid = bid div sizeof(uint)*8
@@ -228,26 +228,26 @@ proc deactivateBit[N,T,B](f: var SoAFragmentArray[N,T,B], i:int) =
   if f.blocks[bid].mask == 0:
     f.mask[mid] = f.mask[mid] and not (1.uint shl bid)
   
-proc activateSparseBit[N,T,B](f: var SoAFragmentArray[N,T,B], i:int) =
-  let S = sizeof(uint)*8
+proc activateSparseBit[N,T,B](f: var SoAFragmentArray[N,T,B], i:int|uint) =
+  let S = (sizeof(uint)*8).uint
   let bid = i div S
   let lid = i mod S
   let mid = bid div S
 
-  if f.sparseMask.len <= mid:
+  if f.sparseMask.len.uint <= mid:
     f.sparseMask.setLen(mid+1)
 
   f.sparseMask[mid] = f.sparseMask[mid] or (1.uint shl bid)
   f.sparse[bid].mask = f.sparse[bid].mask or (1.uint shl lid)
 
-proc deactivateSparseBit[N,T,B](f: var SoAFragmentArray[N,T,B], i:int) =
-  let S = sizeof(uint)*8
+proc deactivateSparseBit[N,T,B](f: var SoAFragmentArray[N,T,B], i:int|uint) =
+  let S = (sizeof(uint)*8).uint
   let bid = i div S
   let lid = i mod S
   let mid = bid div S
-  f.blocks[bid].mask = f.blocks[bid].mask and not (1.uint shl lid)
-  if f.blocks[bid].mask == 0:
-    f.mask[mid] = f.mask[mid] and not (1.uint shl bid)
+  f.sparse[bid].mask = f.sparse[bid].mask and not (1.uint shl lid)
+  if f.sparse[bid].mask == 0'u:
+    f.sparseMask[mid] = f.sparseMask[mid] and not (1.uint shl bid)
 
 
 template `[]=`[N,T,B](blk:var SoAFragment[N,T,B], i:int|uint, v:B) =
