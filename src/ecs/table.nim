@@ -77,7 +77,7 @@ proc makeId(i:int):uint =
 
   return (bid.uint shl BLK_SHIFT) or idx.uint
 
-proc registerComponent[T](world:var ECSWorld, t:typedesc[T]) =
+proc registerComponent[T](world:var ECSWorld, t:typedesc[T]):int =
   registerComponent[T](world.registry)
 
 template get[T](world:ECSWorld,t:typedesc[T]):untyped =
@@ -152,11 +152,9 @@ proc allocateNewBlocks(table: var ECSWorld, count:int, res: var seq[(uint, Range
 
   return res
 
-proc allocateEntities(table: var ECSWorld, n:int, arch:ArchetypeMask):seq[(uint, Range)] =
+proc allocateEntities(table: var ECSWorld, n:int, arch:ArchetypeMask, components:seq[int]):seq[(uint, Range)] =
   var res:seq[(uint, Range)]
-  let components = getComponentsFromSig(arch)
-  if n < 1: return res
-  
+
   if not table.archetypes.haskey(arch):
     var partition:TablePartition
     new(partition)
@@ -187,7 +185,12 @@ proc allocateEntities(table: var ECSWorld, n:int, arch:ArchetypeMask):seq[(uint,
 
   return res
 
-proc allocateEntity(table: var ECSWorld, arch:ArchetypeMask):(uint, Range) = allocateEntities(table, 1, arch)[0]
+proc allocateEntities(table: var ECSWorld, n:int, arch:ArchetypeMask):seq[(uint, Range)] =
+  allocateEntities(table, n, arch, getComponentsFromSig(arch))
+
+proc allocateEntity(table: var ECSWorld, arch:ArchetypeMask, components:seq[int]):(uint, Range) = allocateEntities(table, 1, arch, components)[0]
+proc allocateEntity(table: var ECSWorld, n:int, arch:ArchetypeMask):(uint, Range) =
+  allocateEntity(table, arch, getComponentsFromSig(arch))
 
 template activateComponents(table: var ECSWorld, i:int|uint, components:seq[int]) =
   for id in components:

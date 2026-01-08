@@ -45,52 +45,55 @@ type
 # World setup
 # =========================
 
-proc setupWorld(entityCount: int): ECSWorld =
+proc setupWorld(entityCount: int): (ECSWorld, int, int, int) =
   var world: ECSWorld
   new(world)
   new(world.registry)
 
-  world.registerComponent(Position)
-  world.registerComponent(Velocity)
-  world.registerComponent(Acceleration)
+  let posID = world.registerComponent(Position)
+  let velID = world.registerComponent(Velocity)
+  let accID = world.registerComponent(Acceleration)
 
   # Dense archetype: Position + Velocity
+  var comp = @[posID, velID]
   for i in 0..<entityCount:
-    discard createEntity(world, "Position", "Velocity")
+    discard createEntity(world, comp)
 
   for i in 0..<entityCount:
     discard allocateSparseEntity(world, @[0,1])
 
-  return world
+  return (world, posID, velID, accID)
 
 
 # =========================
 # Benchmarks
 # =========================
 
-const ENTITY_COUNT = 10000
+const ENTITY_COUNT = 100
 
 
 # ---------------------------------
 # Entity creation
 # ---------------------------------
-#[]
+
 var world1: ECSWorld
 new(world1)
 new(world1.registry)
-world1.registerComponent(Position)
-world1.registerComponent(Velocity)
+let posId1 = world1.registerComponent(Position)
+let velID1 = world1.registerComponent(Velocity)
 let pos = "Position"
 let vel = "Velocity"
+var comp = @[posID1, velID1]
 benchmark("Create Entities (Position + Velocity)", SAMPLE):
   for i in 0..<ENTITY_COUNT:
-    discard createEntity(world1, pos, vel)
-]#
+    let e = createEntity(world1, comp)
+    world1.deleteEntity(e)
+
 
 # ---------------------------------
 # Dense iteration
 # ---------------------------------
-
+#[
 let world2 = setupWorld(ENTITY_COUNT)
 let posc2 = world2.get(Position)
 let velc2 = world2.get(Velocity)
@@ -111,7 +114,7 @@ benchmark("Dense Iteration (Position + Velocity)", SAMPLE):
     let velby = addr velc2.blocks[bid].data.y
 
     for i in r:
-      posbx[i] += velbx[i]
+      posbx[i] += velbx[i]+1
       posby[i] += velby[i]
 
 let sq2 = world2.sparseQueryCache(query(world2, Position and Velocity))
@@ -127,7 +130,6 @@ benchmark("Sparse Iteration (Position + Velocity)", SAMPLE):
       posby[i] += velby[i]
 
 
-#[
 # ---------------------------------
 # Dense write
 # ---------------------------------
@@ -142,31 +144,22 @@ benchmark("Dense Write (Position update)", SAMPLE):
       p.y += 1
       world.set(i, p)
 
-
+]#
 # ---------------------------------
 # Add component (partition change)
 # ---------------------------------
 
+var (world, posID, velID, accID) = setupWorld(ENTITY_COUNT)
+let toAdd = @[accID]
+let toRem = @[accID]
 benchmark("Add Component (Acceleration)", SAMPLE):
-  let world = setupWorld(ENTITY_COUNT)
 
-  for e in world.entities:
-    if not e.isNil:
-      addComponent(world, e, Acceleration())
+  for i in 0..<world.entities.len:
+    var e = world.entities[i]
+    addComponent(world, e, toAdd)
+    removeComponent(world, e, toAdd)
 
-
-# ---------------------------------
-# Remove component (partition change)
-# ---------------------------------
-
-benchmark("Remove Component (Velocity)", SAMPLE):
-  let world = setupWorld(ENTITY_COUNT)
-
-  for e in world.entities:
-    if not e.isNil:
-      removeComponent(world, e, Velocity)
-
-
+#[
 # ---------------------------------
 # Sparse creation
 # ---------------------------------
@@ -222,4 +215,4 @@ benchmark("Mixed Dense + Sparse Query", SAMPLE):
       discard p.x
 
 ]#
-discard stdout.readLine()
+#discard stdout.readLine()

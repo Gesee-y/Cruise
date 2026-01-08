@@ -22,7 +22,7 @@ type
     entries:seq[ComponentEntry]
     cmap:Table[string, int]
 
-template registerComponent[B](registry:ComponentRegistry) =
+template registerComponent[B](registry:ComponentRegistry):int =
   var frag = newSoAFragArr(B, DEFAULT_BLK_SIZE)
 
   GC_ref(frag)
@@ -91,8 +91,11 @@ template registerComponent[B](registry:ComponentRegistry) =
   entry.deactivateSparseBitOp = deactSparseBit
   entry.activateSparseBitOp = actSparseBit
 
-  registry.cmap[$B] = registry.entries.len
+  let id = registry.entries.len
+  registry.cmap[$B] = id
   registry.entries.add(entry)
+
+  id
 
 proc getEntry(r:ComponentRegistry, i:int):ComponentEntry =
   return r.entries[i]
