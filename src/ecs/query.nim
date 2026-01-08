@@ -15,6 +15,13 @@ type
     includeMask: ArchetypeMask
     excludeMask: ArchetypeMask
 
+  DenseQueryResult = object
+    part:seq[TablePartition]
+
+  sparseQueryResult = object
+    rmask:seq[uint]
+    chunks:seq[uint]
+
 ####################################################################################################################################################
 ################################################################### MASK ITERATOR ##################################################################
 ####################################################################################################################################################
@@ -43,14 +50,9 @@ proc buildQuerySignature(world: ECSWorld, components: seq[QueryComponent]): Quer
         result.excludeMask[layer] = result.excludeMask[layer] or (1.uint shl bitPos)
 
 proc matchesArchetype(sig: QuerySignature, arch: ArchetypeMask): bool =
-  for i in 0..<MAX_COMPONENT_LAYER:
-    # Check if all included components are present
-    if (sig.includeMask[i] and arch[i]) != sig.includeMask[i]:
-      return false
-    
-    # Check if no excluded components are present
-    if (sig.excludeMask[i] and arch[i]) != 0:
-      return false
+  # Check if all included components are present
+  if (sig.includeMask and (arch and not sig.excludeMask)) != sig.includeMask:
+    return false
   
   return true
 
@@ -67,13 +69,23 @@ iterator denseQuery(world: ECSWorld, sig: QuerySignature): (int, HSlice[int, int
       continue
     
     # Iterate through filled zones in this partition
-    for zoneIdx in 0..partition.fill_index:
-      if zoneIdx >= partition.zones.len:
-        break
-      
-      let zone = partition.zones[zoneIdx]
-      if not isEmpty(zone):
-        yield (zone.block_idx, zone.r.s..<zone.r.e)
+    for zone in partition.zones:
+      yield (zone.block_idx, zone.r.s..<zone.r.e)
+
+proc denseQueryCache(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
+  ## Iterate through all partitions that match the query signature
+  ## Returns block index and range for each matching zone
+  
+  for arch, partition in world.archetypes.pairs:
+    if not matchesArchetype(sig, arch):
+      continue
+    
+    result.part.add(partition)
+
+iterator items(qr:DenseQueryResult):(int, HSlice[int, int]) =
+  for partition in qr.part:
+    for zone in partition.zones:
+      yield (zone.block_idx, zone.r.s..<zone.r.e)
 
 proc denseQueryCount(world: ECSWorld, sig: QuerySignature): int =
   ## Count total entities matching the dense query
@@ -152,12 +164,13 @@ iterator sparseQuery(world: ECSWorld, sig: QuerySignature): (int, uint) =
       filterExcludedMasks(resultMask, excludeMasks)
   
     # Iterate through chunks with entities
+    let S = sizeof(uint)*8
     for i in 0..<resultMask.len:
       var m = resultMask[i]
       
       while m != 0:
-        let chunkIdx = countTrailingZeroBits(m)
-        var chunkMask = (1'u shl (sizeof(uint)*8)-1) - 1'u
+        let chunkIdx = i*S + countTrailingZeroBits(m)
+        var chunkMask = (1'u shl S-1) - 1'u
         m = m and (m-1)
 
         for compId in includeIds:
@@ -166,6 +179,67 @@ iterator sparseQuery(world: ECSWorld, sig: QuerySignature): (int, uint) =
           chunkMask = chunkMask and entityMask
 
         yield (chunkIdx, chunkMask)
+
+proc sparseQueryCache(world: ECSWorld, sig: QuerySignature): sparseQueryResult =
+  ## Iterate through sparse entities matching the query
+  ## Returns chunk index and mask iterator for each matching chunk
+  
+  var includeIds: seq[int]
+  var excludeIds: seq[int]
+  
+  for comp in sig.components:
+    if comp.op == qInclude:
+      includeIds.add(comp.id)
+    else:
+      excludeIds.add(comp.id)
+  
+  if includeIds.len > 0:
+  
+    # Get sparse masks for included components
+    let includeMasks = getSparseMasks(world, includeIds)
+  
+    # AND all included masks
+    var resultMask = andMasks(includeMasks)
+  
+    # Filter out excluded components
+    if excludeIds.len > 0:
+      let excludeMasks = getSparseMasks(world, excludeIds)
+      filterExcludedMasks(resultMask, excludeMasks)
+  
+    # Iterate through chunks with entities
+    let S = sizeof(uint)*8
+    var chk = newSeq[uint]()
+    for i in 0..<resultMask.len:
+      var m = resultMask[i]
+      
+      while m != 0:
+        let chunkIdx = i*S + countTrailingZeroBits(m)
+        var chunkMask = (1'u shl S-1) - 1'u
+        m = m and (m-1)
+
+        for compId in includeIds:
+          let entry = world.registry.entries[compId]
+          let entityMask = entry.getSparseChunkMaskOp(entry.rawPointer, chunkIdx)
+          chunkMask = chunkMask and entityMask
+
+        chk.add(chunkMask)
+
+    result.rmask = resultMask
+    result.chunks = chk
+
+iterator items(sr:sparseQueryResult):(int, uint) =
+  var c = 0
+  let S = sizeof(uint)*8
+  for i in 0..<sr.rmask.len:
+    var m = sr.rmask[i]
+      
+    while m != 0:
+      let chunkIdx = i*S + countTrailingZeroBits(m)
+      var chunkMask = sr.chunks[c]
+      m = m and (m-1)
+
+      yield (chunkIdx, chunkMask)
+      c += 1
 
 proc sparseQueryCount(world: ECSWorld, sig: QuerySignature): int =
   ## Count total entities matching the sparse query

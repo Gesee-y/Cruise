@@ -10,7 +10,7 @@ type
 proc newEntity():Entity =
   new(result)
 
-template `[]`[N,T,B](f: SoAFragmentArray, e:Entity):untyped = f[e.id]
-template `[]=`[N,T,B](f: SoAFragmentArray, e:Entity, v:B) = 
+template `[]`[N,T,B](f: SoAFragmentArray[N,T,B], e:Entity):untyped = f[e.id]
+template `[]=`[N,T,B](f:var SoAFragmentArray[N,T,B], e:Entity, v:B) = 
   f[e.id] = v
-
+template `==`(e1,e2:Entity):bool = e1.id == e2.id
