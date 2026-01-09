@@ -45,3 +45,10 @@ Here we don't care about data organization, entities are just putted where space
 
 Querying is about intersecting the hibitsets of the components to match. and iteration get first the non zero bit to access matching chunks using trailing zeros count and iterate through matching entities using trailing zeros count. This drastically reduce branching during iteration, allows to skipping up to 4096 entities in one instruction.
 
+## Benchmarks
+
+Iteration 1M entites
+
+Cruise ECS (dense) = 1.5ns per entities
+Cruise ECS (sparse) = 4.8ns per entities
+MiniECS = 4.2ns per entities

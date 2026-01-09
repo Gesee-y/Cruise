@@ -144,7 +144,6 @@ proc allocateNewBlocks(table: var ECSWorld, count:int, res: var seq[(uint, Range
   let pl = partition.zones.len
   
   partition.zones.setLen(pl + s+1)
-  table.archetypes[arch] = partition
   upsize(table, s+1)
 
   for i in 0..s:
@@ -174,16 +173,18 @@ proc allocateNewBlocks(table: var ECSWorld, count:int, res: var seq[(uint, Range
 
 proc allocateEntities(table: var ECSWorld, n:int, arch:ArchetypeMask, components:seq[int]):seq[(uint, Range)] =
   var res:seq[(uint, Range)]
+  var archNode = table.archGraph.findArchetypeFast(arch)
 
-  if not table.archetypes.haskey(arch):
+  if archNode.partition.isNil:
     var partition:TablePartition
     new(partition)
     partition.components = components
+    archNode.partition = partition
 
     return allocateNewBlocks(table, n, res, partition, arch, components)
 
   var m = n
-  var partition = table.archetypes[arch]
+  var partition = archNode.partition
 
   while m > 0 and partition.fill_index < partition.zones.len:
     let id = partition.zones[partition.fill_index].block_idx
@@ -348,9 +349,10 @@ proc changePartition(table: var ECSWorld, i:int|uint, oldArch:uint16, newArch:Ar
   if newPartition.zones.len == 0:
     newPartition.zones.setLen(1)
     let bc = table.blockCount
-    newPartition.zones[0].block_idx = bc
-    newPartition.zones[0].r.s = 0
-    newPartition.zones[0].r.e = 0
+    var nZone = addr newPartition.zones[0]
+    nZone.block_idx = bc
+    nZone.r.s = 0
+    nZone.r.e = 0
     for id in newPartition.components:
       var entry = table.registry.entries[id]
       entry.resizeOp(entry.rawPointer, table.blockCount+1)
@@ -358,10 +360,11 @@ proc changePartition(table: var ECSWorld, i:int|uint, oldArch:uint16, newArch:Ar
 
     table.blockCount += 1
   
-  table.entities.setLen((table.blockCount+1)*DEFAULT_BLK_SIZE)
+    table.entities.setLen((table.blockCount+1)*DEFAULT_BLK_SIZE)
 
-  let new_id = (newPartition.zones[newPartition.fill_index].r.e mod DEFAULT_BLK_SIZE).uint
-  let bid = newPartition.zones[newPartition.fill_index].block_idx.uint
+  var newZone = addr newPartition.zones[newPartition.fill_index]
+  let new_id = (newZone.r.e mod DEFAULT_BLK_SIZE).uint
+  let bid = newZone.block_idx.uint
 
   if oldComponents.len < newComponents.len:
     for id in oldComponents:
@@ -377,8 +380,8 @@ proc changePartition(table: var ECSWorld, i:int|uint, oldArch:uint16, newArch:Ar
       var entry = table.registry.entries[id]
       entry.overrideValsOp(entry.rawPointer, i.uint, (blast.uint shl BLK_SHIFT) or last.uint)
   
-  newPartition.zones[newPartition.fill_index].r.e += 1
-  if isFull(newPartition.zones[newPartition.fill_index]):
+  newZone.r.e += 1
+  if isFull(newZone[]):
     newPartition.fill_index += 1
 
   return (last + blast*DEFAULT_BLK_SIZE, new_id, bid)

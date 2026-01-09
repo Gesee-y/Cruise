@@ -132,12 +132,42 @@ macro toObjectMod(T:typedesc, c:untyped, idx:untyped, v:untyped) =
   return quote("@") do:
     `@res`
 
+macro toObjectOverride(T:typedesc, c:untyped, idx:untyped, v:untyped) =
+  var res = newNimNode(nnkStmtList)
+  let ty = T.getType()[1].getType()[2]
+
+  for f in ty:
+    var asg = newNimNode(nnkAsgn)
+    var brack = newNimNode(nnkBracketExpr)
+    var brack2 = newNimNode(nnkBracketExpr)
+    var dot1 = newNimNode(nnkDotExpr)
+    var dot2 = newNimNode(nnkDotExpr)
+
+    dot1.add(c)
+    dot1.add(ident(f.strVal))
+    brack.add(dot1)
+    brack.add(idx)
+    asg.add(brack)
+
+    dot2.add(v)
+    dot2.add(ident(f.strVal))
+    brack2.add(dot2)
+    brack2.add(idx)
+    asg.add(brack2)
+    res.add(asg)
+
+  return quote("@") do:
+    `@res`
+
 template swapVals(b: untyped, i, j:int|uint) =
   let tmp = b[i]
   b[i] = b[j]
   b[j] = tmp
 
-template overrideVals(b: untyped, i, j:int|uint) =
+template overrideVals[N,T,B](b: SoAFragmentArray[N,T,B], i, j:int|uint) =
+  b[i] = b[j]
+
+template overrideVals[N,T,B](b: SoAFragment[N,T,B], i, j:int|uint) =
   b[i] = b[j]
 
 proc getDataType[N,T,B](f: SoAFragmentArray[N,T,B]):typedesc[B] = B

@@ -76,11 +76,13 @@ proc denseQueryCache(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
   ## Iterate through all partitions that match the query signature
   ## Returns block index and range for each matching zone
   
-  for arch, partition in world.archetypes.pairs:
+  for archNode in world.archGraph.nodes:
+    let arch = archNode.mask
     if not matchesArchetype(sig, arch):
       continue
     
-    result.part.add(partition)
+    if not archNode.partition.isNil: 
+      result.part.add(archNode.partition)
 
 iterator items(qr:DenseQueryResult):(int, HSlice[int, int]) =
   for partition in qr.part:
