@@ -155,8 +155,7 @@ let toRem = @[accID]
 echo toAdd
 benchmark("Add Component (Acceleration)", SAMPLE):
 
-  for i in 0..<entities.len:
-    var e = entities[i]
+  for e in entities:
     addComponent(world, e, toAdd)
     removeComponent(world, e, toAdd)
 

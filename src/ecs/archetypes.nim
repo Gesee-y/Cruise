@@ -1,6 +1,8 @@
+######################################################################################################################################
+################################################### ECS ARCHETYPE GRAPH ##############################################################
+######################################################################################################################################
 
 type
-  # Node ultra-compact du graphe
   ArchetypeNode* = ref object
     id: uint16
     mask: ArchetypeMask
@@ -16,9 +18,6 @@ type
     maskToId: Table[ArchetypeMask, uint16]
     lastMask: ArchetypeMask
     lastNode: ArchetypeNode
-
-
-# ==================== Gestion des edges bitmap ====================
 
 {.push inline.}
 
@@ -72,8 +71,6 @@ proc initArchetypeGraph*(): ArchetypeGraph =
   result.nodes = @[result.root]
   result.maskToId[emptyMask] = 0
 
-# ==================== Création de nodes ====================
-
 proc createNode(graph: var ArchetypeGraph, mask: ArchetypeMask): ArchetypeNode {.inline.} =
   let id = graph.nodes.len.uint16
   
@@ -87,41 +84,32 @@ proc createNode(graph: var ArchetypeGraph, mask: ArchetypeMask): ArchetypeNode {
   graph.nodes.add(result)
   graph.maskToId[mask] = id
 
-# ==================== Navigation optimisée ====================
-
 proc addComponent*(graph: var ArchetypeGraph, 
                    node: ArchetypeNode, 
                    comp: ComponentId): ArchetypeNode {.inline.} =
-  # Fast path: edge existe déjà
   if node.hasEdge(comp):
     return node.getEdge(comp)
   
-  # Slow path: créer le nouveau node
   let newMask = node.mask.withComponent(comp)
   
-  # Vérifier si l'archétype existe déjà
   if newMask in graph.maskToId:
     result = graph.nodes[graph.maskToId[newMask]]
   else:
     result = graph.createNode(newMask)
   
-  # Établir les connexions bidirectionnelles
   node.setEdgePtr(comp, result)
   result.setRemoveEdgePtr(comp, node)
 
 proc removeComponent*(graph: var ArchetypeGraph, 
                       node: ArchetypeNode, 
                       comp: ComponentId): ArchetypeNode {.inline.} =
-  # Vérifier si le composant existe
   if not node.mask.hasComponent(comp):
     return node
   
-  # Fast path: edge existe
   result = node.getRemoveEdge(comp)
   if result != nil:
     return result
   
-  # Slow path: créer/trouver le node
   let newMask = node.mask.withoutComponent(comp)
   
   if newMask in graph.maskToId:
@@ -129,15 +117,11 @@ proc removeComponent*(graph: var ArchetypeGraph,
   else:
     result = graph.createNode(newMask)
   
-  # Établir les connexions
   node.setRemoveEdgePtr(comp, result)
   result.setEdgePtr(comp, node)
 
-# ==================== Recherche d'archétypes ====================
-
 proc findArchetype*(graph: var ArchetypeGraph, 
                     components: openArray[ComponentId]): ArchetypeNode =
-  # Construction incrémentale depuis root
   result = graph.root
   for comp in components:
     result = graph.addComponent(result, comp)
@@ -162,8 +146,6 @@ proc findArchetypeFast*(graph: var ArchetypeGraph,
   else:
     result = graph.findArchetype(mask.getComponents())
 
-# ==================== Accesseurs ====================
-
 {.push inline.}
 
 proc setPartition*(node: ArchetypeNode, partition: TablePartition) =
@@ -185,8 +167,6 @@ proc nodeCount*(graph: ArchetypeGraph): int =
   graph.nodes.len
 
 {.pop.}
-
-# ==================== Utilitaires ====================
 
 proc `$`*(mask: ArchetypeMask): string =
   result = "{"
