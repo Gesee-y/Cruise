@@ -1,0 +1,213 @@
+
+type
+  # Node ultra-compact du graphe
+  ArchetypeNode* = ref object
+    id: uint16
+    mask: ArchetypeMask
+    partition: TablePartition
+    edges: ptr UncheckedArray[ArchetypeNode]
+    removeEdges: ptr UncheckedArray[ArchetypeNode]
+    edgeMask: array[4, uint64]
+    componentIds: seq[ComponentId]
+  
+  ArchetypeGraph* = object
+    root: ArchetypeNode
+    nodes: seq[ArchetypeNode]
+    maskToId: Table[ArchetypeMask, uint16]
+    lastMask: ArchetypeMask
+    lastNode: ArchetypeNode
+
+
+# ==================== Gestion des edges bitmap ====================
+
+{.push inline.}
+
+proc hasEdge(node: ArchetypeNode, comp: ComponentId): bool =
+  let idx = comp shr 6
+  let bit = comp and 63
+  return (node.edgeMask[idx] and (1'u64 shl bit)) != 0
+
+proc setEdge(node: ArchetypeNode, comp: ComponentId) =
+  let idx = comp shr 6
+  let bit = comp and 63
+  node.edgeMask[idx] = node.edgeMask[idx] or (1'u64 shl bit)
+
+proc getEdge(node: ArchetypeNode, comp: ComponentId): ArchetypeNode =
+  if node.edges == nil: return nil
+  return node.edges[comp]
+
+proc setEdgePtr(node: ArchetypeNode, comp: ComponentId, target: ArchetypeNode) =
+  if node.edges == nil:
+    node.edges = cast[ptr UncheckedArray[ArchetypeNode]](
+      alloc0(MAX_COMPONENTS * sizeof(ArchetypeNode))
+    )
+  node.edges[comp] = target
+  node.setEdge(comp)
+
+proc getRemoveEdge(node: ArchetypeNode, comp: ComponentId): ArchetypeNode =
+  if node.removeEdges == nil: return nil
+  return node.removeEdges[comp]
+
+proc setRemoveEdgePtr(node: ArchetypeNode, comp: ComponentId, target: ArchetypeNode) =
+  if node.removeEdges == nil:
+    node.removeEdges = cast[ptr UncheckedArray[ArchetypeNode]](
+      alloc0(MAX_COMPONENTS * sizeof(ArchetypeNode))
+    )
+  node.removeEdges[comp] = target
+
+{.pop.}
+
+# ==================== Initialisation ====================
+
+proc initArchetypeGraph*(): ArchetypeGraph =
+  var emptyMask: ArchetypeMask
+  
+  result.root = ArchetypeNode(
+    id: 0,
+    mask: emptyMask,
+    partition: nil,
+    componentIds: @[]
+  )
+  
+  result.nodes = @[result.root]
+  result.maskToId[emptyMask] = 0
+
+# ==================== Création de nodes ====================
+
+proc createNode(graph: var ArchetypeGraph, mask: ArchetypeMask): ArchetypeNode {.inline.} =
+  let id = graph.nodes.len.uint16
+  
+  result = ArchetypeNode(
+    id: id,
+    mask: mask,
+    partition: nil,
+    componentIds: mask.getComponents()
+  )
+  
+  graph.nodes.add(result)
+  graph.maskToId[mask] = id
+
+# ==================== Navigation optimisée ====================
+
+proc addComponent*(graph: var ArchetypeGraph, 
+                   node: ArchetypeNode, 
+                   comp: ComponentId): ArchetypeNode {.inline.} =
+  # Fast path: edge existe déjà
+  if node.hasEdge(comp):
+    return node.getEdge(comp)
+  
+  # Slow path: créer le nouveau node
+  let newMask = node.mask.withComponent(comp)
+  
+  # Vérifier si l'archétype existe déjà
+  if newMask in graph.maskToId:
+    result = graph.nodes[graph.maskToId[newMask]]
+  else:
+    result = graph.createNode(newMask)
+  
+  # Établir les connexions bidirectionnelles
+  node.setEdgePtr(comp, result)
+  result.setRemoveEdgePtr(comp, node)
+
+proc removeComponent*(graph: var ArchetypeGraph, 
+                      node: ArchetypeNode, 
+                      comp: ComponentId): ArchetypeNode {.inline.} =
+  # Vérifier si le composant existe
+  if not node.mask.hasComponent(comp):
+    return node
+  
+  # Fast path: edge existe
+  result = node.getRemoveEdge(comp)
+  if result != nil:
+    return result
+  
+  # Slow path: créer/trouver le node
+  let newMask = node.mask.withoutComponent(comp)
+  
+  if newMask in graph.maskToId:
+    result = graph.nodes[graph.maskToId[newMask]]
+  else:
+    result = graph.createNode(newMask)
+  
+  # Établir les connexions
+  node.setRemoveEdgePtr(comp, result)
+  result.setEdgePtr(comp, node)
+
+# ==================== Recherche d'archétypes ====================
+
+proc findArchetype*(graph: var ArchetypeGraph, 
+                    components: openArray[ComponentId]): ArchetypeNode =
+  # Construction incrémentale depuis root
+  result = graph.root
+  for comp in components:
+    result = graph.addComponent(result, comp)
+
+proc findArchetype*(graph: var ArchetypeGraph, 
+                    mask: ArchetypeMask): ArchetypeNode =
+  if mask in graph.maskToId:
+    return graph.nodes[graph.maskToId[mask]]
+  
+  return graph.findArchetype(mask.getComponents())
+
+proc findArchetypeFast*(graph: var ArchetypeGraph, 
+                        mask: ArchetypeMask): ArchetypeNode {.inline.} =
+  if graph.lastMask == mask:
+    return graph.lastNode
+  
+  let idPtr = graph.maskToId.getOrDefault(mask, uint16.high)
+  if idPtr != uint16.high:
+    result = graph.nodes[idPtr]
+    graph.lastMask = mask
+    graph.lastNode = result
+  else:
+    result = graph.findArchetype(mask.getComponents())
+
+# ==================== Accesseurs ====================
+
+{.push inline.}
+
+proc setPartition*(node: ArchetypeNode, partition: TablePartition) =
+  node.partition = partition
+
+proc getPartition*(node: ArchetypeNode): TablePartition =
+  node.partition
+
+proc getMask*(node: ArchetypeNode): ArchetypeMask =
+  node.mask
+
+proc getComponentIds*(node: ArchetypeNode): seq[ComponentId] =
+  node.componentIds
+
+proc componentCount*(node: ArchetypeNode): int =
+  node.componentIds.len
+
+proc nodeCount*(graph: ArchetypeGraph): int =
+  graph.nodes.len
+
+{.pop.}
+
+# ==================== Utilitaires ====================
+
+proc `$`*(mask: ArchetypeMask): string =
+  result = "{"
+  let comps = mask.getComponents()
+  for i, comp in comps:
+    if i > 0:
+      result.add(", ")
+    result.add($comp)
+  result.add("}")
+
+proc `$`*(node: ArchetypeNode): string =
+  "Node[" & $node.id & "]" & $node.mask
+
+iterator archetypes*(graph: ArchetypeGraph): ArchetypeNode =
+  for node in graph.nodes:
+    yield node
+
+proc warmupTransitions*(graph: var ArchetypeGraph, 
+                        baseComponents: openArray[ComponentId],
+                        transitionComponents: openArray[ComponentId]) =
+  let baseNode = graph.findArchetype(baseComponents)
+  for comp in transitionComponents:
+    discard graph.addComponent(baseNode, comp)
+

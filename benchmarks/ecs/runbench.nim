@@ -1,5 +1,5 @@
 include "../../src/ecs/table.nim"
-import times, os, strutils, math
+import times, os
 
 # =========================
 # Benchmark template
@@ -45,10 +45,8 @@ type
 # World setup
 # =========================
 
-proc setupWorld(entityCount: int): (ECSWorld, int, int, int) =
-  var world: ECSWorld
-  new(world)
-  new(world.registry)
+proc setupWorld(entityCount: int): (ECSWorld, seq[ptr Entity], int, int, int) =
+  var world = newECSWorld()
 
   let posID = world.registerComponent(Position)
   let velID = world.registerComponent(Velocity)
@@ -56,13 +54,14 @@ proc setupWorld(entityCount: int): (ECSWorld, int, int, int) =
 
   # Dense archetype: Position + Velocity
   var comp = @[posID, velID]
+  var entities: seq[ptr Entity]
   for i in 0..<entityCount:
-    discard createEntity(world, comp)
+    entities.add(createEntity(world, comp))
 
   for i in 0..<entityCount:
     discard allocateSparseEntity(world, @[0,1])
 
-  return (world, posID, velID, accID)
+  return (world, entities, posID, velID, accID)
 
 
 # =========================
@@ -76,17 +75,18 @@ const ENTITY_COUNT = 100
 # Entity creation
 # ---------------------------------
 
-var world1: ECSWorld
-new(world1)
-new(world1.registry)
+var world1 = newECSWorld()
 let posId1 = world1.registerComponent(Position)
 let velID1 = world1.registerComponent(Velocity)
+let accID1 = world1.registerComponent(Acceleration)
+var pp = world1.get(Position)
 let pos = "Position"
 let vel = "Velocity"
-var comp = @[posID1, velID1]
+var comp = @[posID1, velID1, accID1]
 benchmark("Create Entities (Position + Velocity)", SAMPLE):
   for i in 0..<ENTITY_COUNT:
     let e = createEntity(world1, comp)
+    pp[e] = Position(x:1, y:1)
     world1.deleteEntity(e)
 
 
@@ -143,19 +143,20 @@ benchmark("Dense Write (Position update)", SAMPLE):
       p.x += 1
       p.y += 1
       world.set(i, p)
-
 ]#
+
 # ---------------------------------
 # Add component (partition change)
 # ---------------------------------
 
-var (world, posID, velID, accID) = setupWorld(ENTITY_COUNT)
+var (world, entities, posID, velID, accID) = setupWorld(ENTITY_COUNT)
 let toAdd = @[accID]
 let toRem = @[accID]
+echo toAdd
 benchmark("Add Component (Acceleration)", SAMPLE):
 
-  for i in 0..<world.entities.len:
-    var e = world.entities[i]
+  for i in 0..<entities.len:
+    var e = entities[i]
     addComponent(world, e, toAdd)
     removeComponent(world, e, toAdd)
 

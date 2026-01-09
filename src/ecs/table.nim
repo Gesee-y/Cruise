@@ -2,7 +2,7 @@
 ######################################################################## ECS TABLE #################################################################
 ####################################################################################################################################################
 
-import tables, bitops, typetraits
+import tables, bitops, typetraits, hashes
 
 const
   MAX_COMPONENT_LAYER = 4
@@ -16,6 +16,7 @@ type
 include "fragment.nim"
 include "registry.nim"
 include "entity.nim"
+include "mask.nim"
 
 type
   TableColumn[N:static int,T,B] = ref object
@@ -31,11 +32,15 @@ type
     components:seq[int]
     fill_index:int
 
+include "archetypes.nim"
+
+type
   ECSWorld = ref object
     registry:ComponentRegistry
     entities:seq[Entity]
     sparse_entities:seq[Entity]
     archetypes:Table[ArchetypeMask, TablePartition]
+    archGraph:ArchetypeGraph
     pooltype:Table[string, int]
     free_list:seq[uint]
     max_index:int
@@ -56,7 +61,13 @@ template newTableColumn[N,T,B](f:SoAFragmentArray[N,T,B]):untyped =
   var res = TableColumn[N,T,B](components:f, mask:m)
   res
 
-include "mask.nim"
+proc newECSWorld():ECSWorld =
+  var w:ECSWorld
+  new(w)
+  new(w.registry)
+  w.archGraph = initArchetypeGraph()
+
+  return w
 
 ####################################################################################################################################################
 ####################################################################### OPERATIONS #################################################################
@@ -114,6 +125,15 @@ proc createPartition(table: var ECSWorld, arch:ArchetypeMask):TablePartition =
     table.archetypes[arch] = partition
 
   return table.archetypes[arch]
+
+proc createPartition(table: var ECSWorld, arch:ArchetypeNode):TablePartition =
+  if arch.partition.isNil:
+    var partition:TablePartition
+    new(partition)
+    partition.components = cast[seq[int]](arch.componentIds)
+    arch.partition = partition
+
+  return arch.partition
 
 proc allocateNewBlocks(table: var ECSWorld, count:int, res: var seq[(uint, Range)], 
   partition:var TablePartition, arch:ArchetypeMask, components:seq[int]):seq[(uint, Range)] =
@@ -188,8 +208,44 @@ proc allocateEntities(table: var ECSWorld, n:int, arch:ArchetypeMask, components
 proc allocateEntities(table: var ECSWorld, n:int, arch:ArchetypeMask):seq[(uint, Range)] =
   allocateEntities(table, n, arch, getComponentsFromSig(arch))
 
-proc allocateEntity(table: var ECSWorld, arch:ArchetypeMask, components:seq[int]):(uint, Range) = allocateEntities(table, 1, arch, components)[0]
-proc allocateEntity(table: var ECSWorld, n:int, arch:ArchetypeMask):(uint, Range) =
+proc allocateEntity(table: var ECSWorld, arch:ArchetypeMask, components:seq[int]):(uint, int, uint16) =
+  var partition:TablePartition
+  var archNode = table.archGraph.findArchetypeFast(arch)
+
+  if archNode.partition.isNil:
+    new(partition)
+    partition.components = components
+    archNode.partition = partition
+  
+  partition = archNode.partition
+  
+  var fill_index = partition.fill_index
+
+  if fill_index >= partition.zones.len:
+    partition.zones.setLen(fill_index+1)
+    upsize(table, 1)
+
+    for id in components:
+      var entry = table.registry.entries[id]
+      entry.newBlockAtOp(entry.rawPointer, table.blockCount)
+
+    partition.zones[fill_index].block_idx = table.blockCount
+    table.blockCount += 1
+
+    table.entities.setLen((table.blockCount+1)*DEFAULT_BLK_SIZE)
+
+  var zone = addr partition.zones[fill_index]
+  let id = zone.block_idx
+  let e = zone.r.e
+
+  zone.r.e += 1
+    
+  if isFull(partition.zones[fill_index]):
+    partition.fill_index += 1
+
+  return (id.uint, e, archNode.id)
+
+proc allocateEntity(table: var ECSWorld, n:int, arch:ArchetypeMask):(uint, int, uint16) =
   allocateEntity(table, arch, getComponentsFromSig(arch))
 
 template activateComponents(table: var ECSWorld, i:int|uint, components:seq[int]) =
@@ -246,40 +302,48 @@ proc allocateSparseEntities(table: var ECSWorld, count:int, components:seq[int])
 
 proc allocateSparseEntity(table: var ECSWorld, components:seq[int]):int = allocateSparseEntities(table, 1, components)[0].e-1
 
-proc deleteRow(table: var ECSWorld, i:int, arch:ArchetypeMask):uint =
-  let partition = table.archetypes[arch]
+proc deleteRow(table: var ECSWorld, i:int, arch:uint16):uint =
+  let archNode = table.archGraph.nodes[arch]
+  let partition = archNode.partition
   if partition.zones.len <= partition.fill_index:
     partition.fill_index -= 1
 
-  let last = partition.zones[partition.fill_index].r.e-1
-  let bid = partition.zones[partition.fill_index].block_idx.uint
-  
-  for id in partition.components:
-    var entry = table.registry.entries[id]
-    entry.overrideValsOp(entry.rawPointer, makeId(i), makeId(last))
+  var zone = addr partition.zones[partition.fill_index]
 
-  partition.zones[partition.fill_index].r.e -= 1
+  let last = zone.r.e-1
+  let bid = zone.block_idx.uint
+
+  if last != i:
+    for id in partition.components:
+      var entry = table.registry.entries[id]
+      entry.overrideValsOp(entry.rawPointer, makeId(i), makeId(last))
+
+  zone.r.e -= 1
 
   return last.uint+bid*DEFAULT_BLK_SIZE
+
+proc deleteRow(table: var ECSWorld, i:int, arch:ArchetypeMask):uint =
+  let archNode = table.archGraph.findArchetypeFast(arch)
+  return deleteRow(table, i, archNode.id)
 
 proc deleteSparseRow(table: var ECSWorld, i:uint, components:seq[int]) =
   table.free_list.add(i)
   deactivateComponentsSparse(table, i, components)
   
-proc changePartition(table: var ECSWorld, i:int|uint, oldArch:ArchetypeMask, newArch:ArchetypeMask):(int, uint, uint) =
-  var oldPartition = table.archetypes[oldArch]
-
+proc changePartition(table: var ECSWorld, i:int|uint, oldArch:uint16, newArch:ArchetypeNode):(int, uint, uint) =
+  var oldPartition = table.archGraph.nodes[oldArch].partition
   var newPartition = createPartition(table, newArch)
   var oldComponents = oldPartition.components
   var newComponents = newPartition.components
 
-  if isempty(oldPartition.zones[oldPartition.fill_index]):
+  if isEmpty(oldPartition.zones[oldPartition.fill_index]):
     oldPartition.fill_index -= 1
 
-  let last = oldPartition.zones[oldPartition.fill_index].r.e-1
-  let blast = oldPartition.zones[oldPartition.fill_index].block_idx
+  var oldZone = addr oldPartition.zones[oldPartition.fill_index]
+  let last = oldZone.r.e-1
+  let blast = oldZone.block_idx
 
-  oldPartition.zones[oldPartition.fill_index].r.e -= 1
+  oldZone.r.e -= 1
 
   if newPartition.zones.len == 0:
     newPartition.zones.setLen(1)
@@ -308,10 +372,11 @@ proc changePartition(table: var ECSWorld, i:int|uint, oldArch:ArchetypeMask, new
       var entry = table.registry.entries[id]
       entry.overrideValsOp(entry.rawPointer, (bid shl BLK_SHIFT) or new_id, i.uint)
 
-  for id in oldComponents:
-    var entry = table.registry.entries[id]
-    entry.overrideValsOp(entry.rawPointer, i.uint, (blast.uint shl BLK_SHIFT) or last.uint)
-
+  if (i and BLK_MASK).int != last:
+    for id in oldComponents:
+      var entry = table.registry.entries[id]
+      entry.overrideValsOp(entry.rawPointer, i.uint, (blast.uint shl BLK_SHIFT) or last.uint)
+  
   newPartition.zones[newPartition.fill_index].r.e += 1
   if isFull(newPartition.zones[newPartition.fill_index]):
     newPartition.fill_index += 1

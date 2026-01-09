@@ -11,7 +11,7 @@ type
     newSparseBlockOp: proc(p:pointer, offset:int, m:uint)
     activateBitOp: proc (p:pointer, i:int)
     deactivateBitOp: proc (p:pointer, i:int)
-    overrideValsOp: proc (p:pointer, i:uint, j:uint)
+    overrideValsOp: proc (p:pointer, i:uint, j:uint) {.inline.}
     getSparseMaskOp: proc (p:pointer):seq[uint]
     getSparseChunkMaskOp: proc(p:pointer, i:int):uint
     setSparseMaskOp: proc (p:pointer, m:seq[uint])
@@ -52,7 +52,7 @@ template registerComponent[B](registry:ComponentRegistry):int =
     var fr = castTo(p, B, DEFAULT_BLK_SIZE)
     fr.deactivateBit(i)
 
-  let overv = proc (p:pointer, i,j:uint) =
+  let overv = proc (p:pointer, i,j:uint) {.inline.} =
     var fr = castTo(p, B, DEFAULT_BLK_SIZE)
     fr.overrideVals(i, j)
 
