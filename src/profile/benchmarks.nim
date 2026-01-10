@@ -101,10 +101,13 @@ proc calculateStatistics*(values: seq[float]): Statistics =
   var variance = 0.0
   for v in sorted:
     sum += v
+    
+  result.mean = sum / sorted.len.float
+
+  for v in sorted:
     let diff = v - result.mean
     variance += diff * diff
 
-  result.mean = sum / sorted.len.float
   result.stddev = sqrt(variance/sorted.len.float)
 
   let mid = sorted.len div 2

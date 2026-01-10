@@ -14,8 +14,8 @@ type
   ArchetypeMask = array[MAX_COMPONENT_LAYER, uint]
 
 include "fragment.nim"
-include "registry.nim"
 include "entity.nim"
+include "registry.nim"
 include "mask.nim"
 
 type
@@ -61,11 +61,12 @@ template newTableColumn[N,T,B](f:SoAFragmentArray[N,T,B]):untyped =
   var res = TableColumn[N,T,B](components:f, mask:m)
   res
 
-proc newECSWorld():ECSWorld =
+proc newECSWorld(max_entities:int=1000000):ECSWorld =
   var w:ECSWorld
   new(w)
   new(w.registry)
   w.archGraph = initArchetypeGraph()
+  w.entities = newSeqofCap[Entity](max_entities)
 
   return w
 
@@ -79,6 +80,9 @@ proc isFull(t:TableRange):bool = t.r.e - t.r.s == DEFAULT_BLK_SIZE
 proc getComponentId(world:ECSWorld, t:typedesc):int =
   return world.registry.cmap[$t]
 
+proc getArchetype(w:ECSWorld, e:SomeEntity):ArchetypeNode =
+  return w.archGraph.nodes[e.archetypeId]
+
 proc makeId(info:(uint, Range)):uint =
   return ((info[0]).uint shl 32) or ((info[1].e-1) mod DEFAULT_BLK_SIZE).uint
 
@@ -89,7 +93,7 @@ proc makeId(i:int):uint =
   return (bid.uint shl BLK_SHIFT) or idx.uint
 
 proc registerComponent[T](world:var ECSWorld, t:typedesc[T]):int =
-  registerComponent[T](world.registry)
+  registerComponent(world.registry, T)
 
 template get[T](world:ECSWorld,t:typedesc[T]):untyped =
   let id = world.getComponentId(t)
@@ -337,7 +341,7 @@ proc changePartition(table: var ECSWorld, i:int|uint, oldArch:uint16, newArch:Ar
   var oldComponents = oldPartition.components
   var newComponents = newPartition.components
 
-  if isEmpty(oldPartition.zones[oldPartition.fill_index]):
+  if oldPartition.zones.len <= oldPartition.fill_index or isEmpty(oldPartition.zones[oldPartition.fill_index]):
     oldPartition.fill_index -= 1
 
   var oldZone = addr oldPartition.zones[oldPartition.fill_index]
@@ -346,10 +350,11 @@ proc changePartition(table: var ECSWorld, i:int|uint, oldArch:uint16, newArch:Ar
 
   oldZone.r.e -= 1
 
-  if newPartition.zones.len == 0:
-    newPartition.zones.setLen(1)
+  if newPartition.zones.len <= newPartition.fill_index:
+    let fi = newPartition.fill_index
+    newPartition.zones.setLen(fi+1)
     let bc = table.blockCount
-    var nZone = addr newPartition.zones[0]
+    var nZone = addr newPartition.zones[fi]
     nZone.block_idx = bc
     nZone.r.s = 0
     nZone.r.e = 0
@@ -386,6 +391,73 @@ proc changePartition(table: var ECSWorld, i:int|uint, oldArch:uint16, newArch:Ar
 
   return (last + blast*DEFAULT_BLK_SIZE, new_id, bid)
 
+proc changePartition(table: var ECSWorld, ids:var openArray[ptr Entity], oldArch:uint16, newArch:ArchetypeNode) =
+  var oldPartition = table.archGraph.nodes[oldArch].partition
+  var newPartition = createPartition(table, newArch)
+  var oldComponents = oldPartition.components
+  var newComponents = newPartition.components
+
+  if oldPartition.zones.len <= oldPartition.fill_index:
+    oldPartition.fill_index -= 1
+
+  var m = ids.len
+  var ofil = oldPartition.fill_index
+  var toSwap, toAdd:seq[uint]
+  
+  while toSwap.len < ids.len:
+    let zone = addr oldPartition.zones[ofil]
+    let r = max(0, zone.r.e - m)..<zone.r.e
+    let bid = zone.block_idx.uint
+
+    m -= r.b - r.a + 1
+
+    for i in r:
+      toSwap.add((bid shl BLK_SHIFT) or i.uint)
+
+    zone.r.e = r.a
+    ofil -= 1 * (r.a == 0 and toSwap.len < ids.len).int
+
+  oldPartition.fill_index = ofil
+
+  var nfil = newPartition.fill_index
+  m = ids.len
+  while toAdd.len < ids.len:
+    if nfil >= newPartition.zones.len:
+      newPartition.zones.setLen(nfil+1)
+      newPartition.zones[nfil].block_idx = table.blockCount
+
+      for id in newPartition.components:
+        var entry = table.registry.entries[id]
+        entry.resizeOp(entry.rawPointer, table.blockCount+1)
+        entry.newBlockAtOp(entry.rawPointer, table.blockCount)
+
+      table.blockCount += 1
+      table.entities.setLen((table.blockCount+1)*DEFAULT_BLK_SIZE)
+
+    var zone = addr newPartition.zones[nfil]
+    let r = zone.r.e..<min(zone.r.e+m,DEFAULT_BLK_SIZE)
+    zone.r.e = r.b+1
+    let bid = zone.block_idx.uint
+
+    nfil += 1*(r.b == DEFAULT_BLK_SIZE-1).int
+
+    for i in r:
+      toAdd.add((bid shl BLK_SHIFT) or i.uint)
+
+    m -= r.b - r.a + 1
+
+  newPartition.fill_index = nfil
+
+  if oldComponents.len < newComponents.len:
+    for id in oldComponents:
+      var entry = table.registry.entries[id]
+      var ents = addr table.entities
+      entry.overrideValsBatchOp(entry.rawPointer, newArch.id, ents, ids, toSwap, toAdd)
+  else:
+    for id in newComponents:
+      var entry = table.registry.entries[id]
+      var ents = addr table.entities
+      entry.overrideValsBatchOp(entry.rawPointer, newArch.id, ents, ids, toSwap, toAdd)
 
 include "query.nim"
 include "operations.nim"

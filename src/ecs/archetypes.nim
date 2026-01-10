@@ -11,8 +11,10 @@ type
     removeEdges: ptr UncheckedArray[ArchetypeNode]
     edgeMask: array[4, uint64]
     componentIds: seq[ComponentId]
+    lastEdge:int
+    lastRemEdge:int
   
-  ArchetypeGraph* = object
+  ArchetypeGraph* = ref object
     root: ArchetypeNode
     nodes: seq[ArchetypeNode]
     maskToId: Table[ArchetypeMask, uint16]
@@ -56,16 +58,17 @@ proc setRemoveEdgePtr(node: ArchetypeNode, comp: ComponentId, target: ArchetypeN
 
 {.pop.}
 
-# ==================== Initialisation ====================
-
 proc initArchetypeGraph*(): ArchetypeGraph =
   var emptyMask: ArchetypeMask
+  new(result)
   
   result.root = ArchetypeNode(
     id: 0,
     mask: emptyMask,
     partition: nil,
-    componentIds: @[]
+    componentIds: @[],
+    lastEdge: -1,
+    lastRemEdge: -1,
   )
   
   result.nodes = @[result.root]
@@ -78,7 +81,9 @@ proc createNode(graph: var ArchetypeGraph, mask: ArchetypeMask): ArchetypeNode {
     id: id,
     mask: mask,
     partition: nil,
-    componentIds: mask.getComponents()
+    componentIds: mask.getComponents(),
+    lastEdge: -1,
+    lastRemEdge: -1,
   )
   
   graph.nodes.add(result)
@@ -99,15 +104,23 @@ proc addComponent*(graph: var ArchetypeGraph,
   
   node.setEdgePtr(comp, result)
   result.setRemoveEdgePtr(comp, node)
+  node.lastEdge = comp
+
+proc addComponent*(graph: var ArchetypeGraph, 
+                   node: ArchetypeNode, 
+                   comps: openArray[ComponentId]): ArchetypeNode =
+  var res = node
+  for id in comps:
+    res = graph.addComponent(res, id)
+
+  return res
 
 proc removeComponent*(graph: var ArchetypeGraph, 
                       node: ArchetypeNode, 
-                      comp: ComponentId): ArchetypeNode {.inline.} =
-  if not node.mask.hasComponent(comp):
-    return node
-  
+                      comp: ComponentId): ArchetypeNode {.inline.} =  
   result = node.getRemoveEdge(comp)
   if result != nil:
+    node.lastRemEdge = comp
     return result
   
   let newMask = node.mask.withoutComponent(comp)
@@ -119,6 +132,16 @@ proc removeComponent*(graph: var ArchetypeGraph,
   
   node.setRemoveEdgePtr(comp, result)
   result.setEdgePtr(comp, node)
+  node.lastRemEdge = comp
+
+proc removeComponent*(graph: var ArchetypeGraph, 
+                   node: ArchetypeNode, 
+                   comps: openArray[ComponentId]): ArchetypeNode =
+  var res = node
+  for id in comps:
+    res = graph.removeComponent(res, id)
+
+  return res
 
 proc findArchetype*(graph: var ArchetypeGraph, 
                     components: openArray[ComponentId]): ArchetypeNode =

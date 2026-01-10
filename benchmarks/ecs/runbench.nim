@@ -21,36 +21,51 @@ type
   Acceleration = object
     x, y: float32
 
+  Tag = object
+    b:bool
+
+  Health = object
+    hp:int
+
+  Timer = object
+    remaining:float
+
 
 # =========================
 # World setup
 # =========================
 
-proc setupWorld(entityCount: int): (ECSWorld, seq[ptr Entity], int, int, int) =
+proc setupWorld(entityCount: int): (ECSWorld, ref seq[ptr Entity], int, int, int, int, int, int) =
   var world = newECSWorld()
 
   let posID = world.registerComponent(Position)
   let velID = world.registerComponent(Velocity)
   let accID = world.registerComponent(Acceleration)
+  let tagID = world.registerComponent(Tag)
+  let timerID = world.registerComponent(Timer)
+  let hpID = world.registerComponent(Health)
 
   # Dense archetype: Position + Velocity
   var comp = @[posID, velID]
-  var entities: seq[ptr Entity]
+  var entities: ref seq[ptr Entity]
+  new(entities)
   for i in 0..<entityCount:
-    entities.add(createEntity(world, comp))
+    let e = createEntity(world, comp)
+    entities[].add(e)
 
   for i in 0..<entityCount:
     discard allocateSparseEntity(world, @[0,1])
 
-  return (world, entities, posID, velID, accID)
+  return (world, entities, posID, velID, accID, tagID, timerID, hpID)
 
 
 # =========================
 # Benchmarks
 # =========================
 
-const ENTITY_COUNT = 10000
+const ENTITY_COUNT = 1000
 
+#[
 
 # ---------------------------------
 # Entity creation
@@ -65,17 +80,17 @@ let pos = "Position"
 let vel = "Velocity"
 var comp = @[posID1, velID1, accID1]
 
-#let res1 = benchmark("Create-Delete Entities (Position + Velocity) [" & $ENTITY_COUNT & "]", SAMPLE):
-#  for i in 0..<ENTITY_COUNT:
-#    let e = createEntity(world1, comp)
-#    world1.deleteEntity(e)
-#showDetailed(res1)
+let res1 = benchmark("Create-Delete Entities (Position + Velocity) [" & $ENTITY_COUNT & "]", SAMPLE):
+  for i in 0..<ENTITY_COUNT:
+    let e = createEntity(world1, comp)
+    world1.deleteEntity(e)
+showDetailed(res1)
 
 # ---------------------------------
 # Dense iteration
 # ---------------------------------
 
-let (world2,_,_,_,_) = setupWorld(ENTITY_COUNT)
+let (world2,_,_,_,_,_,_,_) = setupWorld(ENTITY_COUNT)
 let posc2 = world2.get(Position)
 let velc2 = world2.get(Velocity)
 
@@ -114,7 +129,6 @@ let res5 = benchmark("Sparse Iteration (Position + Velocity)", SAMPLE):
       posby[i] += velby[i]
 showDetailed(res5)
 
-#[
 # ---------------------------------
 # Dense write
 # ---------------------------------
@@ -133,19 +147,28 @@ benchmark("Dense Write (Position update)", SAMPLE):
 # ---------------------------------
 # Add component (partition change)
 # ---------------------------------
-#[
-var (world, entities, posID, velID, accID) = setupWorld(ENTITY_COUNT)
+
+var (world, entities, posID, velID, accID, tagID, timerID, hpID) = setupWorld(ENTITY_COUNT)
 let toAdd = @[accID]
 let toRem = @[accID]
 
-let res7 = benchmark("Add Component (Acceleration)", SAMPLE):
+let archBase = world.getArchetype(entities[0])
+var graph = world.archGraph
+let archDest = graph.addComponent(archBase, [ComponentId(accID)])#, ComponentId(tagID), ComponentId(timerID), ComponentId(hpID)])
 
-  for e in entities:
-    addComponent(world, e, toAdd)
-    removeComponent(world, e, toAdd)
+let res7 = benchmark("Add Component (Acceleration)", SAMPLE):
+  migrateEntity(world, entities[], archDest)
+  migrateEntity(world, entities[], archBase)
+    
+  #for i in 0..<entities[].len:
+  #  var e = entities[][i]
+  #  migrateEntity(world, e, archDest)
+  #  migrateEntity(world, e, archBase)
+    #addComponent(world, e, toAdd)
+    #removeComponent(world, e, toAdd)
 showDetailed(res7)
 
-
+#[
 # ---------------------------------
 # Sparse creation
 # ---------------------------------

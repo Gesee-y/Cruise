@@ -159,6 +159,11 @@ macro toObjectOverride(T:typedesc, c:untyped, idx:untyped, v:untyped) =
   return quote("@") do:
     `@res`
 
+template toIdx(i:uint):untyped =
+  let id = i and BLK_MASK
+  let bid = (i shr BLK_SHIFT) and BLK_MASK
+  id+bid*DEFAULT_BLK_SIZE
+
 template swapVals(b: untyped, i, j:int|uint) =
   let tmp = b[i]
   b[i] = b[j]
@@ -169,6 +174,22 @@ template overrideVals[N,T,B](b: SoAFragmentArray[N,T,B], i, j:int|uint) =
 
 template overrideVals[N,T,B](b: SoAFragment[N,T,B], i, j:int|uint) =
   b[i] = b[j]
+
+template overrideVals(f, archId, ents, ids, toSwap, toAdd:untyped) =
+  for i in 0..<ids.len:
+    let e = ids[i]
+    let s = toSwap[i]
+    let a = toAdd[i]
+    
+    f[a] = f[e]
+    f[e] = f[s]
+    
+    ents[a.toIdx] = e[]
+    ents[e.id.toIdx] = ents[s.toIdx]
+    ents[s.toIdx].id = e.id
+
+    e.id = a
+    e.archetypeId = archId
 
 proc getDataType[N,T,B](f: SoAFragmentArray[N,T,B]):typedesc[B] = B
 
