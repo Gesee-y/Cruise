@@ -85,7 +85,21 @@ let res1 = benchmark("Create-Delete Entities (Position + Velocity) [" & $ENTITY_
     let e = createEntity(world1, comp)
     world1.deleteEntity(e)
 showDetailed(res1)
+]#
+var world3 = newECSWorld()
+let posId3 = world3.registerComponent(Position)
+let velID3 = world3.registerComponent(Velocity)
+let accID3 = world3.registerComponent(Acceleration)
+var comp = @[posID3, velID3, accID3]
 
+let res3 = benchmark("Create-Delete Entities (Position + Velocity) [" & $ENTITY_COUNT & "]", SAMPLE):
+  let ents = createEntities(world3, ENTITY_COUNT, comp)
+  
+  for e in ents:
+    world3.deleteEntity(e)
+showDetailed(res3)
+
+#[
 # ---------------------------------
 # Dense iteration
 # ---------------------------------

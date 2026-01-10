@@ -10,8 +10,28 @@ proc createEntity(world:var EcsWorld, cids:seq[int]):ptr Entity =
   var e = addr world.entities[idx]
   e.id = (bid shl BLK_SHIFT) or id.uint
   e.archetypeId = archId
+  e.widx = idx.int
   
   return e
+
+proc createEntities(world:var EcsWorld, n:int, cids:seq[int]):seq[ptr Entity] =
+  let arch = maskOf(cids)
+  var archNode = world.archGraph.findArchetypeFast(arch)
+  let archId = archNode.id
+  let res = allocateEntities(world, n, archNode, cids)
+
+  for (bid, r) in res:
+    let b = (bid shl BLK_SHIFT)
+
+    for id in r.s..<r.e:
+      let idx = id.uint mod DEFAULT_BLK_SIZE + bid*DEFAULT_BLK_SIZE
+      var e = addr world.entities[idx]
+      e.id = b or id.uint
+      e.archetypeId = archId
+      e.widx = idx.int
+      result.add(e)
+  
+  return result
 
 template deleteEntity(world:var EcsWorld, e:SomeEntity) =
   let l = deleteRow(world, (e.id and ((1.uint shl BLK_SHIFT)-1)).int, e.archetypeId)
@@ -33,7 +53,7 @@ proc migrateEntity(world: var ECSWorld, e:SomeEntity, archNode:ArchetypeNode) =
 
     e.id = (bid shl BLK_SHIFT) or id
     e.archetypeId = archNode.id
-
+    
 template migrateEntity(world: var ECSWorld, ents:var openArray, archNode:ArchetypeNode) =
   if ents.len != 0:
     let e = ents[0]

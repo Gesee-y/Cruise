@@ -140,7 +140,7 @@ proc createPartition(table: var ECSWorld, arch:ArchetypeNode):TablePartition =
   return arch.partition
 
 proc allocateNewBlocks(table: var ECSWorld, count:int, res: var seq[(uint, Range)], 
-  partition:var TablePartition, arch:ArchetypeMask, components:seq[int]):seq[(uint, Range)] =
+  partition:var TablePartition, components:seq[int]):seq[(uint, Range)] =
   
   var n = count
   let s = n div DEFAULT_BLK_SIZE
@@ -175,9 +175,8 @@ proc allocateNewBlocks(table: var ECSWorld, count:int, res: var seq[(uint, Range
 
   return res
 
-proc allocateEntities(table: var ECSWorld, n:int, arch:ArchetypeMask, components:seq[int]):seq[(uint, Range)] =
+proc allocateEntities(table: var ECSWorld, n:int, archNode:ArchetypeNode, components:seq[int]):seq[(uint, Range)] =
   var res:seq[(uint, Range)]
-  var archNode = table.archGraph.findArchetypeFast(arch)
 
   if archNode.partition.isNil:
     var partition:TablePartition
@@ -185,7 +184,7 @@ proc allocateEntities(table: var ECSWorld, n:int, arch:ArchetypeMask, components
     partition.components = components
     archNode.partition = partition
 
-    return allocateNewBlocks(table, n, res, partition, arch, components)
+    return allocateNewBlocks(table, n, res, partition, components)
 
   var m = n
   var partition = archNode.partition
@@ -204,11 +203,16 @@ proc allocateEntities(table: var ECSWorld, n:int, arch:ArchetypeMask, components
     m -= r
 
   if m > 0:
-    var r = allocateNewBlocks(table, m, res, partition, arch, components)
+    var r = allocateNewBlocks(table, m, res, partition, components)
     for i in r:
       res.add(i)
 
   return res
+
+proc allocateEntities(table: var ECSWorld, n:int, arch:ArchetypeMask, components:seq[int]):seq[(uint, Range)] =
+  var res:seq[(uint, Range)]
+  var archNode = table.archGraph.findArchetypeFast(arch)
+  return allocateEntities(table, n, archNode, components)
 
 proc allocateEntities(table: var ECSWorld, n:int, arch:ArchetypeMask):seq[(uint, Range)] =
   allocateEntities(table, n, arch, getComponentsFromSig(arch))

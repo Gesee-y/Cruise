@@ -6,6 +6,7 @@ type
   Entity = object
     id:uint
     archetypeId:uint16
+    widx:int
 
   SomeEntity = ptr Entity | Entity | var Entity
 
