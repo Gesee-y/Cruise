@@ -177,7 +177,7 @@ template overrideVals[N,T,B](b: SoAFragment[N,T,B], i, j:int|uint) =
 
 template overrideVals(f, archId, ents, ids, toSwap, toAdd:untyped) =
   for i in 0..<ids.len:
-    let e = ids[i]
+    let e = ids[i].obj
     let s = toSwap[i]
     let a = toAdd[i]
     
@@ -256,6 +256,7 @@ template getBlock[N,T,B](f:SoAFragmentArray[N,T,B], i:uint):SoAFragment[N,T,B] =
 
 proc `[]`[N,T,B](blk:SoAFragment[N,T,B], i:int|uint):B =
   var res:B
+  check(i < N, "Invalid access. " & $i & "is out of bound for block of size " & $N)
   toObject(res, B, blk.data, i)
 
   return res
@@ -264,6 +265,8 @@ proc activateBit[N,T,B](f: var SoAFragmentArray[N,T,B], i:int|uint) =
   let bid = i div N
   let lid = i mod N
   let mid = bid div sizeof(uint)*8
+
+  check(bid < f.blocks, "Invalid access. " & $i & "is out of bound. The component only has " & $(f.blocks.len) & "blocks")
 
   if f.mask.len <= mid:
     f.mask.setLen(mid+1)
@@ -275,6 +278,9 @@ proc deactivateBit[N,T,B](f: var SoAFragmentArray[N,T,B], i:int|uint) =
   let bid = i div N
   let lid = i mod N
   let mid = bid div sizeof(uint)*8
+
+  check(bid < f.blocks, "Invalid access. " & $i & "is out of bound. The component only has " & $(f.blocks.len) & "blocks")
+
   f.blocks[bid].mask = f.blocks[bid].mask and not (1.uint shl lid)
   if f.blocks[bid].mask == 0:
     f.mask[mid] = f.mask[mid] and not (1.uint shl bid)
@@ -285,23 +291,59 @@ proc activateSparseBit[N,T,B](f: var SoAFragmentArray[N,T,B], i:int|uint) =
   let lid = i mod S
   let mid = bid div S
 
+  check(bid < f.sparse, "Invalid access. " & $i & "is out of bound. The component only has " & $(f.sparse.len) & "blocks")
+
   if f.sparseMask.len.uint <= mid:
     f.sparseMask.setLen(mid+1)
 
   f.sparseMask[mid] = f.sparseMask[mid] or (1.uint shl bid)
   f.sparse[bid].mask = f.sparse[bid].mask or (1.uint shl lid)
 
+proc activateSparseBit[N,T,B](f: var SoAFragmentArray[N,T,B], idxs:openArray[uint]) =
+  let S = (sizeof(uint)*8).uint
+
+  for i in idxs:
+    let bid = i div S
+    let lid = i mod S
+    let mid = bid div S
+
+    check(bid < f.sparse, "Invalid access. " & $i & "is out of bound. The component only has " & $(f.sparse.len) & "blocks")
+
+    if f.sparseMask.len.uint <= mid:
+      f.sparseMask.setLen(mid+1)
+
+    f.sparseMask[mid] = f.sparseMask[mid] or (1.uint shl bid)
+    f.sparse[bid].mask = f.sparse[bid].mask or (1.uint shl lid)
+
+
 proc deactivateSparseBit[N,T,B](f: var SoAFragmentArray[N,T,B], i:int|uint) =
   let S = (sizeof(uint)*8).uint
   let bid = i div S
   let lid = i mod S
   let mid = bid div S
+  
+  check(bid < f.sparse, "Invalid access. " & $i & "is out of bound. The component only has " & $(f.sparse.len) & "blocks")
+
   f.sparse[bid].mask = f.sparse[bid].mask and not (1.uint shl lid)
   if f.sparse[bid].mask == 0'u:
     f.sparseMask[mid] = f.sparseMask[mid] and not (1.uint shl bid)
 
+proc deactivateSparseBit[N,T,B](f: var SoAFragmentArray[N,T,B], idxs:openArray[uint]) =
+  let S = (sizeof(uint)*8).uint
+
+  for i in idxs:
+    let bid = i div S
+    let lid = i mod S
+    let mid = bid div S
+    
+    check(bid < f.sparse, "Invalid access. " & $i & "is out of bound. The component only has " & $(f.sparse.len) & "blocks")
+
+    f.sparse[bid].mask = f.sparse[bid].mask and not (1.uint shl lid)
+    if f.sparse[bid].mask == 0'u:
+      f.sparseMask[mid] = f.sparseMask[mid] and not (1.uint shl bid)
 
 template `[]=`[N,T,B](blk:var SoAFragment[N,T,B], i:int|uint, v:B) =
+  check(i < N, "Invalid access. " & $i & "is out of bound for block of size " & $N)
   toObjectMod(B, blk.data, i, v)
 
 proc `[]`[N,T,B](f:SoAFragmentArray[N,T,B], i:int):B =
@@ -310,18 +352,22 @@ proc `[]`[N,T,B](f:SoAFragmentArray[N,T,B], i:int):B =
 
 proc `[]=`[N,T,B](f:var SoAFragmentArray[N,T,B], i:int, v:B) =
   var blk = getBlock(f,i)
+  check((i div N) < f.blocks, "Invalid access. " & $(i div N) & "is out of bound. The component only has " & $(f.blocks.len) & "blocks")
   f.blocks[i div N][i mod N] = v
 
 proc `[]`[N,T,B](f:SoAFragmentArray[N,T,B], i:uint):B =
   let blk = (i shr BLK_SHIFT) and BLK_MASK
   let idx = i and BLK_MASK
 
+  check(blk < f.blocks, "Invalid access. " & $blk & "is out of bound. The component only has " & $(f.blocks.len) & "blocks")
   return f.blocks[blk][idx]
 
 proc `[]=`[N,T,B](f:var SoAFragmentArray[N,T,B], i:uint, v:B) =
   let blk = (i shr BLK_SHIFT) and BLK_MASK
   let idx = i and BLK_MASK
 
+  check(blk < f.blocks, "Invalid access. " & $blk & "is out of bound. The component only has " & $(f.blocks.len) & "blocks")
+  check(not f.blocks[blk].isNil, "Invalid access. Trying to access nil block at " & $blk)
   f.blocks[blk][idx] = v
 
 proc len[N,T,B](blk:SoAFragment[N,T,B]) = N
@@ -345,5 +391,6 @@ iterator pairs[N,T,B](f:SoAFragmentArray[N,T,B]):(int,B) =
       yield (i+blk.offset,blk[i])
   
 proc resize[N,T,B](f: var SoAFragmentArray[N,T,B], n:int) =
+  check(n >= 0, "Can't resize to negative size. Got " & $n)
   f.blocks.setLen(n)
   

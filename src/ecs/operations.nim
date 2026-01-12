@@ -2,7 +2,7 @@
 ############################################################# ECS OPERATIONS ######################################################################
 ################################################################################################################################################### 
 
-proc createEntity(world:var EcsWorld, cids:seq[int]):ptr Entity =
+proc createEntity(world:var EcsWorld, cids:seq[int]):DenseHandle =
   let pid = getStableEntity(world)
   let arch = maskOf(cids)
   let (bid, id, archId) = allocateEntity(world, arch, cids)
@@ -15,10 +15,10 @@ proc createEntity(world:var EcsWorld, cids:seq[int]):ptr Entity =
   e.archetypeId = archId
   e.widx = pid
   
-  return e
+  return DenseHandle(obj:e, gen:world.generations[pid])
 
-proc createEntities(world:var EcsWorld, n:int, cids:seq[int]):seq[ptr Entity] =
-  result = newSeqOfCap[ptr Entity](n)
+proc createEntities(world:var EcsWorld, n:int, cids:seq[int]):seq[DenseHandle] =
+  result = newSeqOfCap[DenseHandle](n)
   let pids = getStableEntities(world, n)
   let arch = maskOf(cids)
   var archNode = world.archGraph.findArchetypeFast(arch)
@@ -40,17 +40,28 @@ proc createEntities(world:var EcsWorld, n:int, cids:seq[int]):seq[ptr Entity] =
       e.widx = pid
 
       current += 1
-      result.add(e)
+      result.add(DenseHandle(obj:e, gen:world.generations[pid]))
   
   return result
 
-template deleteEntity(world:var EcsWorld, e:SomeEntity) =
-  let l = deleteRow(world, (e.id and ((1.uint shl BLK_SHIFT)-1)).int, e.archetypeId)
+template deleteEntity(world:var EcsWorld, d:DenseHandle) =
+  let e = d.obj
+  
+  check(not e.isNil, "Invalid access. Trying to access nil entity.")
+  check(world.generation[e.widx] == d.gen, "Invalid Entity. Entity is stale (already dead).")
+
+  let l = deleteRow(world, e.id, e.archetypeId)
   world.handles[(e.id and BLK_MASK) + ((e.id shr BLK_SHIFT) and BLK_MASK)*DEFAULT_BLK_SIZE] = world.handles[l]
   world.handles[l].id = e.id
+  world.generations[e.widx] += 1.uint32
   world.free_entities.add(e.widx)
 
-proc migrateEntity(world: var ECSWorld, e:SomeEntity, archNode:ArchetypeNode) =
+proc migrateEntity(world: var ECSWorld, d:DenseHandle, archNode:ArchetypeNode) =
+  let e = d.obj
+
+  check(not e.isNil, "Invalid access. Trying to access nil entity.")
+  check(world.generation[e.widx] == d.gen, "Invalid Entity. Entity is stale (already dead).")
+  
   if archNode.id != e.archetypeId:
     let (lst, id, bid) = changePartition(world, e.id, e.archetypeId, archNode)
     
@@ -67,7 +78,7 @@ proc migrateEntity(world: var ECSWorld, e:SomeEntity, archNode:ArchetypeNode) =
     
 template migrateEntity(world: var ECSWorld, ents:var openArray, archNode:ArchetypeNode) =
   if ents.len != 0:
-    let e = ents[0]
+    let e = ents[0].obj
 
     if archNode.id != e.archetypeId:
       changePartition(world, ents, e.archetypeId, archNode)

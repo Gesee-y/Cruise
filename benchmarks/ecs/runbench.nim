@@ -35,7 +35,7 @@ type
 # World setup
 # =========================
 
-proc setupWorld(entityCount: int): (ECSWorld, ref seq[ptr Entity], int, int, int, int, int, int) =
+proc setupWorld(entityCount: int): (ECSWorld, ref seq[DenseHandle], int, int, int, int, int, int) =
   var world = newECSWorld()
 
   let posID = world.registerComponent(Position)
@@ -47,7 +47,7 @@ proc setupWorld(entityCount: int): (ECSWorld, ref seq[ptr Entity], int, int, int
 
   # Dense archetype: Position + Velocity
   var comp = @[posID, velID]
-  var entities: ref seq[ptr Entity]
+  var entities: ref seq[DenseHandle]
   new(entities)
   for i in 0..<entityCount:
     let e = createEntity(world, comp)
@@ -63,7 +63,7 @@ proc setupWorld(entityCount: int): (ECSWorld, ref seq[ptr Entity], int, int, int
 # Benchmarks
 # =========================
 
-const ENTITY_COUNT = 1000
+const ENTITY_COUNT = 100000
 
 #[
 
@@ -85,21 +85,20 @@ let res1 = benchmark("Create-Delete Entities (Position + Velocity) [" & $ENTITY_
     let e = createEntity(world1, comp)
     world1.deleteEntity(e)
 showDetailed(res1)
-]#
-var world3 = newECSWorld()
-let posId3 = world3.registerComponent(Position)
-let velID3 = world3.registerComponent(Velocity)
-let accID3 = world3.registerComponent(Acceleration)
-var comp = @[posID3, velID3, accID3]
 
-let res3 = benchmark("Create-Delete Entities (Position + Velocity) [" & $ENTITY_COUNT & "]", SAMPLE):
-  let ents = createEntities(world3, ENTITY_COUNT, comp)
+var world100 = newECSWorld()
+let posId100 = world100.registerComponent(Position)
+let velID100 = world100.registerComponent(Velocity)
+let accID100 = world100.registerComponent(Acceleration)
+var comp = @[posID100, velID100, accID100]
+
+let res100 = benchmark("Create-Delete Entities (Position + Velocity) [" & $ENTITY_COUNT & "]", SAMPLE):
+  let ents = createEntities(world100, ENTITY_COUNT, comp)
   
-  #for e in ents:
-  #  world3.deleteEntity(e)
-showDetailed(res3)
-
-#[
+  for e in ents:
+    world100.deleteEntity(e)
+showDetailed(res100)
+]#
 # ---------------------------------
 # Dense iteration
 # ---------------------------------
@@ -127,7 +126,7 @@ let res4 = benchmark("Dense Iteration (Position + Velocity)", SAMPLE):
 
     for i in r:
       posbx[i] += velbx[i]+1
-      posby[i] += velby[i]
+      posby[i] += velby[i]+1
 showDetailed(res4)
 
 let sq2 = world2.sparseQueryCache(query(world2, Position and Velocity))
@@ -143,6 +142,7 @@ let res5 = benchmark("Sparse Iteration (Position + Velocity)", SAMPLE):
       posby[i] += velby[i]
 showDetailed(res5)
 
+#[
 # ---------------------------------
 # Dense write
 # ---------------------------------
@@ -156,7 +156,7 @@ benchmark("Dense Write (Position update)", SAMPLE):
       p.x += 1
       p.y += 1
       world.set(i, p)
-]#
+
 
 # ---------------------------------
 # Add component (partition change)
@@ -182,7 +182,6 @@ let res7 = benchmark("Add Component (Acceleration)", SAMPLE):
     #removeComponent(world, e, toAdd)
 showDetailed(res7)
 
-#[
 # ---------------------------------
 # Sparse creation
 # ---------------------------------

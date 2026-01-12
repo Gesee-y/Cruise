@@ -8,6 +8,13 @@ type
     archetypeId:uint16
     widx:int
 
+  DenseHandle = object
+    obj:ptr Entity
+    gen:uint32
+
+  SparseHandle = object
+    id:uint
+
   SomeEntity = ptr Entity | Entity | var Entity
 
 template newEntity():untyped =
