@@ -95,8 +95,8 @@ var comp = @[posID3, velID3, accID3]
 let res3 = benchmark("Create-Delete Entities (Position + Velocity) [" & $ENTITY_COUNT & "]", SAMPLE):
   let ents = createEntities(world3, ENTITY_COUNT, comp)
   
-  for e in ents:
-    world3.deleteEntity(e)
+  #for e in ents:
+  #  world3.deleteEntity(e)
 showDetailed(res3)
 
 #[

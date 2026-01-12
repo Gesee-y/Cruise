@@ -12,7 +12,7 @@ type
     activateBitOp: proc (p:pointer, i:int) {.noSideEffect, nimcall.}
     deactivateBitOp: proc (p:pointer, i:int) {.noSideEffect, nimcall.}
     overrideValsOp: proc (p:pointer, i:uint, j:uint)  {.noSideEffect, nimcall.}
-    overrideValsBatchOp: proc (p:pointer, archId:uint16, ents: ptr seq[Entity], ids:openArray[ptr Entity], sw:seq[uint], ad:seq[uint])
+    overrideValsBatchOp: proc (p:pointer, archId:uint16, ents: ptr seq[ptr Entity], ids:openArray[ptr Entity], sw:seq[uint], ad:seq[uint])
     getSparseMaskOp: proc (p:pointer):seq[uint] {.noSideEffect, nimcall.}
     getSparseChunkMaskOp: proc(p:pointer, i:int):uint {.noSideEffect, nimcall.}
     setSparseMaskOp: proc (p:pointer, m:seq[uint]) {.noSideEffect, nimcall.}
@@ -60,7 +60,7 @@ macro registerComponent(registry:untyped, B:typed):untyped =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE)
       fr.overrideVals(i, j)
 
-    let overvb = proc (p:pointer, archId:uint16, ents: ptr seq[Entity], ids:openArray[ptr Entity], sw:seq[uint], ad:seq[uint]) =
+    let overvb = proc (p:pointer, archId:uint16, ents: ptr seq[ptr Entity], ids:openArray[ptr Entity], sw:seq[uint], ad:seq[uint]) =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE)
       fr.overrideVals(archId, ents, ids, sw, ad)
 

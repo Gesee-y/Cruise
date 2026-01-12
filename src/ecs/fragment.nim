@@ -184,7 +184,7 @@ template overrideVals(f, archId, ents, ids, toSwap, toAdd:untyped) =
     f[a] = f[e]
     f[e] = f[s]
     
-    ents[a.toIdx] = e[]
+    ents[a.toIdx] = e
     ents[e.id.toIdx] = ents[s.toIdx]
     ents[s.toIdx].id = e.id
 
