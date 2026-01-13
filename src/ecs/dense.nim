@@ -12,7 +12,7 @@ proc createPartition(table: var ECSWorld, arch: ArchetypeNode): TablePartition =
   return arch.partition
 
 proc allocateNewBlocks(table: var ECSWorld, count: int, res: var seq[(uint, Range)], 
-  partition: var TablePartition, components: seq[int]): seq[(uint, Range)] =
+  partition: var TablePartition, components: openArray[int]): seq[(uint, Range)] =
   
   check(count >= 0, "Allocation count cannot be negative")
   var n = count
@@ -48,14 +48,14 @@ proc allocateNewBlocks(table: var ECSWorld, count: int, res: var seq[(uint, Rang
   table.handles.setLen((table.blockCount + 1) * DEFAULT_BLK_SIZE)
   return res
 
-proc allocateEntities(table: var ECSWorld, n: int, archNode: ArchetypeNode, components: seq[int]): seq[(uint, Range)] =
+proc allocateEntities(table: var ECSWorld, n: int, archNode: ArchetypeNode, components: openArray[int]): seq[(uint, Range)] =
   check(not archNode.isNil, "ArchetypeNode is nil during entity allocation")
   var res: seq[(uint, Range)]
 
   if archNode.partition.isNil:
     var partition: TablePartition
     new(partition)
-    partition.components = components
+    partition.components = components.toSeq
     archNode.partition = partition
     return allocateNewBlocks(table, n, res, partition, components)
 
@@ -80,21 +80,21 @@ proc allocateEntities(table: var ECSWorld, n: int, archNode: ArchetypeNode, comp
 
   return res
 
-proc allocateEntities(table: var ECSWorld, n: int, arch: ArchetypeMask, components: seq[int]): seq[(uint, Range)] =
+proc allocateEntities(table: var ECSWorld, n: int, arch: ArchetypeMask, components: openArray[int]): seq[(uint, Range)] =
   var archNode = table.archGraph.findArchetypeFast(arch)
   return allocateEntities(table, n, archNode, components)
 
 proc allocateEntities(table: var ECSWorld, n: int, arch: ArchetypeMask): seq[(uint, Range)] =
   allocateEntities(table, n, arch, getComponentsFromSig(arch))
 
-proc allocateEntity(table: var ECSWorld, arch: ArchetypeMask, components: seq[int]): (uint, int, uint16) =
+proc allocateEntity(table: var ECSWorld, arch: ArchetypeMask, components: openArray[int]): (uint, int, uint16) =
   var archNode = table.archGraph.findArchetypeFast(arch)
   check(not archNode.isNil, "ArchetypeNode not found")
 
   if archNode.partition.isNil:
     var partition: TablePartition
     new(partition)
-    partition.components = components
+    partition.components = components.toSeq
     archNode.partition = partition
   
   var partition = archNode.partition

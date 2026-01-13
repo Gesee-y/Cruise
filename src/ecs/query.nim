@@ -51,7 +51,10 @@ proc buildQuerySignature(world: ECSWorld, components: seq[QueryComponent]): Quer
 
 proc matchesArchetype(sig: QuerySignature, arch: ArchetypeMask): bool =
   # Check if all included components are present
-  if (sig.includeMask and (arch and not sig.excludeMask)) != sig.includeMask:
+  if (sig.includeMask and arch) != sig.includeMask:
+    return false
+
+  if (arch and not sig.excludeMask) != arch:
     return false
   
   return true
@@ -64,13 +67,15 @@ iterator denseQuery(world: ECSWorld, sig: QuerySignature): (int, HSlice[int, int
   ## Iterate through all partitions that match the query signature
   ## Returns block index and range for each matching zone
   
-  for arch, partition in world.archetypes.pairs:
+  for archNode in world.archGraph.nodes:
+    let arch = archNode.mask
     if not matchesArchetype(sig, arch):
       continue
     
     # Iterate through filled zones in this partition
-    for zone in partition.zones:
-      yield (zone.block_idx, zone.r.s..<zone.r.e)
+    if not archNode.partition.isNil:
+      for zone in archNode.partition.zones:
+        yield (zone.block_idx, zone.r.s..<zone.r.e)
 
 proc denseQueryCache(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
   ## Iterate through all partitions that match the query signature
@@ -93,17 +98,21 @@ proc denseQueryCount(world: ECSWorld, sig: QuerySignature): int =
   ## Count total entities matching the dense query
   result = 0
   
-  for arch, partition in world.archetypes.pairs:
+  for archNode in world.archGraph.nodes:
+    let arch = archNode.mask
     if not matchesArchetype(sig, arch):
       continue
     
-    for zoneIdx in 0..partition.fill_index:
-      if zoneIdx >= partition.zones.len:
-        break
-      
-      let zone = partition.zones[zoneIdx]
-      if not isEmpty(zone):
-        result += zone.r.e - zone.r.s
+    let partition = archNode.partition
+
+    if not partition.isNil:
+      for zoneIdx in 0..partition.fill_index:
+        if zoneIdx >= partition.zones.len:
+          break
+        
+        let zone = partition.zones[zoneIdx]
+        if not isEmpty(zone):
+          result += zone.r.e - zone.r.s
 
 ####################################################################################################################################################
 ################################################################### SPARSE QUERIES #################################################################

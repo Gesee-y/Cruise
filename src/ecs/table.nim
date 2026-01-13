@@ -2,7 +2,7 @@
 ######################################################################## ECS TABLE #################################################################
 ####################################################################################################################################################
 
-import tables, bitops, typetraits, hashes
+import tables, bitops, typetraits, hashes, sequtils
 
 const
   MAX_COMPONENT_LAYER = 4
@@ -122,6 +122,9 @@ proc newCommandBuffer(w: var ECSWorld):int =
 proc getCommandBuffer(w: var ECSWorld, id:int):CommandBuffer =
   return w.commandBufs[id]
 
+proc isAlive(w:ECSWorld, d:DenseHandle):bool =
+  return d.gen == w.generations[d.obj.widx]
+
 {.pop.}
 
 proc getStableEntity(world:ECSWorld):int =
@@ -188,7 +191,7 @@ include "sparse.nim"
 include "query.nim"
 include "operations.nim"
 
-proc process(cb: var CommandBuffer) =
+proc process(world: var ECSWorld, cb: var CommandBuffer) =
   if cb.map.activeSignatures.len == 0: return
 
   cb.map.activeSignatures.sort()
@@ -205,8 +208,19 @@ proc process(cb: var CommandBuffer) =
     let batch = addr(cb.map.entries[idx])
     
     let dataPtr = batch.data
+    var ents = newSeqofCap[DenseHandle](batch.count)
+
     for i in 0..<batch.count:
-      discard dataPtr[i]
+      ents.add(dataPtr[i].obj)
+
+    case sig.getOp():
+      of 0:
+        for i in 0..<ents.len:
+          var e = ents[i]
+          world.deleteEntity(e)
+      of 1:
+        world.migrateEntity(ents, world.archGraph.nodes[sig.getArchetype()])
+      else: discard
 
   for sig in cb.map.activeSignatures:
     let targetKey = genKey or CommandKey(sig)

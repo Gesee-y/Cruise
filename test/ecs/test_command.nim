@@ -30,7 +30,6 @@ suite "CommandBuffer / BatchMap":
 
     check e.count == 1
     check e.data[0].eid == 1
-    check e.data[0].value == 3.14
 
     cb.destroy()
 

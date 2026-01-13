@@ -1,4 +1,5 @@
-include "../../src/ecs/fragment.nim"
+include "../../src/ecs/table.nim"
+import unittest
 
 ############################################
 # Test component
@@ -56,40 +57,6 @@ suite "SoAFragmentArray core behavior":
     let u = (0'u shl BLK_SHIFT) or 3'u
     check f[3].x == f[u].x
     check f[3].y == f[u].y
-
-  test "activateBit sets dense block and global mask":
-    var f = newSoAFragArr(TestComp,8)
-    f.blocks.setLen(1)
-    f.newBlockAt(0)
-
-    f.activateBit(3)
-
-    check (f.blocks[0].mask and (1'u shl 3)) != 0
-    check f.mask.len == 1
-    check (f.mask[0] and 1'u) != 0
-
-  test "deactivateBit clears block mask and global mask when empty":
-    var f = newSoAFragArr(TestComp,8)
-    f.blocks.setLen(1)
-    f.newBlockAt(0)
-
-    f.activateBit(2)
-    f.deactivateBit(2)
-
-    check f.blocks[0].mask == 0
-    check f.mask[0] == 0
-
-  test "multiple active bits keep global mask alive":
-    var f = newSoAFragArr(TestComp,8)
-    f.blocks.setLen(1)
-    f.newBlockAt(0)
-
-    f.activateBit(1)
-    f.activateBit(3)
-    f.deactivateBit(1)
-
-    check (f.blocks[0].mask and (1'u shl 3)) != 0
-    check f.mask[0] != 0
 
   test "overrideVals copies all fields":
     var f = newSoAFragArr(TestComp,8)

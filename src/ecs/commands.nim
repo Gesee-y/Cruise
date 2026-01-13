@@ -13,23 +13,20 @@ type
   EntityId = uint64
   Payload = object
     eid: EntityId
+    obj: DenseHandle
     value: float32
 
-  # OPTIMIZATION: Single 64-bit Key = Generation (High) | Signature (Low)
-  # Cela permet une seule comparaison au lieu de deux.
   CommandKey = uint64
 
   BatchEntry = object
-    key: CommandKey      # 8 octets (Gen + Sig)
-    count: uint32        # 4 octets
-    capacity: uint32     # 4 octets
-    data: ptr UncheckedArray[Payload] # 8 octets
-    # Total 24 octets. Padding automatique à 32.
-
+    key: CommandKey 
+    count: uint32   
+    capacity: uint32
+    data: ptr UncheckedArray[Payload]
   BatchMap = object
     entries: ptr UncheckedArray[BatchEntry] 
     currentGeneration: uint8
-    activeSignatures: seq[uint32] # On stocke juste la signature (32 bits)
+    activeSignatures: seq[uint32]
 
   CommandBuffer = object
     map: BatchMap
@@ -37,6 +34,9 @@ type
 
 func makeSignature(op: range[0..15], arch: range[0..65535], flags: range[0..1023]): uint32 {.inline.} =
   uint32((op shl 28) or (arch shl 12) or (flags shl 2))
+
+func getOp(s:uint32):uint32 = s shr 28
+func getArchetype(s:uint32):uint32 = (s shr 12) and ((1'u32 shl 12) - 1)
 
 proc resize(entry: ptr BatchEntry) =
   let newCap = INITIAL_CAPACITY*(entry.capacity==0).uint32 + entry.capacity * 2'u32

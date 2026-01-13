@@ -5,7 +5,7 @@ include "../../src/ecs/table.nim"
 # =========================
 include "../../src/profile/benchmarks.nim"
 
-const SAMPLE = 10_000
+const SAMPLE = 10_00
 
 # =========================
 # Components
@@ -53,9 +53,6 @@ proc setupWorld(entityCount: int): (ECSWorld, ref seq[DenseHandle], int, int, in
     let e = createEntity(world, comp)
     entities[].add(e)
 
-  for i in 0..<entityCount:
-    discard allocateSparseEntity(world, @[0,1])
-
   return (world, entities, posID, velID, accID, tagID, timerID, hpID)
 
 
@@ -71,20 +68,17 @@ const ENTITY_COUNT = 10000
 # Entity creation
 # ---------------------------------
 
-#var world1 = newECSWorld()
-#let posId1 = world1.registerComponent(Position)
-#let velID1 = world1.registerComponent(Velocity)
-#let accID1 = world1.registerComponent(Acceleration)
-#var pp = world1.get(Position)
-#let pos = "Position"
-#let vel = "Velocity"
-#var comp = @[posID1, velID1, accID1]
+var world1 = newECSWorld()
+let posId1 = world1.registerComponent(Position)
+let velID1 = world1.registerComponent(Velocity)
+let accID1 = world1.registerComponent(Acceleration)
+var pp = world1.get(Position)
 
-#let res1 = benchmark("Create-Delete Entities (Position + Velocity) [" & $ENTITY_COUNT & "]", SAMPLE):
-#  for i in 0..<ENTITY_COUNT:
-#    let e = createEntity(world1, comp)
-#    world1.deleteEntity(e)
-#showDetailed(res1)
+let res1 = benchmark("Create-Delete Entity (Position + Velocity) [" & $ENTITY_COUNT & "]", SAMPLE):
+  for i in 0..<ENTITY_COUNT:
+    let e = createEntity(world1, @[posID1, velID1, accID1])
+    world1.deleteEntity(e)
+showDetailed(res1)
 
 var world100 = newECSWorld()
 let posId100 = world100.registerComponent(Position)
@@ -128,35 +122,25 @@ let res4 = benchmark("Dense Iteration (Position + Velocity)", SAMPLE):
       posby[i] += velby[i]+1
 showDetailed(res4)
 
-let sq2 = world2.sparseQueryCache(query(world2, Position and Velocity))
-let res5 = benchmark("Sparse Iteration (Position + Velocity)", SAMPLE):
-  for (bid, r) in sq2:
-    var posbx = addr posc2.sparse[bid].data.x
-    let velbx = addr velc2.sparse[bid].data.x
-    var posby = addr posc2.sparse[bid].data.y
-    let velby = addr velc2.sparse[bid].data.y
-
-    for i in r.maskIter:
-      posbx[i] += velbx[i]
-      posby[i] += velby[i]
-showDetailed(res5)
-
-#[
 # ---------------------------------
 # Dense write
 # ---------------------------------
 
-benchmark("Dense Write (Position update)", SAMPLE):
-  let world = setupWorld(ENTITY_COUNT)
+let (world8, entities8, posID8, velID8, accID8, tagID8, timerID8, hpID8) = setupWorld(ENTITY_COUNT)
+var posc8 = world8.get(Position)
+var s = 0.float32
+let res8 = benchmark("Dense Read (Position)", SAMPLE):
+  for e in entities8[]:
+    s += posc8[e].x
+showDetailed(res8)
 
-  for (_, range) in world.denseQuery(query(world, Position and Velocity)):
-    for i in range:
-      var p = world.get(Position, i)
-      p.x += 1
-      p.y += 1
-      world.set(i, p)
+let (world9, entities9, posID9, velID9, accID9, tagID9, timerID9, hpID9) = setupWorld(ENTITY_COUNT)
+var posc9 = world9.get(Position)
+let res9 = benchmark("Dense Write (Position update)", SAMPLE):
+  for e in entities9[]:
+    posc9[e] = Position()
+showDetailed(res9)
 
-]#
 # ---------------------------------
 # Add component (partition change)
 # ---------------------------------
@@ -172,67 +156,5 @@ let archDest = graph.addComponent(archBase, [ComponentId(accID)])#, ComponentId(
 let res7 = benchmark("Add Component (Acceleration)", SAMPLE):
   migrateEntity(world, entities[], archDest)
   migrateEntity(world, entities[], archBase)
-    
-  #for i in 0..<entities[].len:
-  #  var e = entities[][i]
-  #  migrateEntity(world, e, archDest)
-  #  migrateEntity(world, e, archBase)
-    #addComponent(world, e, toAdd)
-    #removeComponent(world, e, toAdd)
 showDetailed(res7)
-#[
-# ---------------------------------
-# Sparse creation
-# ---------------------------------
 
-benchmark("Sparse Entity Creation", SAMPLE):
-  var world: ECSWorld
-  world.registry = newComponentRegistry()
-  world.registerComponent(Position)
-
-  for i in 0..<ENTITY_COUNT:
-    let e = allocateSparseEntity(world, @[world.registry.cmap["Position"]])
-    world.registry.entries[0].activateSparseBitOp(
-      world.registry.entries[0].rawPointer, e
-    )
-
-
-# ---------------------------------
-# Sparse query
-# ---------------------------------
-
-benchmark("Sparse Query (Position)", SAMPLE):
-  let world = setupWorld(ENTITY_COUNT)
-
-  let sig = buildQuerySignature(
-    world,
-    @[includeComp(world.registry.cmap["Position"])]
-  )
-
-  for (_, mask) in sparseQuery(world, sig):
-    for _ in mask.maskIter:
-      discard
-
-
-# ---------------------------------
-# Mixed load (dense + sparse)
-# ---------------------------------
-
-benchmark("Mixed Dense + Sparse Query", SAMPLE):
-  let world = setupWorld(ENTITY_COUNT)
-
-  let sig = buildQuerySignature(
-    world,
-    @[
-      includeComp(world.registry.cmap["Position"]),
-      includeComp(world.registry.cmap["Velocity"]),
-      excludeComp(world.registry.cmap["Acceleration"])
-    ]
-  )
-
-  for (_, range) in denseQuery(world, sig):
-    for i in range:
-      let p = world.get[Position](i)
-      discard p.x
-
-]#

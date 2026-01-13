@@ -12,18 +12,22 @@ type
     ax,ay:float
 
 proc initTestWorld(): ECSWorld =
-  var world: ECSWorld
-  new(world)
-  new(world.registry)
-  registerComponent[Pos](world.registry)
-  registerComponent[Vel](world.registry)
-  registerComponent[Acc](world.registry)
+  var world = newECSWorld()
+  discard world.registerComponent(Pos)
+  discard world.registerComponent(Vel)
+  discard world.registerComponent(Acc)
+  
+  discard world.createEntity(0)
+  discard world.createEntity(0,1)
+  discard world.createEntity(0,2)
+  discard world.createEntity(1,2)
+  discard world.createEntity(0,1)
 
-  discard world.allocateEntity([0b1'u,0'u,0'u,0'u])
-  discard world.allocateEntity([0b11'u,0'u,0'u,0'u])
-  discard world.allocateEntity([0b101'u,0'u,0'u,0'u])
-  discard world.allocateEntity([0b110'u,0'u,0'u,0'u])
-  discard world.allocateEntity([0b11'u,0'u,0'u,0'u])
+  discard world.createSparseEntity(0)
+  discard world.createSparseEntity(0,1)
+  discard world.createSparseEntity(0,2)
+  discard world.createSparseEntity(1,2)
+  discard world.createSparseEntity(0,1)
   
   return world
 

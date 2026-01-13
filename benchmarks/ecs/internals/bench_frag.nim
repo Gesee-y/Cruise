@@ -1,6 +1,6 @@
-include "../../../src/ecs/fragment.nim"
+include "../../../src/ecs/table.nim"
 
-import times, os, strutils, math, random
+import times, os
 
 type
   Vec3 = object
@@ -8,12 +8,10 @@ type
 
 const S = 4096
 
-SoAFragArr(S):
-  var vecs: Vec3
 
-new(vecs)
+var vecs = newSoAFragArr(Vec3, S)
 
-const SAMPLE = 100000
+const SAMPLE = 10000
 const N = 10000
 
 template benchmark(benchmarkName: string, sample:int, code: untyped) =
@@ -43,17 +41,11 @@ benchmark("Get blocks 10k", SAMPLE):
     let b = vecs.getBlockIdx(i)
     idx[i] = ((b shl BLK_SHIFT) or (i mod S)).uint
 
-# ------------------------------------------------------------------
-# 1. Insertion de 10 000 éléments
-# ------------------------------------------------------------------
 let d = Vec3(x: 0.float32, y: 0.float32, z: 0.float32)
 benchmark("Insertion 10k", SAMPLE):
   for i in idx:
     vecs[i] = d
 
-# ------------------------------------------------------------------
-# 2. Accès aléatoire
-# ------------------------------------------------------------------
 benchmark("Random Access 10k", SAMPLE):
   var sum: Vec3
   for i in idx:
@@ -62,9 +54,6 @@ benchmark("Random Access 10k", SAMPLE):
     sum.y += v.y
     sum.z += v.z
 
-# ------------------------------------------------------------------
-# 3. Itération séquentielle
-# ------------------------------------------------------------------
 benchmark("Sequential Iter 10k", SAMPLE):
   var sum: Vec3
   for v in vecs.iter:
@@ -72,16 +61,13 @@ benchmark("Sequential Iter 10k", SAMPLE):
     sum.y += v.y
     sum.z += v.z
 
-# ------------------------------------------------------------------
-# 4. Modification en masse
-# ------------------------------------------------------------------
 benchmark("Mass Update 10k", SAMPLE):
   for i in idx:
     vecs[i] = Vec3(x: 1.0, y: 2.0, z: 3.0)
 
 benchmark("MQuery iter 10k", SAMPLE):
   for blk in vecs.blocks:
-    var x:ref array[S,float32] = blk.data.x
+    var x:array[S,float32] = blk.data.x
     var y = blk.data.y
     for i in 0..<S:
       x[i] += x[i]

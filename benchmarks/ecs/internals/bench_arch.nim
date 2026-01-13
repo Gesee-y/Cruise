@@ -2,7 +2,7 @@ include "../../../src/ecs/table.nim"
 
 import times, os
 
-const SAMPLE = 1000000
+const SAMPLE = 100000
 
 template benchmark(benchmarkName: string, sample:int, code: untyped) =
   block:
@@ -53,7 +53,7 @@ benchmark "New archetype", SAMPLE:
   counter += 2
   counter = counter mod 100
 
-benchmark "Ad component (edge cached)", SAMPLE:
+benchmark "Add component (edge cached)", SAMPLE:
   discard graph.addComponent(node1, ComponentId(15))
 
 let node2 = graph.addComponent(node1, ComponentId(15))

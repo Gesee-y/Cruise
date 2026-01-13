@@ -7,8 +7,8 @@ include "../../src/ecs/table.nim"
 include "../../src/profile/benchmarks.nim"
 
 const
-  Samples = 10_0
-  Warmup  = 1_0
+  Samples = 100
+  Warmup  = 10
 
 type
   Position = object
@@ -49,7 +49,7 @@ proc setupWorld(): ECSWorld =
 # Benchmarks
 # ==============================
 
-const ENTITY_COUNT = 10000
+const ENTITY_COUNT = 10_000
 
 # ---------------------------------
 # Entity creation
@@ -155,7 +155,7 @@ proc runSparseBenchmarks() =
       var w = setupWorld()
       var posc = w.get(Position)
       var velc = w.get(Velocity)
-      discard w.createSparseEntities(ENTITY_COUNT*100, [Pos, Vel])),
+      discard w.createSparseEntities(ENTITY_COUNT, [Pos, Vel])),
     (
       for (sid, r) in w.sparseQuery(query(w, Position and Velocity)):
         let bid = posc.toSparse[sid]-1
@@ -170,6 +170,38 @@ proc runSparseBenchmarks() =
     )
   )
   showDetailed(suite.benchmarks[6])
+  
+  var s = 0'f32
+  suite.add benchmarkWithSetup(
+    "sparse_read",
+    Samples,
+    Warmup,
+    (
+      var w = setupWorld()
+      var posc = w.get(Position)
+      var ents = w.createSparseEntities(ENTITY_COUNT, [Pos])),
+    (
+      for e in ents:
+        s += posc[e].x
+    )
+  )
+  showDetailed(suite.benchmarks[7])
+
+  suite.add benchmarkWithSetup(
+    "sparse_write",
+    Samples,
+    Warmup,
+    (
+      var w = setupWorld()
+      var s = 0'f32
+      var posc = w.get(Position)
+      var ents = w.createSparseEntities(ENTITY_COUNT, [Pos])),
+    (
+      for e in ents:
+        posc[e] = Position()
+    )
+  )
+  showDetailed(suite.benchmarks[8])
 
   # ==============================
   # Results

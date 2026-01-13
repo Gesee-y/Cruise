@@ -180,7 +180,7 @@ template swapVals(b: untyped, i, j:int|uint) =
 template overrideVals[N,T,S,B](b: SoAFragmentArray[N,T,S,B], i, j:int|uint) =
   b[i] = b[j]
 
-template overrideVals[N,T,B](b: SoAFragment[N,T,B], i, j:int|uint) =
+template overrideVals[N,T,B](b: SoAFragment[N,T,B] | ref SoAFragment[N,T,B], i, j:int|uint) =
   b[i] = b[j]
 
 template overrideVals(f, archId, ents, ids, toSwap, toAdd:untyped) =
@@ -396,11 +396,11 @@ proc `[]=`[N,T,S,B](f:var SoAFragmentArray[N,T,S,B], i:uint, v:B) =
 
 proc len[N,T,B](blk:SoAFragment[N,T,B]) = N
 
-iterator iter[N,T,B](blk:SoAFragment[N,T,B]):B =
+iterator iter[N,T,B](blk:SoAFragment[N,T,B] | ref SoAFragment[N,T,B]):B =
   for i in 0..<N:
     yield blk[i]
 
-iterator pairs[N,T,B](blk:SoAFragment[N,T,B]):(int, B) =
+iterator pairs[N,T,B](blk:SoAFragment[N,T,B] | ref SoAFragment[N,T,B]):(int, B) =
   for i in 0..<N:
     yield (i, blk[i])
 

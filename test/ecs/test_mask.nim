@@ -23,9 +23,9 @@ proc zeroMask(): ArchetypeMask =
 # TESTS
 ############################################
 
-suite "ArchetypeMask – tests complets":
+suite "ArchetypeMask tests":
 
-  test "and binaire":
+  test "Bitwise and":
     var a = zeroMask()
     var b = zeroMask()
     a[0] = 0b1011
@@ -34,7 +34,7 @@ suite "ArchetypeMask – tests complets":
     let c = a and b
     check c[0] == 0b1001
 
-  test "or binaire":
+  test "Bitwise or":
     var a = zeroMask()
     var b = zeroMask()
     a[1] = 0b0011
@@ -43,7 +43,7 @@ suite "ArchetypeMask – tests complets":
     let c = a or b
     check c[1] == 0b0111
 
-  test "xor binaire":
+  test "Bitwise xor":
     var a = zeroMask()
     var b = zeroMask()
     a[2] = 0b1111
@@ -52,14 +52,14 @@ suite "ArchetypeMask – tests complets":
     let c = a xor b
     check c[2] == 0b1010
 
-  test "not binaire":
+  test "Bitwise not":
     var a = zeroMask()
     a[0] = 0b1010
 
     let c = not a
     check c[0] == (not 0b1010).uint
 
-  test "setBit explicite (i,j)":
+  test "setBit explicit (i,j)":
     var a = zeroMask()
     a.setBit(0, 3)
     a.setBit(0, 5)
@@ -67,7 +67,7 @@ suite "ArchetypeMask – tests complets":
     check ((a[0] shr 3) and 1) == 1
     check ((a[0] shr 5) and 1) == 1
 
-  test "setBit lineaire":
+  test "setBit linear":
     var a = zeroMask()
     a.setBit(0)
     a.setBit(1)
@@ -77,18 +77,18 @@ suite "ArchetypeMask – tests complets":
     check a.getBit(1) == 1
     check a.getBit(BITS + 2) == 1
 
-  test "getBit retourne 0 si non set":
+  test "getBit returns 0 if not set":
     var a = zeroMask()
     check a.getBit(10) == 0
 
-  test "setBit ne pollue pas les autres couches":
+  test "setBit don't affect other layers":
     var a = zeroMask()
     a.setBit(BITS + 1)
 
     check a[0] == 0
     check a[1] != 0
 
-  test "operations independantes par layer":
+  test "operations independents per layer":
     var a = zeroMask()
     var b = zeroMask()
 
@@ -99,7 +99,7 @@ suite "ArchetypeMask – tests complets":
     check c[0] == 0b1111
     check c[1] == 0b1111
 
-  test "roundtrip set/get sur toute la plage":
+  test "roundtrip set/get on all the mask":
     var a = zeroMask()
     let maxBits = L * BITS
 

@@ -1,6 +1,4 @@
-include "../../src/ecs/fragment.nim"
-import tables
-include "../../src/ecs/registry.nim"
+include "../../src/ecs/table.nim"
 import unittest
 
 ############################################
@@ -38,7 +36,7 @@ suite "ComponentRegistry – core behavior":
 
   test "Register single component":
     var reg = newRegistry()
-    registerComponent[Position](reg)
+    discard reg.registerComponent(Position)
 
     check reg.entries.len == 1
     check reg.cmap.hasKey("Position")
@@ -46,14 +44,14 @@ suite "ComponentRegistry – core behavior":
 
   test "Retrieve component entry by index":
     var reg = newRegistry()
-    registerComponent[Position](reg)
+    discard reg.registerComponent(Position)
 
     let entry = reg.getEntry(0)
     check entry.rawPointer != nil
 
   test "Resize operation affects fragment array":
     var reg = newRegistry()
-    registerComponent[Position](reg)
+    discard reg.registerComponent(Position)
 
     let entry = reg.getEntry(0)
     entry.resizeOp(entry.rawPointer, 2)
@@ -63,7 +61,7 @@ suite "ComponentRegistry – core behavior":
 
   test "New block at specific index":
     var reg = newRegistry()
-    registerComponent[Position](reg)
+    discard reg.registerComponent(Position)
 
     let entry = reg.getEntry(0)
     entry.resizeOp(entry.rawPointer, 1)
@@ -75,7 +73,7 @@ suite "ComponentRegistry – core behavior":
 
   test "New block with offset":
     var reg = newRegistry()
-    registerComponent[Position](reg)
+    discard reg.registerComponent(Position)
 
     let entry = reg.getEntry(0)
     entry.newBlockOp(entry.rawPointer, 0)
@@ -83,38 +81,9 @@ suite "ComponentRegistry – core behavior":
     let frag = getvalue[Position](entry)
     check frag.blocks.len == 1
 
-  test "Activate bit sets fragment mask":
-    var reg = newRegistry()
-    registerComponent[Position](reg)
-
-    let entry = reg.getEntry(0)
-    entry.newBlockOp(entry.rawPointer, 0)
-    entry.activateBitOp(entry.rawPointer, 3)
-
-    let frag = getvalue[Position](entry)
-    let bid = 3 div N
-    let lid = 3 mod N
-
-    check ((frag.blocks[bid].mask shr lid) and 1) == 1
-
-  test "Deactivate bit clears fragment mask":
-    var reg = newRegistry()
-    registerComponent[Position](reg)
-
-    let entry = reg.getEntry(0)
-    entry.newBlockOp(entry.rawPointer, 0)
-    entry.activateBitOp(entry.rawPointer, 2)
-    entry.deactivateBitOp(entry.rawPointer, 2)
-
-    let frag = getvalue[Position](entry)
-    let bid = 2 div N
-    let lid = 2 mod N
-
-    check ((frag.blocks[bid].mask shr lid) and 1) == 0
-
   test "Override values moves data correctly":
     var reg = newRegistry()
-    registerComponent[Position](reg)
+    discard reg.registerComponent(Position)
 
     let entry = reg.getEntry(0)
     entry.newBlockOp(entry.rawPointer, 0)
@@ -132,8 +101,8 @@ suite "ComponentRegistry – core behavior":
   test "Multiple registry entries remain independent":
 
     var reg = newRegistry()
-    registerComponent[Position](reg)
-    registerComponent[Velocity](reg)
+    discard reg.registerComponent(Position)
+    discard reg.registerComponent(Velocity)
 
     check reg.entries.len == 2
     check reg.cmap["Position"] == 0
