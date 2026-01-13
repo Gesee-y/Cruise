@@ -11,7 +11,7 @@ type
 ############################################################ DENSE OPERATIONS ######################################################################
 ################################################################################################################################################### 
 
-proc createEntity(world:var ECSWorld, arch:ArchetypeMask):DenseHandle =
+proc createEntity*(world:var ECSWorld, arch:ArchetypeMask):DenseHandle =
   let pid = getStableEntity(world)
   let (bid, id, archId) = allocateEntity(world, arch)
 
@@ -25,10 +25,10 @@ proc createEntity(world:var ECSWorld, arch:ArchetypeMask):DenseHandle =
   
   return DenseHandle(obj:e, gen:world.generations[pid])
 
-proc createEntity(world:var ECSWorld, cids:varargs[int]):DenseHandle =
+proc createEntity*(world:var ECSWorld, cids:varargs[int]):DenseHandle =
   return world.createEntity(maskOf(cids))
 
-proc createEntities(world:var ECSWorld, n:int, arch:ArchetypeMask):seq[DenseHandle] =
+proc createEntities*(world:var ECSWorld, n:int, arch:ArchetypeMask):seq[DenseHandle] =
   result = newSeqOfCap[DenseHandle](n)
   let pids = getStableEntities(world, n)
   var archNode = world.archGraph.findArchetypeFast(arch)
@@ -54,10 +54,10 @@ proc createEntities(world:var ECSWorld, n:int, arch:ArchetypeMask):seq[DenseHand
   
   return result
 
-proc createEntities(world:var ECSWorld, n:int, cids:varargs[int]):seq[DenseHandle] =
+proc createEntities*(world:var ECSWorld, n:int, cids:varargs[int]):seq[DenseHandle] =
   return world.createEntities(n, maskOf(cids))
 
-template deleteEntity(world:var ECSWorld, d:DenseHandle) =
+template deleteEntity*(world:var ECSWorld, d:DenseHandle) =
   let e = d.obj
   
   #check(not e.isNil, "Invalid access. Trying to access nil entity.")
@@ -69,10 +69,10 @@ template deleteEntity(world:var ECSWorld, d:DenseHandle) =
   world.generations[e.widx] += 1.uint32
   world.free_entities.add(e.widx)
 
-template deleteEntityDefer(world:var ECSWorld, d:DenseHandle, buffer_id:int) =
+template deleteEntityDefer*(world:var ECSWorld, d:DenseHandle, buffer_id:int) =
   world.cb[buffer_id].addComponent(DeleteOp.int, d.obj.archetypeId, 0'u32, PayLoad(eid:d.obj.widx.uint, obj:d))
 
-proc migrateEntity(world: var ECSWorld, d:DenseHandle, archNode:ArchetypeNode) =
+proc migrateEntity*(world: var ECSWorld, d:DenseHandle, archNode:ArchetypeNode) =
   let e = d.obj
 
   check(not e.isNil, "Invalid access. Trying to access nil entity.")
@@ -92,17 +92,17 @@ proc migrateEntity(world: var ECSWorld, d:DenseHandle, archNode:ArchetypeNode) =
     e.id = (bid shl BLK_SHIFT) or id
     e.archetypeId = archNode.id
     
-template migrateEntity(world: var ECSWorld, ents:var openArray, archNode:ArchetypeNode) =
+template migrateEntity*(world: var ECSWorld, ents:var openArray, archNode:ArchetypeNode) =
   if ents.len != 0:
     let e = ents[0].obj
 
     if archNode.id != e.archetypeId:
       changePartition(world, ents, e.archetypeId, archNode)
 
-template migrateEntityDefer(world:var ECSWorld, d:DenseHandle, archNode:ArchetypeNode, buffer_id:int) =
+template migrateEntityDefer*(world:var ECSWorld, d:DenseHandle, archNode:ArchetypeNode, buffer_id:int) =
   world.cb[buffer_id].addComponent(MigrateOp.int, archNode.id, d.obj.archetypeId.uint32, PayLoad(eid:d.obj.widx.uint, obj:d))
 
-proc addComponent(world:var EcsWorld, d:DenseHandle, components:varargs[int]) =
+proc addComponent*(world:var EcsWorld, d:DenseHandle, components:varargs[int]) =
   let e = d.obj
   let oldArch = world.archGraph.nodes[e.archetypeId]
   var archNode = oldArch
@@ -111,7 +111,7 @@ proc addComponent(world:var EcsWorld, d:DenseHandle, components:varargs[int]) =
 
   migrateEntity(world, d, archNode)
 
-proc removeComponent(world:var EcsWorld, d:DenseHandle, components:varargs[int]) =
+proc removeComponent*(world:var EcsWorld, d:DenseHandle, components:varargs[int]) =
   let e = d.obj
   let oldArch = world.archGraph.nodes[e.archetypeId]
   var archNode = oldArch
@@ -124,11 +124,11 @@ proc removeComponent(world:var EcsWorld, d:DenseHandle, components:varargs[int])
 ########################################################## SPARSE OPERATIONS ######################################################################
 ################################################################################################################################################### 
 
-proc createSparseEntity(w:var ECSWorld, components:varargs[int]):SparseHandle =
+proc createSparseEntity*(w:var ECSWorld, components:varargs[int]):SparseHandle =
   let id = w.allocateSparseEntity(components)
   return SparseHandle(id:id, gen:w.sparse_gens[id], mask:maskOf(components))
 
-proc createSparseEntities(w:var ECSWorld, n:int, components:varargs[int]):seq[SparseHandle] =
+proc createSparseEntities*(w:var ECSWorld, n:int, components:varargs[int]):seq[SparseHandle] =
   var res = newSeqOfCap[SparseHandle](n)
   let ids = w.allocateSparseEntities(n, components)
   let mask = maskOf(components)
@@ -139,15 +139,15 @@ proc createSparseEntities(w:var ECSWorld, n:int, components:varargs[int]):seq[Sp
 
   return res
 
-proc deleteEntity(w:var ECSWorld, s:var SparseHandle) =
+proc deleteEntity*(w:var ECSWorld, s:var SparseHandle) =
   w.deleteSparseRow(s.id, s.mask)
   w.sparse_gens[s.id] += 1
 
-proc addComponent(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
+proc addComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
   s.mask.setBit(components)
   w.activateComponentsSparse(s.id, components)
 
-proc removeComponent(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
+proc removeComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
   s.mask.unSetBit(components)
   w.deactivateComponentsSparse(s.id, components)
 
@@ -155,7 +155,7 @@ proc removeComponent(w:var ECSWorld, s:var SparseHandle, components:varargs[int]
 #################################################### SPARSE/DENSE OPERATIONS ######################################################################
 ################################################################################################################################################### 
 
-proc makeDense(world:var ECSWorld, s:var SparseHandle):DenseHandle =
+proc makeDense*(world:var ECSWorld, s:var SparseHandle):DenseHandle =
   var d = world.createEntity(s.mask)
   
   for m in s.mask:
@@ -171,7 +171,7 @@ proc makeDense(world:var ECSWorld, s:var SparseHandle):DenseHandle =
 
   return d
 
-proc makeSparse(world:var ECSWorld, d:DenseHandle):SparseHandle =
+proc makeSparse*(world:var ECSWorld, d:DenseHandle):SparseHandle =
   var s = world.createSparseEntity(world.archGraph.nodes[d.obj.archetypeId].partition.components)
   
   for m in s.mask:

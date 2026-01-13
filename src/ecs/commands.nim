@@ -28,7 +28,7 @@ type
     currentGeneration: uint8
     activeSignatures: seq[uint32]
 
-  CommandBuffer = object
+  CommandBuffer* = object
     map: BatchMap
     cursor: int
 
@@ -111,44 +111,4 @@ proc addCommand(cb: var CommandBuffer, op: range[0..15], arch: uint16, flags: ui
           scanEntry.data[scanEntry.count] = payload
           scanEntry.count.inc
           return
-
-#[ --- Benchmark ---
-
-proc runBenchmark() =
-  var cb = initCommandBuffer()
-  defer: cb.destroy()
-  
-  const NUM_COMMANDS = 2_000_000
-  
-  echo "--- Setup Benchmark (Merged Key 64-bit) ---"
-  echo "Commandes: ", NUM_COMMANDS
-  
-  var dataPayloads: array[100, Payload]
-  for i in 0..<100:
-    dataPayloads[i] = Payload(eid: EntityId(i), value: float32(i))
-
-  let t0 = getMonoTime()
-  for i in 0..<NUM_COMMANDS:
-    let op = i mod 4
-    let arch = (i div 4) mod 10
-    let flags = i mod 2
-    
-    cb.addCommand(cast[range[0..15]](op), cast[uint16](arch), uint32(flags), (dataPayloads[i mod 100]))
-  
-  let t1 = getMonoTime()
-  let addTime = (t1 - t0).inMicroseconds
-  echo "Ajout commandes: ", addTime, " us"
-  
-  let nsPerCmd = (addTime.float * 1000.0) / NUM_COMMANDS.float
-  echo "=> ", nsPerCmd, " ns / commande."
-
-  let t2 = getMonoTime()
-  cb.process()
-  let t3 = getMonoTime()
-  echo "Traitement: ", (t3 - t2).inMicroseconds, " us"
-  
-  echo "Total: ", (t3 - t0).inMicroseconds, " us"
-
-when isMainModule:
-  runBenchmark()
-]#
+          

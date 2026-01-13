@@ -32,11 +32,11 @@ type
     components:SoAFragmentArray[N,T,S,B]
     mask:seq[uint]
 
-  TableRange = object
+  TableRange* = object
     r:Range
     block_idx:int
 
-  TablePartition = ref object
+  TablePartition* = ref object
     zones:seq[TableRange]
     components:seq[int]
     fill_index:int
@@ -44,7 +44,7 @@ type
 include "archetypes.nim"
 
 type
-  ECSWorld = ref object
+  ECSWorld* = ref object
     registry:ComponentRegistry
     entities:seq[Entity]
     commandBufs:seq[CommandBuffer]
@@ -75,7 +75,7 @@ template newTableColumn[N,T,S,B](f:SoAFragmentArray[N,T,S,B]):untyped =
   var res = TableColumn[N,T,B](components:f, mask:m)
   res
 
-proc newECSWorld(max_entities:int=1000000):ECSWorld =
+proc newECSWorld*(max_entities:int=1000000):ECSWorld =
   var w:ECSWorld
   new(w)
   new(w.registry)
@@ -94,12 +94,12 @@ proc newECSWorld(max_entities:int=1000000):ECSWorld =
 proc isEmpty(t:TableRange):bool = t.r.s == t.r.e
 proc isFull(t:TableRange):bool = t.r.e - t.r.s == DEFAULT_BLK_SIZE
 
-proc getComponentId(world:ECSWorld, t:typedesc):int =
+proc getComponentId*(world:ECSWorld, t:typedesc):int =
   return world.registry.cmap[$t]
 
-proc getArchetype(w:ECSWorld, e:SomeEntity):ArchetypeNode =
+proc getArchetype*(w:ECSWorld, e:SomeEntity):ArchetypeNode =
   return w.archGraph.nodes[e.archetypeId]
-proc getArchetype(w:ECSWorld, d:DenseHandle):ArchetypeNode =
+proc getArchetype*(w:ECSWorld, d:DenseHandle):ArchetypeNode =
   return w.getArchetype(d.obj)
 
 proc makeId(info:(uint, Range)):uint =
@@ -120,15 +120,15 @@ proc makeId(i:uint):uint =
 
   return (bid shl BLK_SHIFT) or idx
 
-proc newCommandBuffer(w: var ECSWorld):int =
+proc newCommandBuffer*(w: var ECSWorld):int =
   let c = initCommandBuffer()
   w.commandBufs.add(c)
   return w.commandBufs.len-1
 
-proc getCommandBuffer(w: var ECSWorld, id:int):CommandBuffer =
+proc getCommandBuffer*(w: var ECSWorld, id:int):CommandBuffer =
   return w.commandBufs[id]
 
-proc isAlive(w:ECSWorld, d:DenseHandle):bool =
+proc isAlive*(w:ECSWorld, d:DenseHandle):bool =
   return d.gen == w.generations[d.obj.widx]
 
 {.pop.}
@@ -163,14 +163,14 @@ proc getStableEntities(world:ECSWorld, n:int):seq[int] =
 
   return entity_idx
 
-proc registerComponent[T](world:var ECSWorld, t:typedesc[T]):int =
+proc registerComponent*[T](world:var ECSWorld, t:typedesc[T]):int =
   registerComponent(world.registry, T)
 
-template get[T](world:ECSWorld,t:typedesc[T]):untyped =
+template get*[T](world:ECSWorld,t:typedesc[T]):untyped =
   let id = world.getComponentId(t)
   getValue[T](world.registry.entries[id])
 
-template get[T](world:ECSWorld, t:typedesc[T], i:untyped):untyped =
+template get*[T](world:ECSWorld, t:typedesc[T], i:untyped):untyped =
   let id = world.getComponentId(t)
   getValue[T](world.registry.entries[id])[i]
 
@@ -245,3 +245,9 @@ proc process(world: var ECSWorld, cb: var CommandBuffer) =
     cb.map.currentGeneration = 1
   else:
     inc cb.map.currentGeneration
+
+proc flush*(w:var ECSWorld) =
+  for i in 0..<w.commandBufs.len:
+    var cb = w.commandBufs[i]
+    w.process(cb)
+  

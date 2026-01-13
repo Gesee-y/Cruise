@@ -63,7 +63,7 @@ proc matchesArchetype(sig: QuerySignature, arch: ArchetypeMask): bool =
 ################################################################### DENSE QUERIES ##################################################################
 ####################################################################################################################################################
 
-iterator denseQuery(world: ECSWorld, sig: QuerySignature): (int, HSlice[int, int]) =
+iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, HSlice[int, int]) =
   ## Iterate through all partitions that match the query signature
   ## Returns block index and range for each matching zone
   
@@ -77,7 +77,7 @@ iterator denseQuery(world: ECSWorld, sig: QuerySignature): (int, HSlice[int, int
       for zone in archNode.partition.zones:
         yield (zone.block_idx, zone.r.s..<zone.r.e)
 
-proc denseQueryCache(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
+proc denseQueryCache*(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
   ## Iterate through all partitions that match the query signature
   ## Returns block index and range for each matching zone
   
@@ -89,12 +89,12 @@ proc denseQueryCache(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
     if not archNode.partition.isNil: 
       result.part.add(archNode.partition)
 
-iterator items(qr:DenseQueryResult):(int, HSlice[int, int]) =
+iterator items*(qr:DenseQueryResult):(int, HSlice[int, int]) =
   for partition in qr.part:
     for zone in partition.zones:
       yield (zone.block_idx, zone.r.s..<zone.r.e)
 
-proc denseQueryCount(world: ECSWorld, sig: QuerySignature): int =
+proc denseQueryCount*(world: ECSWorld, sig: QuerySignature): int =
   ## Count total entities matching the dense query
   result = 0
   
@@ -148,7 +148,7 @@ proc filterExcludedMasks(baseMask: var seq[uint], excludeMasks: seq[seq[uint]]) 
     for i in 0..<minLen:
       baseMask[i] = baseMask[i] and not excludeSeq[i]
 
-iterator sparseQuery(world: ECSWorld, sig: QuerySignature): (int, uint) =
+iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, uint) =
   ## Iterate through sparse entities matching the query
   ## Returns chunk index and mask iterator for each matching chunk
   
@@ -191,7 +191,7 @@ iterator sparseQuery(world: ECSWorld, sig: QuerySignature): (int, uint) =
 
         yield (chunkIdx, chunkMask)
 
-proc sparseQueryCache(world: ECSWorld, sig: QuerySignature): sparseQueryResult =
+proc sparseQueryCache*(world: ECSWorld, sig: QuerySignature): sparseQueryResult =
   ## Iterate through sparse entities matching the query
   ## Returns chunk index and mask iterator for each matching chunk
   
@@ -238,7 +238,7 @@ proc sparseQueryCache(world: ECSWorld, sig: QuerySignature): sparseQueryResult =
     result.rmask = resultMask
     result.chunks = chk
 
-iterator items(sr:sparseQueryResult):(int, uint) =
+iterator items*(sr:sparseQueryResult):(int, uint) =
   var c = 0
   let S = sizeof(uint)*8
   for i in 0..<sr.rmask.len:
@@ -252,7 +252,7 @@ iterator items(sr:sparseQueryResult):(int, uint) =
       yield (chunkIdx, chunkMask)
       c += 1
 
-proc sparseQueryCount(world: ECSWorld, sig: QuerySignature): int =
+proc sparseQueryCount*(world: ECSWorld, sig: QuerySignature): int =
   ## Count total entities matching the sparse query
   result = 0
   
