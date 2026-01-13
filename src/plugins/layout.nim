@@ -12,3 +12,4 @@ method getChanges(dl:DataLayout):DataChange {.base.} =
 
 method getAdded(dl:DataLayout) {.base.} = discard
 method getRemoved(dl:DataLayout) {.base.} = discard
+
