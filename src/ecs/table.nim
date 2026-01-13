@@ -23,6 +23,7 @@ template onDanger(code) =
 
 include "fragment.nim"
 include "entity.nim"
+include "commands.nim"
 include "registry.nim"
 include "mask.nim"
 
@@ -46,8 +47,10 @@ type
   ECSWorld = ref object
     registry:ComponentRegistry
     entities:seq[Entity]
+    commandBufs:seq[CommandBuffer]
     handles:seq[ptr Entity]
     generations:seq[uint32]
+    sparse_gens:seq[uint32]
     free_entities:seq[int]
     sparse_entities:seq[Entity]
     archetypes:Table[ArchetypeMask, TablePartition]
@@ -110,6 +113,14 @@ proc makeId(i:int):uint =
   let idx = i mod DEFAULT_BLK_SIZE
 
   return (bid.uint shl BLK_SHIFT) or idx.uint
+
+proc newCommandBuffer(w: var ECSWorld):int =
+  let c = initCommandBuffer()
+  w.commandBufs.add(c)
+  return w.commandBufs.len-1
+
+proc getCommandBuffer(w: var ECSWorld, id:int):CommandBuffer =
+  return w.commandBufs[id]
 
 {.pop.}
 
@@ -176,3 +187,41 @@ include "dense.nim"
 include "sparse.nim"
 include "query.nim"
 include "operations.nim"
+
+proc process(cb: var CommandBuffer) =
+  if cb.map.activeSignatures.len == 0: return
+
+  cb.map.activeSignatures.sort()
+
+  let genKey = CommandKey(cb.map.currentGeneration) shl 32
+
+  for sig in cb.map.activeSignatures:
+    let targetKey = genKey or CommandKey(sig)
+    
+    var idx = int(sig) and (MAP_CAPACITY - 1)
+    while cb.map.entries[idx].key != targetKey:
+      idx = (idx + 1) and (MAP_CAPACITY - 1)
+    
+    let batch = addr(cb.map.entries[idx])
+    
+    let dataPtr = batch.data
+    for i in 0..<batch.count:
+      discard dataPtr[i]
+
+  for sig in cb.map.activeSignatures:
+    let targetKey = genKey or CommandKey(sig)
+    var idx = int(sig) and (MAP_CAPACITY - 1)
+    while cb.map.entries[idx].key != targetKey:
+      idx = (idx + 1) and (MAP_CAPACITY - 1)
+    cb.map.entries[idx].count = 0
+  
+  cb.map.activeSignatures.setLen(0)
+  
+  if cb.map.currentGeneration == 255: 
+    # Rare case : total reset
+    for i in 0..<MAP_CAPACITY:
+      if cb.map.entries[i].key != 0:
+        cb.map.entries[i].key = 0
+    cb.map.currentGeneration = 1
+  else:
+    inc cb.map.currentGeneration

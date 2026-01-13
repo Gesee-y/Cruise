@@ -2,6 +2,10 @@
 ############################################################# ECS OPERATIONS ######################################################################
 ################################################################################################################################################### 
 
+type
+  ECSOpCode = enum
+    DeleteOp = 0
+    MigrateOp = 1
 
 ################################################################################################################################################### 
 ############################################################ DENSE OPERATIONS ######################################################################
@@ -61,6 +65,9 @@ template deleteEntity(world:var ECSWorld, d:DenseHandle) =
   world.generations[e.widx] += 1.uint32
   world.free_entities.add(e.widx)
 
+template deleteEntityDefer(world:var ECSWorld, d:DenseHandle, buffer_id:int) =
+  world.cb[buffer_id].addComponent(DeleteOp.int, d.obj.archetypeId, 0'u32, PayLoad(eid:d.obj.widx.uint))
+
 proc migrateEntity(world: var ECSWorld, d:DenseHandle, archNode:ArchetypeNode) =
   let e = d.obj
 
@@ -88,6 +95,9 @@ template migrateEntity(world: var ECSWorld, ents:var openArray, archNode:Archety
     if archNode.id != e.archetypeId:
       changePartition(world, ents, e.archetypeId, archNode)
 
+template migrateEntityDefer(world:var ECSWorld, d:DenseHandle, archNode:ArchetypeNode, buffer_id:int) =
+  world.cb[buffer_id].addComponent(MigrateOp.int, archNode.id, d.obj.archetypeId.uint32, PayLoad(eid:d.obj.widx.uint))
+
 proc addComponent(world:var EcsWorld, e:SomeEntity, components:seq[int]) =
   let oldArch = world.archGraph.nodes[e.archetypeId]
   var archNode = oldArch
@@ -110,7 +120,7 @@ proc removeComponent(world:var EcsWorld, e:SomeEntity, components:seq[int]) =
 
 proc createSparseEntity(w:var ECSWorld, components:openArray[int]):SparseHandle =
   let id = w.allocateSparseEntity(components)
-  return SparseHandle(id:id, mask:maskOf(components))
+  return SparseHandle(id:id, gen:w.sparse_gens[id], mask:maskOf(components))
 
 proc createSparseEntities(w:var ECSWorld, n:int, components:openArray[int]):seq[SparseHandle] =
   var res = newSeqOfCap[SparseHandle](n)
@@ -119,12 +129,13 @@ proc createSparseEntities(w:var ECSWorld, n:int, components:openArray[int]):seq[
 
   for r in ids:
     for i in r.s..<r.e:
-      res.add(SparseHandle(id:i.uint, mask:mask))
+      res.add(SparseHandle(id:i.uint, gen:w.sparse_gens[i], mask:mask))
 
   return res
 
 proc deleteEntity(w:var ECSWorld, s:var SparseHandle) =
   w.deleteSparseRow(s.id, s.mask)
+  w.sparse_gens[s.id] += 1
 
 proc addComponent(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
   s.mask.setBit(components)

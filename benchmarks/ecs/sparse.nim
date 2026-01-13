@@ -49,7 +49,7 @@ proc setupWorld(): ECSWorld =
 # Benchmarks
 # ==============================
 
-const ENTITY_COUNT = 100000
+const ENTITY_COUNT = 10000
 
 # ---------------------------------
 # Entity creation
@@ -155,10 +155,10 @@ proc runSparseBenchmarks() =
       var w = setupWorld()
       var posc = w.get(Position)
       var velc = w.get(Velocity)
-      discard w.createSparseEntities(ENTITY_COUNT, [Pos, Vel])),
+      discard w.createSparseEntities(ENTITY_COUNT*100, [Pos, Vel])),
     (
       for (sid, r) in w.sparseQuery(query(w, Position and Velocity)):
-        let bid = posc.toSparse[sid]
+        let bid = posc.toSparse[sid]-1
         var posbx = addr posc.sparse[bid].data.x
         let velbx = addr velc.sparse[bid].data.x
         var posby = addr posc.sparse[bid].data.y

@@ -23,8 +23,8 @@ proc deactivateComponentsSparse(table: var ECSWorld, i:int|uint, components:Arch
 
     while mask != 0:
       let id = countTrailingZeroBits(mask)
-      #var entry = table.registry.entries[id]
-      #entry.deactivateSparseBitOp(entry.rawPointer, i.uint)
+      var entry = table.registry.entries[id]
+      entry.deactivateSparseBitOp(entry.rawPointer, i.uint)
       mask = mask and (mask - 1)
 
 template deactivateComponentsSparse(table: var ECSWorld, idxs:openArray, components:openArray[int]) =
@@ -63,13 +63,15 @@ proc allocateSparseEntities(table: var ECSWorld, count:int, components:openArray
     table.max_index += S
     if n <= 0:
       for i in m..<m+(S-toAdd):
-        table.free_list.add(makeId(i))
+        table.free_list.add(i.uint)
 
     masks.add(mask)
 
   for id in components:
     var entry = table.registry.entries[id]
     entry.newSparseBlocksOp(entry.rawPointer, masks)
+
+  table.sparse_gens.setLen(table.max_index)
 
   return res
 
@@ -83,10 +85,11 @@ proc allocateSparseEntity(table: var ECSWorld, components:openArray[int]):uint =
     entry.newSparseBlockOp(entry.rawPointer, table.max_index, 1.uint)
 
   for i in table.max_index+1..<table.max_index+S:
-    table.free_list.add(makeId(i))
+    table.free_list.add(i.uint)
 
   let id = table.max_index
   table.max_index += S
+  table.sparse_gens.setLen(table.max_index)
 
   return id.uint
 

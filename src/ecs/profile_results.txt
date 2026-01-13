@@ -1,0 +1,2 @@
+total executions of each stack trace:
+Entry: 1/1 Calls: 140/140 = 100.00% [sum: 140; 140/140 = 100.00%]
