@@ -27,6 +27,16 @@ proc deactivateComponentsSparse(table: var ECSWorld, i:int|uint, components:Arch
       entry.deactivateSparseBitOp(entry.rawPointer, i.uint)
       mask = mask and (mask - 1)
 
+proc overrideComponents(table: var ECSWorld, i,j:int|uint, components:ArchetypeMask) =
+  for m in components:
+    var mask = m
+
+    while mask != 0:
+      let id = countTrailingZeroBits(mask)
+      var entry = table.registry.entries[id]
+      entry.overrideValsOp(entry.rawPointer, i.uint, j.makeID)
+      mask = mask and (mask - 1)
+
 template deactivateComponentsSparse(table: var ECSWorld, idxs:openArray, components:openArray[int]) =
   for id in components:
     var entry = table.registry.entries[id]

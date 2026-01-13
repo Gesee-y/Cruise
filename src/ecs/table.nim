@@ -109,10 +109,16 @@ proc makeId(idx,bid:int|uint):uint =
   return (bid.uint shl BLK_SHIFT) or idx.uint
 
 proc makeId(i:int):uint =
-  let bid = i div DEFAULT_BLK_SIZE
-  let idx = i mod DEFAULT_BLK_SIZE
+  let bid = i.uint div DEFAULT_BLK_SIZE
+  let idx = i.uint mod DEFAULT_BLK_SIZE
 
-  return (bid.uint shl BLK_SHIFT) or idx.uint
+  return (bid shl BLK_SHIFT) or idx
+
+proc makeId(i:uint):uint =
+  let bid = i.uint shr 6
+  let idx = i.uint and 63
+
+  return (bid shl BLK_SHIFT) or idx
 
 proc newCommandBuffer(w: var ECSWorld):int =
   let c = initCommandBuffer()

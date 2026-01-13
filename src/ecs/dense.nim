@@ -12,7 +12,7 @@ proc createPartition(table: var ECSWorld, arch: ArchetypeNode): TablePartition =
   return arch.partition
 
 proc allocateNewBlocks(table: var ECSWorld, count: int, res: var seq[(uint, Range)], 
-  partition: var TablePartition, components: openArray[int]): seq[(uint, Range)] =
+  partition: var TablePartition): seq[(uint, Range)] =
   
   check(count >= 0, "Allocation count cannot be negative")
   var n = count
@@ -36,7 +36,7 @@ proc allocateNewBlocks(table: var ECSWorld, count: int, res: var seq[(uint, Rang
     if n >= DEFAULT_BLK_SIZE:
       partition.fill_index += 1
 
-    for id in components:
+    for id in partition.components:
       check(id < table.registry.entries.len, "Component ID out of registry bounds")
       var entry = table.registry.entries[id]
       entry.newBlockAtOp(entry.rawPointer, bc)
@@ -48,16 +48,16 @@ proc allocateNewBlocks(table: var ECSWorld, count: int, res: var seq[(uint, Rang
   table.handles.setLen((table.blockCount + 1) * DEFAULT_BLK_SIZE)
   return res
 
-proc allocateEntities(table: var ECSWorld, n: int, archNode: ArchetypeNode, components: openArray[int]): seq[(uint, Range)] =
+proc allocateEntities(table: var ECSWorld, n: int, archNode: ArchetypeNode): seq[(uint, Range)] =
   check(not archNode.isNil, "ArchetypeNode is nil during entity allocation")
   var res: seq[(uint, Range)]
 
   if archNode.partition.isNil:
     var partition: TablePartition
     new(partition)
-    partition.components = components.toSeq
+    partition.components = cast[seq[int]](archNode.componentIds)
     archNode.partition = partition
-    return allocateNewBlocks(table, n, res, partition, components)
+    return allocateNewBlocks(table, n, res, partition)
 
   var m = n
   var partition = archNode.partition
@@ -76,25 +76,22 @@ proc allocateEntities(table: var ECSWorld, n: int, archNode: ArchetypeNode, comp
     m -= r - e
 
   if m > 0:
-    discard allocateNewBlocks(table, m, res, partition, components)
+    discard allocateNewBlocks(table, m, res, partition)
 
   return res
 
-proc allocateEntities(table: var ECSWorld, n: int, arch: ArchetypeMask, components: openArray[int]): seq[(uint, Range)] =
-  var archNode = table.archGraph.findArchetypeFast(arch)
-  return allocateEntities(table, n, archNode, components)
-
 proc allocateEntities(table: var ECSWorld, n: int, arch: ArchetypeMask): seq[(uint, Range)] =
-  allocateEntities(table, n, arch, getComponentsFromSig(arch))
+  var archNode = table.archGraph.findArchetypeFast(arch)
+  return allocateEntities(table, n, archNode)
 
-proc allocateEntity(table: var ECSWorld, arch: ArchetypeMask, components: openArray[int]): (uint, int, uint16) =
+proc allocateEntity(table: var ECSWorld, arch: ArchetypeMask): (uint, int, uint16) =
   var archNode = table.archGraph.findArchetypeFast(arch)
   check(not archNode.isNil, "ArchetypeNode not found")
 
   if archNode.partition.isNil:
     var partition: TablePartition
     new(partition)
-    partition.components = components.toSeq
+    partition.components = cast[seq[int]](archNode.componentIds)
     archNode.partition = partition
   
   var partition = archNode.partition
@@ -104,7 +101,7 @@ proc allocateEntity(table: var ECSWorld, arch: ArchetypeMask, components: openAr
     partition.zones.setLen(fill_index + 1)
     upsize(table, 1)
 
-    for id in components:
+    for id in partition.components:
       check(id < table.registry.entries.len, "Invalid component ID")
       var entry = table.registry.entries[id]
       entry.newBlockAtOp(entry.rawPointer, table.blockCount)

@@ -11,10 +11,9 @@ type
 ############################################################ DENSE OPERATIONS ######################################################################
 ################################################################################################################################################### 
 
-proc createEntity(world:var ECSWorld, cids:varargs[int]):DenseHandle =
+proc createEntity(world:var ECSWorld, arch:ArchetypeMask):DenseHandle =
   let pid = getStableEntity(world)
-  let arch = maskOf(cids)
-  let (bid, id, archId) = allocateEntity(world, arch, cids)
+  let (bid, id, archId) = allocateEntity(world, arch)
 
   let idx = id.uint mod DEFAULT_BLK_SIZE + bid*DEFAULT_BLK_SIZE
   var e = addr world.entities[pid]
@@ -26,13 +25,15 @@ proc createEntity(world:var ECSWorld, cids:varargs[int]):DenseHandle =
   
   return DenseHandle(obj:e, gen:world.generations[pid])
 
-proc createEntities(world:var ECSWorld, n:int, cids:varargs[int]):seq[DenseHandle] =
+proc createEntity(world:var ECSWorld, cids:varargs[int]):DenseHandle =
+  return world.createEntity(maskOf(cids))
+
+proc createEntities(world:var ECSWorld, n:int, arch:ArchetypeMask):seq[DenseHandle] =
   result = newSeqOfCap[DenseHandle](n)
   let pids = getStableEntities(world, n)
-  let arch = maskOf(cids)
   var archNode = world.archGraph.findArchetypeFast(arch)
   let archId = archNode.id
-  let res = allocateEntities(world, n, archNode, cids)
+  let res = allocateEntities(world, n, archNode)
   var current = 0
 
   for (bid, r) in res:
@@ -52,6 +53,9 @@ proc createEntities(world:var ECSWorld, n:int, cids:varargs[int]):seq[DenseHandl
       result.add(DenseHandle(obj:e, gen:world.generations[pid]))
   
   return result
+
+proc createEntities(world:var ECSWorld, n:int, cids:varargs[int]):seq[DenseHandle] =
+  return world.createEntities(n, maskOf(cids))
 
 template deleteEntity(world:var ECSWorld, d:DenseHandle) =
   let e = d.obj
@@ -146,3 +150,40 @@ proc addComponent(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
 proc removeComponent(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
   s.mask.unSetBit(components)
   w.deactivateComponentsSparse(s.id, components)
+
+################################################################################################################################################### 
+#################################################### SPARSE/DENSE OPERATIONS ######################################################################
+################################################################################################################################################### 
+
+proc makeDense(world:var ECSWorld, s:var SparseHandle):DenseHandle =
+  var d = world.createEntity(s.mask)
+  
+  for m in s.mask:
+    var mask = m
+
+    while mask != 0:
+      let id = countTrailingZeroBits(mask)
+      var entry = world.registry.entries[id]
+      entry.overrideDSOp(entry.rawPointer, d, s)
+      mask = mask and (mask - 1)
+
+  world.deleteEntity(s)
+
+  return d
+
+proc makeSparse(world:var ECSWorld, d:DenseHandle):SparseHandle =
+  var s = world.createSparseEntity(world.archGraph.nodes[d.obj.archetypeId].partition.components)
+  
+  for m in s.mask:
+    var mask = m
+
+    while mask != 0:
+      let id = countTrailingZeroBits(mask)
+      var entry = world.registry.entries[id]
+      entry.overrideSDOp(entry.rawPointer, s, d)
+      mask = mask and (mask - 1)
+
+  world.deleteEntity(d)
+
+  return s
+

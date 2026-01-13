@@ -158,3 +158,13 @@ let res7 = benchmark("Add Component (Acceleration)", SAMPLE):
   migrateEntity(world, entities[], archBase)
 showDetailed(res7)
 
+var (world10, entities10, posID10, velID10, accID10, tagID10, timerID10, hpID10) = setupWorld(ENTITY_COUNT)
+var d = world10.createEntity(0)
+
+let res10 = benchmark("Make Dense/Sparse", SAMPLE):
+  for _ in 0..<ENTITY_COUNT:
+    var s = makeSparse(world10, d)
+    d = makeDense(world10, s)
+showDetailed(res10)
+
+

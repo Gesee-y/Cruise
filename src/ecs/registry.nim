@@ -11,6 +11,8 @@ type
     newSparseBlockOp: proc (p:pointer, offset:int, m:uint) {.noSideEffect, nimcall, inline.}
     newSparseBlocksOp: proc (p:pointer, m:seq[uint]) {.noSideEffect, nimcall, inline.}
     overrideValsOp: proc (p:pointer, i:uint, j:uint)  {.noSideEffect, nimcall, inline.}
+    overrideDSOp: proc (p:pointer, d:DenseHandle, s:SparseHandle)  {.noSideEffect, nimcall, inline.}
+    overrideSDOp: proc (p:pointer, s:SparseHandle, d:DenseHandle)  {.noSideEffect, nimcall, inline.}
     overrideValsBatchOp: proc (p:pointer, archId:uint16, ents: ptr seq[ptr Entity], ids:openArray[DenseHandle], sw:seq[uint], ad:seq[uint])
     getSparseMaskOp: proc (p:pointer):seq[uint] {.noSideEffect, nimcall, inline.}
     getSparseChunkMaskOp: proc(p:pointer, i:int):uint {.noSideEffect, nimcall, inline.}
@@ -65,6 +67,14 @@ macro registerComponent(registry:untyped, B:typed):untyped =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE)
       fr.overrideVals(i, j)
 
+    let overDS = proc (p:pointer, d:DenseHandle,s:SparseHandle) {.noSideEffect, nimcall, inline.} =
+      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE)
+      fr[d] = fr[s]
+
+    let overSD = proc (p:pointer,s:SparseHandle, d:DenseHandle) {.noSideEffect, nimcall, inline.} =
+      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE)
+      fr[s] = fr[d]
+
     let overvb = proc (p:pointer, archId:uint16, ents: ptr seq[ptr Entity], ids:openArray[DenseHandle], sw:seq[uint], ad:seq[uint]) =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE)
       fr.overrideVals(archId, ents, ids, sw, ad)
@@ -98,6 +108,8 @@ macro registerComponent(registry:untyped, B:typed):untyped =
     entry.newSparseBlockOp = newSparseBlk
     entry.newSparseBlocksOp = newSparseBlks
     entry.overrideValsOp = overv
+    entry.overrideDSOp = overDS
+    entry.overrideSDOp = overSD
     entry.overrideValsBatchOp = overvb
     entry.getSparseMaskOp = getsmask
     entry.getSparseChunkMaskOp = getscmask
