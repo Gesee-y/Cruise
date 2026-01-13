@@ -47,8 +47,20 @@ template setBit(a:var ArchetypeMask, i:int) =
   let s = sizeof(uint)*8
   a.setBit(i div s, i mod s)
 
+template setBit(a:var ArchetypeMask, ids:openArray) =
+  let s = sizeof(uint)*8
+
+  for i in ids:
+    a.setBit(i div s, i mod s)
+
 template unSetBit(a:var ArchetypeMask, i,j:int) =
   a[i] = a[i] and not (1.uint shl j)
+
+template unSetBit(a:var ArchetypeMask, ids:openArray) =
+  let s = sizeof(uint)*8
+
+  for i in ids:
+    a.unSetBit(i div s, i mod s)
 
 template unSetBit(a:var ArchetypeMask, i:int) =
   let s = sizeof(uint)*8

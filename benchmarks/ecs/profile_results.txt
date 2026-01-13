@@ -1,0 +1,183 @@
+total executions of each stack trace:
+Entry: 1/55 Calls: 23/200 = 11.50% [sum: 23; 23/200 = 11.50%]
+  operations.nim: addComponent 42/200 = 21.00%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 2/55 Calls: 14/200 = 7.00% [sum: 37; 37/200 = 18.50%]
+  operations.nim: removeComponent 29/200 = 14.50%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 3/55 Calls: 14/200 = 7.00% [sum: 51; 51/200 = 25.50%]
+  sparse.nim: deleteSparseRow 39/200 = 19.50%
+  operations.nim: deleteEntity 40/200 = 20.00%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 4/55 Calls: 14/200 = 7.00% [sum: 65; 65/200 = 32.50%]
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 5/55 Calls: 13/200 = 6.50% [sum: 78; 78/200 = 39.00%]
+  sparse.nim: allocateSparseEntity 19/200 = 9.50%
+  operations.nim: createSparseEntity 29/200 = 14.50%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 6/55 Calls: 8/200 = 4.00% [sum: 86; 86/200 = 43.00%]
+  operations.nim: createSparseEntities 19/200 = 9.50%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 7/55 Calls: 7/200 = 3.50% [sum: 93; 93/200 = 46.50%]
+  fragment.nim: newSparseBlocks 8/200 = 4.00%
+  registry.nim: :anonymous 64/200 = 32.00%
+  sparse.nim: allocateSparseEntities 10/200 = 5.00%
+  operations.nim: createSparseEntities 19/200 = 9.50%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 8/55 Calls: 7/200 = 3.50% [sum: 100; 100/200 = 50.00%]
+  fragment.nim: activateSparseBit 7/200 = 3.50%
+  registry.nim: :anonymous 64/200 = 32.00%
+  operations.nim: addComponent 42/200 = 21.00%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 9/55 Calls: 6/200 = 3.00% [sum: 106; 106/200 = 53.00%]
+  arithmetics.nim: -% 19/200 = 9.50%
+  arc.nim: nimDecRefIsLast 23/200 = 11.50%
+  registry.nim: :anonymous 64/200 = 32.00%
+  sparse.nim: deleteSparseRow 39/200 = 19.50%
+  operations.nim: deleteEntity 40/200 = 20.00%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 10/55 Calls: 6/200 = 3.00% [sum: 112; 112/200 = 56.00%]
+  orc.nim: nimDecRefIsLastCyclicDyn 6/200 = 3.00%
+  sparse.nim: deleteSparseRow 39/200 = 19.50%
+  operations.nim: deleteEntity 40/200 = 20.00%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 11/55 Calls: 6/200 = 3.00% [sum: 118; 118/200 = 59.00%]
+  mask.nim: maskOf 7/200 = 3.50%
+  operations.nim: createSparseEntity 29/200 = 14.50%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 12/55 Calls: 5/200 = 2.50% [sum: 123; 123/200 = 61.50%]
+  arithmetics.nim: -% 19/200 = 9.50%
+  arc.nim: nimIncRef 17/200 = 8.50%
+  registry.nim: :anonymous 64/200 = 32.00%
+  operations.nim: addComponent 42/200 = 21.00%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 13/55 Calls: 5/200 = 2.50% [sum: 128; 128/200 = 64.00%]
+  strutils.nim: repeat 7/200 = 3.50%
+  benchmarks.nim: showDetailed 12/200 = 6.00%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 14/55 Calls: 4/200 = 2.00% [sum: 132; 132/200 = 66.00%]
+  arc.nim: nimIncRef 17/200 = 8.50%
+  registry.nim: :anonymous 64/200 = 32.00%
+  sparse.nim: deleteSparseRow 39/200 = 19.50%
+  operations.nim: deleteEntity 40/200 = 20.00%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 15/55 Calls: 4/200 = 2.00% [sum: 136; 136/200 = 68.00%]
+  operations.nim: createSparseEntity 29/200 = 14.50%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 16/55 Calls: 4/200 = 2.00% [sum: 140; 140/200 = 70.00%]
+  arc.nim: nimDecRefIsLast 23/200 = 11.50%
+  registry.nim: :anonymous 64/200 = 32.00%
+  operations.nim: removeComponent 29/200 = 14.50%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 17/55 Calls: 3/200 = 1.50% [sum: 143; 143/200 = 71.50%]
+  arc.nim: nimDecRefIsLast 23/200 = 11.50%
+  registry.nim: :anonymous 64/200 = 32.00%
+  sparse.nim: deleteSparseRow 39/200 = 19.50%
+  operations.nim: deleteEntity 40/200 = 20.00%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 18/55 Calls: 3/200 = 1.50% [sum: 146; 146/200 = 73.00%]
+  arc.nim: nimDecRefIsLast 23/200 = 11.50%
+  registry.nim: :anonymous 64/200 = 32.00%
+  operations.nim: addComponent 42/200 = 21.00%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 19/55 Calls: 3/200 = 1.50% [sum: 149; 149/200 = 74.50%]
+  arc.nim: nimIncRef 17/200 = 8.50%
+  registry.nim: :anonymous 64/200 = 32.00%
+  operations.nim: removeComponent 29/200 = 14.50%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 20/55 Calls: 3/200 = 1.50% [sum: 152; 152/200 = 76.00%]
+  arithmetics.nim: -% 19/200 = 9.50%
+  arc.nim: nimDecRefIsLast 23/200 = 11.50%
+  registry.nim: :anonymous 64/200 = 32.00%
+  operations.nim: removeComponent 29/200 = 14.50%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 21/55 Calls: 3/200 = 1.50% [sum: 155; 155/200 = 77.50%]
+  benchmarks.nim: prettyTime 7/200 = 3.50%
+  benchmarks.nim: showDetailed 12/200 = 6.00%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 22/55 Calls: 3/200 = 1.50% [sum: 158; 158/200 = 79.00%]
+  tables.nim: []= 5/200 = 2.50%
+  archetypes.nim: initArchetypeGraph 4/200 = 2.00%
+  table.nim: newECSWorld 4/200 = 2.00%
+  sparse.nim: setupWorld 7/200 = 3.50%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 23/55 Calls: 2/200 = 1.00% [sum: 160; 160/200 = 80.00%]
+  fragment.nim: newSparseBlock 2/200 = 1.00%
+  registry.nim: :anonymous 64/200 = 32.00%
+  sparse.nim: allocateSparseEntity 19/200 = 9.50%
+  operations.nim: createSparseEntity 29/200 = 14.50%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 24/55 Calls: 2/200 = 1.00% [sum: 162; 162/200 = 81.00%]
+  strutils.nim: formatBiggestFloat 2/200 = 1.00%
+  strutils.nim: formatFloat 3/200 = 1.50%
+  benchmarks.nim: prettyTime 7/200 = 3.50%
+  benchmarks.nim: showDetailed 12/200 = 6.00%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 25/55 Calls: 2/200 = 1.00% [sum: 164; 164/200 = 82.00%]
+  registry.nim: :anonymous 64/200 = 32.00%
+  operations.nim: removeComponent 29/200 = 14.50%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 26/55 Calls: 2/200 = 1.00% [sum: 166; 166/200 = 83.00%]
+  fragment.nim: deactivateSparseBit 4/200 = 2.00%
+  registry.nim: :anonymous 64/200 = 32.00%
+  sparse.nim: deleteSparseRow 39/200 = 19.50%
+  operations.nim: deleteEntity 40/200 = 20.00%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 27/55 Calls: 2/200 = 1.00% [sum: 168; 168/200 = 84.00%]
+  strutils.nim: repeat 7/200 = 3.50%
+  benchmarks.nim: showSummary 5/200 = 2.50%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 28/55 Calls: 2/200 = 1.00% [sum: 170; 170/200 = 85.00%]
+  fragment.nim: deactivateSparseBit 4/200 = 2.00%
+  registry.nim: :anonymous 64/200 = 32.00%
+  operations.nim: removeComponent 29/200 = 14.50%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 29/55 Calls: 2/200 = 1.00% [sum: 172; 172/200 = 86.00%]
+  system.nim: pop 2/200 = 1.00%
+  sparse.nim: allocateSparseEntity 19/200 = 9.50%
+  operations.nim: createSparseEntity 29/200 = 14.50%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 30/55 Calls: 2/200 = 1.00% [sum: 174; 174/200 = 87.00%]
+  arithmetics.nim: -% 19/200 = 9.50%
+  arc.nim: nimIncRef 17/200 = 8.50%
+  registry.nim: :anonymous 64/200 = 32.00%
+  sparse.nim: deleteSparseRow 39/200 = 19.50%
+  operations.nim: deleteEntity 40/200 = 20.00%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%
+Entry: 31/55 Calls: 2/200 = 1.00% [sum: 176; 176/200 = 88.00%]
+  arithmetics.nim: -% 19/200 = 9.50%
+  arc.nim: nimDecRefIsLast 23/200 = 11.50%
+  registry.nim: :anonymous 64/200 = 32.00%
+  operations.nim: addComponent 42/200 = 21.00%
+  sparse.nim: runSparseBenchmarks 199/200 = 99.50%
+  sparse.nim: sparse 199/200 = 99.50%

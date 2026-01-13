@@ -63,28 +63,28 @@ proc setupWorld(entityCount: int): (ECSWorld, ref seq[DenseHandle], int, int, in
 # Benchmarks
 # =========================
 
-const ENTITY_COUNT = 100000
+const ENTITY_COUNT = 10000
 
-#[
+
 
 # ---------------------------------
 # Entity creation
 # ---------------------------------
 
-var world1 = newECSWorld()
-let posId1 = world1.registerComponent(Position)
-let velID1 = world1.registerComponent(Velocity)
-let accID1 = world1.registerComponent(Acceleration)
-var pp = world1.get(Position)
-let pos = "Position"
-let vel = "Velocity"
-var comp = @[posID1, velID1, accID1]
+#var world1 = newECSWorld()
+#let posId1 = world1.registerComponent(Position)
+#let velID1 = world1.registerComponent(Velocity)
+#let accID1 = world1.registerComponent(Acceleration)
+#var pp = world1.get(Position)
+#let pos = "Position"
+#let vel = "Velocity"
+#var comp = @[posID1, velID1, accID1]
 
-let res1 = benchmark("Create-Delete Entities (Position + Velocity) [" & $ENTITY_COUNT & "]", SAMPLE):
-  for i in 0..<ENTITY_COUNT:
-    let e = createEntity(world1, comp)
-    world1.deleteEntity(e)
-showDetailed(res1)
+#let res1 = benchmark("Create-Delete Entities (Position + Velocity) [" & $ENTITY_COUNT & "]", SAMPLE):
+#  for i in 0..<ENTITY_COUNT:
+#    let e = createEntity(world1, comp)
+#    world1.deleteEntity(e)
+#showDetailed(res1)
 
 var world100 = newECSWorld()
 let posId100 = world100.registerComponent(Position)
@@ -98,7 +98,6 @@ let res100 = benchmark("Create-Delete Entities (Position + Velocity) [" & $ENTIT
   for e in ents:
     world100.deleteEntity(e)
 showDetailed(res100)
-]#
 # ---------------------------------
 # Dense iteration
 # ---------------------------------
@@ -157,7 +156,7 @@ benchmark("Dense Write (Position update)", SAMPLE):
       p.y += 1
       world.set(i, p)
 
-
+]#
 # ---------------------------------
 # Add component (partition change)
 # ---------------------------------
@@ -181,7 +180,7 @@ let res7 = benchmark("Add Component (Acceleration)", SAMPLE):
     #addComponent(world, e, toAdd)
     #removeComponent(world, e, toAdd)
 showDetailed(res7)
-
+#[
 # ---------------------------------
 # Sparse creation
 # ---------------------------------
@@ -237,4 +236,3 @@ benchmark("Mixed Dense + Sparse Query", SAMPLE):
       discard p.x
 
 ]#
-#discard stdout.readLine()

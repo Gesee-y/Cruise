@@ -2,7 +2,12 @@
 ############################################################# ECS OPERATIONS ######################################################################
 ################################################################################################################################################### 
 
-proc createEntity(world:var EcsWorld, cids:seq[int]):DenseHandle =
+
+################################################################################################################################################### 
+############################################################ DENSE OPERATIONS ######################################################################
+################################################################################################################################################### 
+
+proc createEntity(world:var ECSWorld, cids:seq[int]):DenseHandle =
   let pid = getStableEntity(world)
   let arch = maskOf(cids)
   let (bid, id, archId) = allocateEntity(world, arch, cids)
@@ -17,7 +22,7 @@ proc createEntity(world:var EcsWorld, cids:seq[int]):DenseHandle =
   
   return DenseHandle(obj:e, gen:world.generations[pid])
 
-proc createEntities(world:var EcsWorld, n:int, cids:seq[int]):seq[DenseHandle] =
+proc createEntities(world:var ECSWorld, n:int, cids:seq[int]):seq[DenseHandle] =
   result = newSeqOfCap[DenseHandle](n)
   let pids = getStableEntities(world, n)
   let arch = maskOf(cids)
@@ -44,11 +49,11 @@ proc createEntities(world:var EcsWorld, n:int, cids:seq[int]):seq[DenseHandle] =
   
   return result
 
-template deleteEntity(world:var EcsWorld, d:DenseHandle) =
+template deleteEntity(world:var ECSWorld, d:DenseHandle) =
   let e = d.obj
   
-  check(not e.isNil, "Invalid access. Trying to access nil entity.")
-  check(world.generation[e.widx] == d.gen, "Invalid Entity. Entity is stale (already dead).")
+  #check(not e.isNil, "Invalid access. Trying to access nil entity.")
+  #check(world.generations[e.widx] == d.gen, "Invalid Entity. Entity is stale (already dead).")
 
   let l = deleteRow(world, e.id, e.archetypeId)
   world.handles[(e.id and BLK_MASK) + ((e.id shr BLK_SHIFT) and BLK_MASK)*DEFAULT_BLK_SIZE] = world.handles[l]
@@ -60,7 +65,7 @@ proc migrateEntity(world: var ECSWorld, d:DenseHandle, archNode:ArchetypeNode) =
   let e = d.obj
 
   check(not e.isNil, "Invalid access. Trying to access nil entity.")
-  check(world.generation[e.widx] == d.gen, "Invalid Entity. Entity is stale (already dead).")
+  check(world.generations[e.widx] == d.gen, "Invalid Entity. Entity is stale (already dead).")
   
   if archNode.id != e.archetypeId:
     let (lst, id, bid) = changePartition(world, e.id, e.archetypeId, archNode)
@@ -98,3 +103,33 @@ proc removeComponent(world:var EcsWorld, e:SomeEntity, components:seq[int]) =
     archNode = world.archGraph.removeComponent(archNode, id)
 
   migrateEntity(world, e, archNode)
+
+################################################################################################################################################### 
+########################################################## SPARSE OPERATIONS ######################################################################
+################################################################################################################################################### 
+
+proc createSparseEntity(w:var ECSWorld, components:openArray[int]):SparseHandle =
+  let id = w.allocateSparseEntity(components)
+  return SparseHandle(id:id, mask:maskOf(components))
+
+proc createSparseEntities(w:var ECSWorld, n:int, components:openArray[int]):seq[SparseHandle] =
+  var res = newSeqOfCap[SparseHandle](n)
+  let ids = w.allocateSparseEntities(n, components)
+  let mask = maskOf(components)
+
+  for r in ids:
+    for i in r.s..<r.e:
+      res.add(SparseHandle(id:i.uint, mask:mask))
+
+  return res
+
+proc deleteEntity(w:var ECSWorld, s:var SparseHandle) =
+  w.deleteSparseRow(s.id, s.mask)
+
+proc addComponent(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
+  s.mask.setBit(components)
+  w.activateComponentsSparse(s.id, components)
+
+proc removeComponent(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
+  s.mask.unSetBit(components)
+  w.deactivateComponentsSparse(s.id, components)

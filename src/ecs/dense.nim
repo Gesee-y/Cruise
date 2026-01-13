@@ -2,14 +2,6 @@
 ###################################################### DENSE ECS LOGICS ###############################################################
 #######################################################################################################################################
 
-proc createPartition(table: var ECSWorld, arch: ArchetypeMask): TablePartition =
-  if not table.archetypes.haskey(arch):
-    var partition: TablePartition
-    new(partition)
-    partition.components = getComponentsFromSig(arch)
-    table.archetypes[arch] = partition
-  return table.archetypes[arch]
-
 proc createPartition(table: var ECSWorld, arch: ArchetypeNode): TablePartition =
   check(not arch.isNil, "ArchetypeNode must not be nil")
   if arch.partition.isNil:
@@ -279,7 +271,7 @@ proc changePartition(table: var ECSWorld, ids: var openArray[DenseHandle], oldAr
   # Final safety check before raw pointer operations
   for h in ids: 
     check(not h.obj.isNil, "DenseHandle contains nil entity pointer.")
-    check(h.gen == table.generations[g.obj.widx], "DenseHandle contains stale handles.")
+    check(h.gen == table.generations[h.obj.widx], "DenseHandle contains stale handles.")
 
   if oldComponents.len < newComponents.len:
     for id in oldComponents:

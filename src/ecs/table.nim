@@ -27,8 +27,8 @@ include "registry.nim"
 include "mask.nim"
 
 type
-  TableColumn[N:static int,T,B] = ref object
-    components:SoAFragmentArray[N,T,B]
+  TableColumn[N:static int,T,S,B] = ref object
+    components:SoAFragmentArray[N,T,S,B]
     mask:seq[uint]
 
   TableRange = object
@@ -57,7 +57,7 @@ type
     max_index:int
     block_count:int
 
-template newTableColumn[N,T,B](f:SoAFragmentArray[N,T,B]):untyped =
+template newTableColumn[N,T,S,B](f:SoAFragmentArray[N,T,S,B]):untyped =
   var m = newSeq[uint]()
 
   for i in 0..<f.blocks.len:
@@ -78,6 +78,7 @@ proc newECSWorld(max_entities:int=1000000):ECSWorld =
   new(w.registry)
   w.archGraph = initArchetypeGraph()
   w.entities = newSeqofCap[Entity](max_entities)
+  w.free_list = newSeqofCap[uint](max_entities div 2)
 
   return w
 
