@@ -14,6 +14,8 @@ type
     overrideDSOp: proc (p:pointer, d:DenseHandle, s:SparseHandle)  {.noSideEffect, nimcall, inline.}
     overrideSDOp: proc (p:pointer, s:SparseHandle, d:DenseHandle)  {.noSideEffect, nimcall, inline.}
     overrideValsBatchOp: proc (p:pointer, archId:uint16, ents: ptr seq[ptr Entity], ids:openArray[DenseHandle], sw:seq[uint], ad:seq[uint])
+    getChangeMaskop: proc (p:pointer, id:int):seq[uint] {.noSideEffect, nimcall, inline.}
+    getSparseChangeMaskop: proc (p:pointer, id:int):seq[uint] {.noSideEffect, nimcall, inline.}
     getSparseMaskOp: proc (p:pointer):seq[uint] {.noSideEffect, nimcall, inline.}
     getSparseChunkMaskOp: proc(p:pointer, i:int):uint {.noSideEffect, nimcall, inline.}
     setSparseMaskOp: proc (p:pointer, m:seq[uint]) {.noSideEffect, nimcall, inline.}
@@ -81,13 +83,21 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
       fr.overrideVals(archId, ents, ids, sw, ad)
 
+    let getchangeMask = proc (p:pointer, id:int):seq[uint] {.noSideEffect, nimcall, inline.} =
+      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+      return fr.blocks[id].valMask
+
+    let getSchangeMask = proc (p:pointer, id:int):uint {.noSideEffect, nimcall, inline.} =
+      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+      return fr.sparse[f.toSparse[id]].valMask[0]
+
     let getsmask = proc (p:pointer):seq[uint] {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
       return fr.sparseMask
 
     let getscmask = proc (p:pointer, i:int):uint {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      return fr.sparse[i].mask
+      return fr.sparse[f.toSparse[i]].mask
 
     let setsmask = proc (p:pointer, m:seq[uint]) {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
@@ -113,6 +123,8 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
     entry.overrideDSOp = overDS
     entry.overrideSDOp = overSD
     entry.overrideValsBatchOp = overvb
+    entry.getChangeMaskop = getchangeMask
+    entry.getSparseChunkMaskOp = getSchangeMask
     entry.getSparseMaskOp = getsmask
     entry.getSparseChunkMaskOp = getscmask
     entry.setSparseMaskOp = setsmask

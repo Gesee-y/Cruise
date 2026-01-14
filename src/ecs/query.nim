@@ -5,22 +5,26 @@
 ## Defines the operation type for a query component filter.
 type
   QueryOp = enum
-    qInclude ## Specifies that the component must be present in the archetype.
-    qExclude ## Specifies that the component must be absent from the archetype.
+    qInclude     ## Specifies that the component must be present in the archetype.
+    qExclude     ## Specifies that the component must be absent from the archetype.
+    qModified    ## Specifies that the component must be present and modified (State tracking).
+    qNotModified ## Specifies that the component must be present and NOT modified (State tracking).
 
   ## Represents a single component constraint within a query.
-  ## It binds a Component ID to an operation (Include or Exclude).
+  ## It binds a Component ID to an operation (Include, Exclude, Modified, etc.).
   QueryComponent = object
     id: int   ## The ID of the component to filter by.
-    op: QueryOp ## The operation (Include or Exclude).
+    op: QueryOp ## The operation.
 
   ## The compiled representation of a query.
   ## It translates a list of component constraints into efficient bitmasks
   ## that can be rapidly compared against archetype masks.
   QuerySignature = object
-    components: seq[QueryComponent] ## The raw list of components in the query.
+    components: seq[QueryComponent] ## The raw list of components in the query (stores Modified info here).
     includeMask: ArchetypeMask      ## Bitmask representing all required components (OR'ed together).
     excludeMask: ArchetypeMask      ## Bitmask representing all forbidden components (OR'ed together).
+    modified: seq[int]
+    notModified: seq[int]
 
   ## A cached result object for Dense queries.
   ## Stores the partitions (memory blocks) that matched the query signature,
@@ -59,6 +63,8 @@ iterator maskIter(it: uint): int =
 ##
 ## This function calculates the aggregate `includeMask` and `excludeMask` from the
 ## individual `QueryComponent` objects.
+## Note: Processing logic for qModified/qNotModified is not implemented here per request,
+## only the ID is cached in the components sequence.
 ##
 ## @param world: The `ECSWorld` (used for context or future expansion).
 ## @param components: A sequence of `QueryComponent` objects defining the filter.
@@ -72,18 +78,24 @@ proc buildQuerySignature(world: ECSWorld, components: seq[QueryComponent]): Quer
     let bitPos = comp.id mod (sizeof(uint) * 8)
     
     if layer < MAX_COMPONENT_LAYER:
-      if comp.op == qInclude:
+      case comp.op
+      of qInclude:
         # Set the bit in the include mask.
         result.includeMask[layer] = result.includeMask[layer] or (1.uint shl bitPos)
-      else:
+      of qExclude:
         # Set the bit in the exclude mask.
         result.excludeMask[layer] = result.excludeMask[layer] or (1.uint shl bitPos)
+      of qModified, qNotModified:
+        if comp.op == qModified:
+          result.modified.add(comp.id)
+        else:
+          result.notModified.add(comp.id)
+        # For archetype matching, a Modified component implies the component must exist (Include).
+        # However, we only cache the info here as requested.
+        # If you need the entity to exist to be checked for modification:
+        result.includeMask[layer] = result.includeMask[layer] or (1.uint shl bitPos)
 
 ## Checks if an Archetype's mask matches a given Query Signature.
-##
-## Logic:
-## 1. The Archetype must contain all bits present in the `includeMask`.
-## 2. The Archetype must NOT contain any bits present in the `excludeMask`.
 ##
 ## @param sig: The `QuerySignature` to test against.
 ## @param arch: The `ArchetypeMask` of the archetype being tested.
@@ -115,7 +127,7 @@ proc matchesArchetype(sig: QuerySignature, arch: ArchetypeMask): bool =
 ## @yield: A tuple containing:
 ##         - `int`: The Block Index (identifying the memory chunk).
 ##         - `HSlice[int, int]`: A slice representing the range of valid entity indices within that block.
-iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, HSlice[int, int]) =
+iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, HSlice[int, int], seq[uint]) =
   ## Iterate through all partitions that match the query signature
   ## Returns block index and range for each matching zone
   
@@ -125,10 +137,32 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, HSlice[int, in
     if not matchesArchetype(sig, arch):
       continue
     
-    # Iterate through filled zones in this partition.
     if not archNode.partition.isNil:
-      for zone in archNode.partition.zones:
-        yield (zone.block_idx, zone.r.s..<zone.r.e)
+      if sig.modified.len == 0 and sig.notModified.len == 0:
+        # Iterate through filled zones in this partition.
+        for zone in archNode.partition.zones:
+          yield (zone.block_idx, zone.r.s..<zone.r.e, @[])
+      else:
+        let mlen = sig.modified.len
+        let nmlen = sig.notModified.len
+        let maskCount = ((DEFAULT_BLK_SIZE-1) shr 6) + 1
+        let modDef = newSeq[uint](maskCount)
+        let res = newSeq[uint](maskCount)
+        let nmodDef = newSeq[uint](maskCount)
+        
+        for i in 0..<maskCount:
+          modDef[i] = 0'u-1
+          res[i] = 0'u-1
+
+        for zone in archNode.partition.zones:
+          for i in 0..<max(mlen, nmlen):
+            let incl = if i < mlen: world.registry.entries[sig.modified[i]].getChangeMaskop(zone.block_idx) else: modDef
+            let excl = if i < nmlen: world.registry.entries[sig.noModified[i]].getChangeMaskop(zone.block_idx) else: nmodDef
+
+            for i in 0..<maskCount:
+              res[i] = (res[i] and incl[i]) and not excl[i]
+
+          yield (zone.block_idx, zone.r.s..<zone.r.e, res)
 
 ## Computes and caches the result of a Dense query.
 ##
@@ -235,6 +269,23 @@ proc filterExcludedMasks(baseMask: var seq[uint], excludeMasks: seq[seq[uint]]) 
     for i in 0..<minLen:
       baseMask[i] = baseMask[i] and not excludeSeq[i]
 
+proc getChangeMask(world: ECSWorld, modif, nmodif:seq[int], blk:int):uint =
+  let mlen = sig.modified.len
+  let nmlen = sig.notModified.len
+  let maskCount = 1
+  let modDef = 0'u - 1
+  let res = 0'u - 1
+  let nmodDef = 0'u
+
+  for i in 0..<max(mlen, nmlen):
+    let incl = if i < mlen: world.registry.entries[modif[i]].getSparseChangeMaskop(blk)[0] else: modDef
+    let excl = if i < nmlen: world.registry.entries[nmodif[i]].getSparseChangeMaskop(blk)[0] else: nmodDef
+
+    for i in 0..<maskCount:
+      res = (res and incl) and not excl
+
+  return res
+
 ## Iterates over entities matching the query in Sparse storage.
 ##
 ## Logic:
@@ -255,11 +306,10 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, uint) =
   var excludeIds: seq[int]
   
   for comp in sig.components:
-    if comp.op == qInclude:
-      includeIds.add(comp.id)
-    else:
-      excludeIds.add(comp.id)
-  
+    case comp.op
+    of qInclude: includeIds.add(comp.id)
+    of qExclude: excludeIds.add(comp.id)
+    
   if includeIds.len > 0:
   
     # Get sparse masks for included components
@@ -275,21 +325,42 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, uint) =
   
     # Iterate through chunks with entities
     let S = sizeof(uint)*8
-    for i in 0..<resultMask.len:
-      var m = resultMask[i]
-      
-      while m != 0:
-        let chunkIdx = i*S + countTrailingZeroBits(m)
-        var chunkMask = (1'u shl S-1) - 1'u # Initialize mask to all 1s (all entities in chunk)
-        m = m and (m-1) # Clear the lowest set bit to move to next
+    
+    if sig.modified.len == 0 and sig.notModified.len == 0:
+      for i in 0..<resultMask.len:
+        var m = resultMask[i]
+        
+        while m != 0:
+          let chunkIdx = i*S + countTrailingZeroBits(m)
+          var chunkMask = (1'u shl S-1) - 1'u # Initialize mask to all 1s (all entities in chunk)
+          m = m and (m-1) # Clear the lowest set bit to move to next
 
-        # Refine the mask by ensuring the entity actually has ALL included components
-        for compId in includeIds:
-          let entry = world.registry.entries[compId]
-          let entityMask = entry.getSparseChunkMaskOp(entry.rawPointer, chunkIdx)
-          chunkMask = chunkMask and entityMask
+          # Refine the mask by ensuring the entity actually has ALL included components
+          for compId in includeIds:
+            let entry = world.registry.entries[compId]
+            let entityMask = entry.getSparseChunkMaskOp(entry.rawPointer, chunkIdx)
+            chunkMask = chunkMask and entityMask
 
-        yield (chunkIdx, chunkMask)
+          yield (chunkIdx, chunkMask)
+    else:
+      for i in 0..<resultMask.len:
+        var m = resultMask[i]
+        
+        while m != 0:
+          let chunkIdx = i*S + countTrailingZeroBits(m)
+          var chunkMask = (1'u shl S-1) - 1'u # Initialize mask to all 1s (all entities in chunk)
+          let changeMask = getChangeMask(world, sig.modified, sig.notModified, chunkIdx)
+          m = m and (m-1) # Clear the lowest set bit to move to next
+
+          # Refine the mask by ensuring the entity actually has ALL included components
+          for compId in includeIds:
+            let entry = world.registry.entries[compId]
+            let entityMask = entry.getSparseChunkMaskOp(entry.rawPointer, chunkIdx)
+            chunkMask = chunkMask and entityMask
+
+          let res = chunkMask and changeMask
+
+          if res != 0: yield (chunkIdx, res)
 
 ## Computes and caches the result of a Sparse query.
 ##
@@ -306,8 +377,9 @@ proc sparseQueryCache*(world: ECSWorld, sig: QuerySignature): sparseQueryResult 
   for comp in sig.components:
     if comp.op == qInclude:
       includeIds.add(comp.id)
-    else:
+    elif comp.op == qExclude:
       excludeIds.add(comp.id)
+    # Note: qModified and qNotModified are cached but not processed in this implementation
   
   if includeIds.len > 0:
   
@@ -383,52 +455,75 @@ proc sparseQueryCount*(world: ECSWorld, sig: QuerySignature): int =
 # Helper procs for building queries
 
 ## Creates a `QueryComponent` that requires a specific component.
-##
-## @param componentId: The ID of the component to include.
-## @return: A `QueryComponent` with `qInclude` operation.
 proc includeComp*(componentId: int): QueryComponent =
   QueryComponent(id: componentId, op: qInclude)
 
 ## Creates a `QueryComponent` that forbids a specific component.
-##
-## @param componentId: The ID of the component to exclude.
-## @return: A `QueryComponent` with `qExclude` operation.
 proc excludeComp*(componentId: int): QueryComponent =
   QueryComponent(id: componentId, op: qExclude)
 
+## Creates a `QueryComponent` that requires a component to be modified.
+proc modifiedComp*(componentId: int): QueryComponent =
+  QueryComponent(id: componentId, op: qModified)
+
+## Creates a `QueryComponent` that requires a component to be not modified.
+proc notModifiedComp*(componentId: int): QueryComponent =
+  QueryComponent(id: componentId, op: qNotModified)
+
 ## Macro for Domain Specific Language (DSL) query syntax.
 ##
-## Allows writing queries using `and` and `not` operators, e.g.:
-## `query(world, Position and Velocity and not Dead)`
+## Allows writing queries using `and`, `not`, and `Modified[]` operators, e.g.:
+## `query(world, Position and Modified[Velocity] and not Dead)`
 ##
 ## The macro parses the Abstract Syntax Tree (AST) of the expression and converts
 ## the identifiers (types) into their Component IDs using the world's registry.
 ##
 ## @param world: The `ECSWorld` instance.
-## @param expr: The query expression (e.g., `Pos and Vel`).
+## @param expr: The query expression (e.g., `Pos and Modified[Vel]`).
 ## @return: A `QuerySignature` ready for use in query functions.
 macro query*(world: untyped, expr: untyped): untyped =
   var components = newSeq[NimNode]()
   
-  proc processExpr(world,node: NimNode) =
-    case node.kind:
+  proc processExpr(world: NimNode, node: NimNode) =
+    case node.kind
       of nnkInfix:
         if node[0].strVal == "and":
           # Recursively process left and right operands of 'and'
-          processExpr(world,node[1])
-          processExpr(world,node[2])
+          processExpr(world, node[1])
+          processExpr(world, node[2])
         else:
           error("Unsupported operator in query: " & node[0].strVal)
       
       of nnkPrefix:
         if node[0].strVal == "not":
-          # Process the operand of 'not'
-          let compNode = node[1]
-          components.add(quote("@") do:
-            excludeComp(getComponentId(`@world`, `@compNode`))
-          )
+          let operand = node[1]
+          
+          # Check if the operand is Modified[Type]
+          if operand.kind == nnkBracketExpr and operand[0].eqIdent("Modified"):
+            # not Modified[Type]
+            let compNode = operand[1] # The Type inside []
+            components.add(quote("@") do:
+              notModifiedComp(getComponentId(`@world`, `@compNode`))
+            )
+          elif operand.kind in {nnkIdent, nnkSym}:
+            # not Type
+            components.add(quote("@") do:
+              excludeComp(getComponentId(`@world`, `@operand`))
+            )
+          else:
+            error("Unsupported operand for 'not': " & $operand.kind)
         else:
           error("Unsupported prefix operator in query: " & node[0].strVal)
+      
+      of nnkBracketExpr:
+        # Check for Modified[Type]
+        if node[0].eqIdent("Modified"):
+          let compNode = node[1] # The Type inside []
+          components.add(quote("@") do:
+            modifiedComp(getComponentId(`@world`, `@compNode`))
+          )
+        else:
+          error("Unsupported bracket syntax in query. Only Modified[Type] is supported.")
       
       of nnkIdent, nnkSym:
         # Process a raw type identifier (Implies 'include')
@@ -439,7 +534,7 @@ macro query*(world: untyped, expr: untyped): untyped =
       else:
         error("Unsupported node kind in query: " & $node.kind)
   
-  processExpr(world,expr)
+  processExpr(world, expr)
   
   # Construct the sequence of QueryComponents
   let componentsSeq = newNimNode(nnkBracket)

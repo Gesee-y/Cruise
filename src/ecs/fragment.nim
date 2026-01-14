@@ -9,7 +9,7 @@ type
     data*:T
     offset:int
     mask:uint
-    valMask:array[((N-1) shr 6)+1, uint]
+    valMask:seq[uint]
 
   SoAFragmentArray*[N:static int,P:static bool,T,S,B] = ref object
     blocks*:seq[ref SoAFragment[N,P,T,B]]
@@ -272,6 +272,7 @@ proc newSparseBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, m
   var blk = addr f.sparse[id]
   blk.offset = offset
   blk.mask = blk.mask or m
+  blk.valMask = @[0'u]
 
   if m != 0:
     f.sparseMask[j] = f.sparseMask[j] or (1.uint shl i)
@@ -309,12 +310,14 @@ proc newBlockAt[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int) =
  var blk:ref SoAFragment[N,P,T,B]
  new(blk)
  blk.offset = N*i
+ blk.valMask.setLen((N-1 shr 6) + 1)
  f.blocks[i] = blk
 
 proc newBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int):bool =
   var blk: ref SoAFragment[N,P,T,B]
   new(blk)
   blk.offset = offset
+  blk.valMask.setLen((N-1 shr 6) + 1)
   
   if f.blocks.len == 0 or offset >= N+f.blocks[^1].offset:
     f.blocks.add(blk)
@@ -485,3 +488,16 @@ proc resize[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], n:int) =
   check(n >= 0, "Can't resize to negative size. Got " & $n)
   f.blocks.setLen(n)
   
+proc clearDenseChanges[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B]) =
+  for i in 0..<f.blkChangeMask.len:
+    f.blkChangeMask[i] = 0'u
+    if not f.blocks[i].isNil:
+      for j in 0..<f.blocks[i].valMask.len:
+        f.blocks[i].valMask[j] = 0'u
+
+proc clearSparseChanges[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B]) =
+  for i in 0..<f.sparseChangeMask.len:
+    f.sparseChangeMask[i] = 0'u
+    if f.toSparse[i] > 0:
+      let j = f.toSparse[j]
+      f.sparse[j].valMask[0] = 0'u

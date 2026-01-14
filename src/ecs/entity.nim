@@ -72,8 +72,9 @@ proc `[]=`*[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], d:DenseHandle, v:B) =
   f[d.obj.id] = v
 
 ## Sets component data in a `SoAFragmentArray` for a `SparseHandle`.
-proc `[]=`*[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B], d:SparseHandle, v:B) = 
+proc `[]=`*[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], d:SparseHandle, v:B) = 
   let S = sizeof(uint)*8
+  when P: setSparseChange(f, d.id)
   f.sparse[d.id shr 6][d.id and (S-1).uint] = v
 
 ####################################################################################################################################################
