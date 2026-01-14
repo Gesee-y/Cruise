@@ -142,8 +142,10 @@ proc getStableEntities(world:ECSWorld, n:int):seq[int] =
     world.entities.setLen(L+(n-free_len))
     world.generations.setLen(L+(n-free_len))
     
+    var c = 0
     for i in L..<world.entities.len:
-      entity_idx[free_len] = i
+      entity_idx[free_len+c] = i
+      inc c
 
   return entity_idx
 

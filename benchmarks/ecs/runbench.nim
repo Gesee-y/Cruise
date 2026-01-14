@@ -5,7 +5,7 @@ include "../../src/ecs/table.nim"
 # =========================
 include "../../src/profile/benchmarks.nim"
 
-const SAMPLE = 10_00
+const SAMPLE = 10
 
 # =========================
 # Components
@@ -32,8 +32,8 @@ type
 proc newTimer[T](r:T):Timer[T] = Timer[T]() 
 proc newPosition(x,y:float32):Position = Position() 
 proc setComponent[T](blk: ptr T, i:uint, v:Position) =
-  blk.data.x = v.x*2
-  blk.data.y = v.y/2
+  blk.data.x[i] = v.x*2
+  blk.data.y[i] = v.y/2
 
 # =========================
 # World setup
