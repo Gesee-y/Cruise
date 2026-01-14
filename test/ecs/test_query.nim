@@ -2,160 +2,180 @@ import unittest, sequtils
 include "../../src/ecs/table.nim"
 
 type
-  Pos = object
-    x,y:float
+  Position = object
+    x, y: float32
+  Velocity = object
+    x, y: float32
+  Health = object
+    hp: int
+  Dead = object
 
-  Vel = object
-    dx,dy:float
-
-  Acc = object
-    ax,ay:float
+proc newPosition(x,y:float32):Position = Position() 
+proc setComponent[T](blk: ptr T, i:uint, v:Position) =
+  blk.data.x[i] = v.x*2
+  blk.data.y[i] = v.y/2
 
 proc initTestWorld(): ECSWorld =
   var world = newECSWorld()
-  discard world.registerComponent(Pos)
-  discard world.registerComponent(Vel)
-  discard world.registerComponent(Acc)
+  discard world.registerComponent(Position, true)
+  discard world.registerComponent(Velocity)
+  discard world.registerComponent(Health)
+  discard world.registerComponent(Dead)
   
-  discard world.createEntity(0)
-  discard world.createEntity(0,1)
-  discard world.createEntity(0,2)
-  discard world.createEntity(1,2)
-  discard world.createEntity(0,1)
+  #discard world.createEntity(0)
+  #discard world.createEntity(0,1)
+  #discard world.createEntity(0,2)
+  #discard world.createEntity(1,2)
+  #discard world.createEntity(0,1)
+  #discard world.createEntity(1,2,3)
+  #discard world.createEntity(0,3)
 
-  discard world.createSparseEntity(0)
-  discard world.createSparseEntity(0,1)
-  discard world.createSparseEntity(0,2)
-  discard world.createSparseEntity(1,2)
-  discard world.createSparseEntity(0,1)
+  #discard world.createSparseEntity(0)
+  #discard world.createSparseEntity(0,1)
+  #discard world.createSparseEntity(0,2)
+  #discard world.createSparseEntity(1,2)
+  #discard world.createSparseEntity(0,1)
+  #discard world.createSparseEntity(1,2,3)
+  #discard world.createSparseEntity(0,3)
   
   return world
 
-suite "ECS Query System":
+var world = initTestWorld()
 
-  ###########################################################################
-  ## MASK ITERATOR
-  ###########################################################################
+suite "QuerySignature building":
 
-  test "maskIter iterator works":
-    let mask = 0b10010010'u
-    let res = toSeq(mask.maskIter)
-    check res == @[1, 4, 7]
-
-  ###########################################################################
-  ## QUERY SIGNATURE
-  ###########################################################################
-
-  test "QuerySignature builds include/exclude masks correctly":
-    var world = initTestWorld()
-
-    let posId = getComponentId(world, Pos)
-    let velId = getComponentId(world, Vel)
-    let accId = getComponentId(world, Acc)
-
+  test "include only":
     let sig = buildQuerySignature(world, @[
-      includeComp(posId),
-      includeComp(velId),
-      excludeComp(accId)
+      includeComp(getComponentId(world, Position)),
+      includeComp(getComponentId(world, Velocity))
     ])
 
-    check (sig.includeMask[posId div 64] and (1'u shl (posId mod 64))) != 0
-    check (sig.includeMask[velId div 64] and (1'u shl (velId mod 64))) != 0
-    check (sig.excludeMask[accId div 64] and (1'u shl (accId mod 64))) != 0
+    check sig.modified.len == 0
+    check sig.notModified.len == 0
+    check sig.includeMask[0] != 0
+    check sig.excludeMask[0] == 0
 
-  ###########################################################################
-  ## ARCHETYPE MATCHING
-  ###########################################################################
+  test "exclude only":
+    let sig = buildQuerySignature(world, @[
+      excludeComp(getComponentId(world, Dead))
+    ])
 
-  test "matchesArchetype include/exclude logic":
-    var sig: QuerySignature
-    sig.includeMask[0] = 0b011'u
-    sig.excludeMask[0] = 0b100'u
+    check sig.excludeMask[0] != 0
 
-    let okArch = [0b011'u, 0, 0, 0]
-    let badInc = [0b001'u, 0, 0, 0]
-    let badExc = [0b111'u, 0, 0, 0]
+  test "modified implies include":
+    let pid = getComponentId(world, Position)
+    let sig = buildQuerySignature(world, @[
+      modifiedComp(pid)
+    ])
 
-    check matchesArchetype(sig, okArch)
-    check not matchesArchetype(sig, badInc)
-    check not matchesArchetype(sig, badExc)
+    check pid in sig.modified
+    check (sig.includeMask and maskOf(pid))[0] != 0
 
-  ###########################################################################
-  ## DENSE QUERY
-  ###########################################################################
+suite "matchesArchetype":
 
-  test "denseQuery yields valid blocks and ranges":
-    var world = initTestWorld()
-    let sig = query(world, Pos and Vel)
+  test "matches include":
+    let arch = maskOf(0, 1)
+    let sig = buildQuerySignature(world, @[ includeComp(getComponentId(world, Position)) ])
+    check matchesArchetype(sig, arch)
 
-    var count = 0
-    for (blockIdx, r) in denseQuery(world, sig):
-      check blockIdx >= 0
-      check r.a < r.b
-      count += r.b - r.a
+  test "fails exclude":
+    let arch = maskOf(0, 3)
+    let sig = buildQuerySignature(world, @[ excludeComp(getComponentId(world, Dead)) ])
+    check not matchesArchetype(sig, arch)
 
-    check count > 0
+suite "Dense query basic":
 
-  test "denseQueryCount matches iteration":
-    var world = initTestWorld()
-    let sig = query(world, Pos)
+  test "dense include":
+    let e1 = world.createEntity(0, 1)
+    let e2 = world.createEntity(0)
+    let e3 = world.createEntity(1)
 
-    var iterCount = 0
-    for (_, r) in denseQuery(world, sig):
-      iterCount += r.b - r.a + 1
+    let sig = query(world, Position)
+    check denseQueryCount(world, sig) == 2
 
-    check iterCount == denseQueryCount(world, sig)
+  test "dense include + exclude":
+    let sig = query(world, Position and not Velocity)
+    check denseQueryCount(world, sig) == 1
 
-  ###########################################################################
-  ## SPARSE QUERY
-  ###########################################################################
+suite "Dense query change tracking":
 
-  test "sparseQuery yields valid chunk masks":
-    var world = initTestWorld()
-    let sig = query(world, Pos)
+  test "modified component only":
+    let e1 = world.createEntity(0)
+    let e2 = world.createEntity(0)
+    var pos = world.get(Position, true)
+    var c = 0
 
-    var total = 0
-    for (chunkIdx, mask) in sparseQuery(world, sig):
-      check chunkIdx >= 0
-      check mask != 0
+    pos[e1] = Position(x:1, y:2)
+    #world.clearChanges()
 
-      for _ in mask.maskIter:
-        total += 1
+    pos[e2] = Position(x:3, y:4)
 
-    check total == sparseQueryCount(world, sig)
+    let sig = query(world, Modified[Position])
+    for (bid, r, m) in denseQuery(world, sig):
+      for _ in (r,m).maskIter:
+        c += 1
 
-  test "sparseQuery excludes components correctly":
-    var world = initTestWorld()
+    check c == 2
 
-    let sigInc = query(world, Pos)
-    let sigExc = query(world, Pos and not Vel)
+  test "not modified":
+    let sig = query(world, Position and not Modified[Position])
+    var c = 0
+    for (bid, r, m) in denseQuery(world, sig):
+      for _ in (r,m).maskIter:
+        c += 1
 
-    let incCount = sparseQueryCount(world, sigInc)
-    let excCount = sparseQueryCount(world, sigExc)
+    check c == 2
 
-    check excCount <= incCount
+suite "Sparse query basic":
 
-  ###########################################################################
-  ## QUERY MACRO
-  ###########################################################################
+  test "sparse include":
+    let s1 = world.createSparseEntity(0)
+    let s2 = world.createSparseEntity(0, 1)
+    let s3 = world.createSparseEntity(1)
 
-  test "query macro builds correct component list":
-    var world = initTestWorld()
-    let sig = query(world, Pos and Vel and not Acc)
+    let sig = query(world, Position)
+    check sparseQueryCount(world, sig) == 2
+
+  test "sparse exclude":
+    let sig = query(world, Position and not Velocity)
+    check sparseQueryCount(world, sig) == 1
+
+suite "Sparse query change tracking":
+
+  test "modified sparse":
+    let s1 = world.createSparseEntity(0)
+    let s2 = world.createSparseEntity(0)
+    var pos = world.get(Position, true)
+    var c = 0
+
+    #world.clearChanges()
+    pos[s2] = Position(x:5, y:6)
+
+    let sig = query(world, Modified[Position])
+    check sparseQueryCount(world, sig) == 1
+
+suite "Dense / Sparse equivalence":
+
+  test "same semantic result":
+    var d = world.createEntity(0, 1)
+    var s = world.makeSparse(d)
+    var c = 0
+
+    let sig = query(world, Modified[Position])
+    check sparseQueryCount(world, sig) == 2
+
+    let d2 = world.makeDense(s)
+    for (bid, r, m) in denseQuery(world, sig):
+      for _ in (r,m).maskIter:
+        c += 1
+
+    check c == 3
+
+suite "Query DSL":
+
+  test "complex expression":
+    let sig = query(world,
+      Position and Modified[Velocity] and not Dead
+    )
 
     check sig.components.len == 3
-    check sig.components.countIt(it.op == qInclude) == 2
-    check sig.components.countIt(it.op == qExclude) == 1
-
-  ###########################################################################
-  ## DENSE / SPARSE INDEPENDENCE
-  ###########################################################################
-
-  test "dense and sparse queries do not interfere":
-    var world = initTestWorld()
-
-    let denseSig = query(world, Pos and Vel)
-    let sparseSig = query(world, Pos)
-
-    check denseQueryCount(world, denseSig) >= 0
-    check sparseQueryCount(world, sparseSig) >= 0

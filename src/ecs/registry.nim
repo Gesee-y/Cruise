@@ -15,10 +15,12 @@ type
     overrideSDOp: proc (p:pointer, s:SparseHandle, d:DenseHandle)  {.noSideEffect, nimcall, inline.}
     overrideValsBatchOp: proc (p:pointer, archId:uint16, ents: ptr seq[ptr Entity], ids:openArray[DenseHandle], sw:seq[uint], ad:seq[uint])
     getChangeMaskop: proc (p:pointer, id:int):seq[uint] {.noSideEffect, nimcall, inline.}
-    getSparseChangeMaskop: proc (p:pointer, id:int):seq[uint] {.noSideEffect, nimcall, inline.}
+    getSparseChangeMaskop: proc (p:pointer, id:int):uint {.noSideEffect, nimcall, inline.}
     getSparseMaskOp: proc (p:pointer):seq[uint] {.noSideEffect, nimcall, inline.}
     getSparseChunkMaskOp: proc(p:pointer, i:int):uint {.noSideEffect, nimcall, inline.}
     setSparseMaskOp: proc (p:pointer, m:seq[uint]) {.noSideEffect, nimcall, inline.}
+    clearDenseChangeOp: proc(p:pointer) {.noSideEffect, nimcall, inline.}
+    clearSparseChangeOp: proc(p:pointer) {.noSideEffect, nimcall, inline.}
     activateSparseBitOp: proc (p:pointer, i:uint) {.noSideEffect, nimcall, inline.}
     activateSparseBitBatchOp: proc (p:pointer, i:seq[uint]) {.noSideEffect, nimcall, inline.}
     deactivateSparseBitOp: proc (p:pointer, i:uint) {.noSideEffect, nimcall, inline.}
@@ -89,15 +91,23 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
 
     let getSchangeMask = proc (p:pointer, id:int):uint {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      return fr.sparse[f.toSparse[id]].valMask[0]
+      return fr.sparse[fr.toSparse[id]-1].valMask[0]
 
     let getsmask = proc (p:pointer):seq[uint] {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
       return fr.sparseMask
 
+    let clearDCh = proc (p:pointer) {.noSideEffect, nimcall, inline.} =
+      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+      fr.clearDenseChanges()
+
+    let clearSCh = proc (p:pointer) {.noSideEffect, nimcall, inline.} =
+      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+      fr.clearSparseChanges()
+
     let getscmask = proc (p:pointer, i:int):uint {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      return fr.sparse[f.toSparse[i]].mask
+      return fr.sparse[fr.toSparse[i]-1].mask
 
     let setsmask = proc (p:pointer, m:seq[uint]) {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
@@ -124,10 +134,12 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
     entry.overrideSDOp = overSD
     entry.overrideValsBatchOp = overvb
     entry.getChangeMaskop = getchangeMask
-    entry.getSparseChunkMaskOp = getSchangeMask
+    entry.getSparseChangeMaskOp = getSchangeMask
     entry.getSparseMaskOp = getsmask
     entry.getSparseChunkMaskOp = getscmask
     entry.setSparseMaskOp = setsmask
+    entry.clearDenseChangeOp = clearDCh
+    entry.clearSparseChangeOp = clearSCh
     entry.deactivateSparseBitOp = deactSparseBit
     entry.activateSparseBitOp = actSparseBit
     entry.activateSparseBitBatchOp = actBitB

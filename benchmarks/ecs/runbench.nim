@@ -5,7 +5,7 @@ include "../../src/ecs/table.nim"
 # =========================
 include "../../src/profile/benchmarks.nim"
 
-const SAMPLE = 10
+const SAMPLE = 1000
 
 # =========================
 # Components
@@ -42,7 +42,7 @@ proc setComponent[T](blk: ptr T, i:uint, v:Position) =
 proc setupWorld(entityCount: int): (ECSWorld, ref seq[DenseHandle], int, int, int, int, int, int) =
   var world = newECSWorld()
 
-  let posID = world.registerComponent(Position,true)
+  let posID = world.registerComponent(Position)
   let velID = world.registerComponent(Velocity)
   let accID = world.registerComponent(Acceleration)
   let tagID = world.registerComponent(Tag)
@@ -63,7 +63,7 @@ proc setupWorld(entityCount: int): (ECSWorld, ref seq[DenseHandle], int, int, in
 # Benchmarks
 # =========================
 
-const ENTITY_COUNT = 100
+const ENTITY_COUNT = 10000
 
 
 
@@ -108,7 +108,7 @@ let res2 = benchmark("Create Query signature (Position + Velocity)", SAMPLE):
 showDetailed(res2)
 
 let res3 = benchmark("Create Query signature (Position + Velocity)", SAMPLE):
-  for (_,_) in world2.denseQuery(query(world2, Position and Velocity)):
+  for (_,_,_) in world2.denseQuery(query(world2, Position and Velocity)):
     continue
 showDetailed(res3)
 

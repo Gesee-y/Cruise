@@ -286,6 +286,7 @@ proc createSparseEntity*(w:var ECSWorld, components:varargs[int]):SparseHandle =
   # Allocate space in the sparse set.
   let id = w.allocateSparseEntity(components)
   let mask = maskOf(components)
+  activateComponentsSparse(w, id, components)
   let s = SparseHandle(id:id, gen:w.sparse_gens[id], mask:mask)
   # Return the handle containing the bitmask of components.
   w.events.emitSparseEntityCreated(s)

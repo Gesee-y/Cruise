@@ -94,7 +94,7 @@ proc allocateSparseEntity(table: var ECSWorld, components:openArray[int]):uint =
     var entry = table.registry.entries[id]
     entry.newSparseBlockOp(entry.rawPointer, table.max_index, 1.uint)
 
-  for i in table.max_index+1..<table.max_index+S:
+  for i in table.max_index..<table.max_index+S:
     table.free_list.add(i.uint)
 
   let id = table.max_index

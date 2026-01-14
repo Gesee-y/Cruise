@@ -152,13 +152,13 @@ proc getStableEntities(world:ECSWorld, n:int):seq[int] =
 template registerComponent*(world:var ECSWorld, t:typed, P:static bool=false):int =
   registerComponent(world.registry, t, P)
 
-template get*[T](world:ECSWorld,t:typedesc[T]):untyped =
+template get*[T](world:ECSWorld,t:typedesc[T], P:static bool= false):untyped =
   let id = world.getComponentId(t)
-  getValue[T](world.registry.entries[id])
+  getValue[T](world.registry.entries[id], P)
 
-template get*[T](world:ECSWorld, t:typedesc[T], i:untyped):untyped =
+template get*[T](world:ECSWorld, t:typedesc[T], i:untyped, P:static bool= false):untyped =
   let id = world.getComponentId(t)
-  getValue[T](world.registry.entries[id])[i]
+  getValue[T](world.registry.entries[id], P)[i]
 
 proc resize(world: var ECSWorld, n:int) =
   for entry in world.registry.entries:
@@ -236,4 +236,15 @@ proc flush*(w:var ECSWorld) =
   for i in 0..<w.commandBufs.len:
     var cb = w.commandBufs[i]
     w.process(cb)
-  
+
+proc clearDenseChanges*(w: var ECSWorld) =
+  for entry in w.registry.entries:
+    entry.clearDenseChangeOp(entry.rawPointer)
+
+proc clearSparseChanges*(w: var ECSWorld) =
+  for entry in w.registry.entries:
+    entry.clearSparseChangeOp(entry.rawPointer)
+
+proc clearChanges*(w: var ECSWorld) =
+  w.clearDenseChanges()
+  w.clearSparseChanges()

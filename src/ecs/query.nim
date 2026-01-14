@@ -54,6 +54,21 @@ iterator maskIter(it: uint): int =
   while m != 0:
     yield countTrailingZeroBits(m)
     m = m and (m-1)
+iterator maskIter(it: (HSlice[int,int],seq[uint])): int =
+  var current = 0
+  var i = 0
+  let S = sizeof(uint)*8
+
+  while i < it[1].len and current <= it[0].b:
+    var m = it[1][i]
+    
+    while m != 0:
+      current = i*S + countTrailingZeroBits(m)
+      m = m and (m-1)
+      if current > it[0].b: break
+      yield current
+
+    i += 1
 
 ####################################################################################################################################################
 ################################################################### QUERY BUILDER ##################################################################
@@ -146,8 +161,8 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, HSlice[int, in
         let mlen = sig.modified.len
         let nmlen = sig.notModified.len
         let maskCount = ((DEFAULT_BLK_SIZE-1) shr 6) + 1
-        let modDef = newSeq[uint](maskCount)
-        let res = newSeq[uint](maskCount)
+        var modDef = newSeq[uint](maskCount)
+        var res = newSeq[uint](maskCount)
         let nmodDef = newSeq[uint](maskCount)
         
         for i in 0..<maskCount:
@@ -156,12 +171,16 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, HSlice[int, in
 
         for zone in archNode.partition.zones:
           for i in 0..<max(mlen, nmlen):
-            let incl = if i < mlen: world.registry.entries[sig.modified[i]].getChangeMaskop(zone.block_idx) else: modDef
-            let excl = if i < nmlen: world.registry.entries[sig.noModified[i]].getChangeMaskop(zone.block_idx) else: nmodDef
+            if i < mlen: 
+              let incl = world.registry.entries[sig.modified[i]].getChangeMaskOp(world.registry.entries[sig.modified[i]].rawPointer, zone.block_idx)
+              for j in 0..<maskCount:
+                res[j] = res[j] and incl[j]
 
-            for i in 0..<maskCount:
-              res[i] = (res[i] and incl[i]) and not excl[i]
-
+            if i < nmlen: 
+              let excl = world.registry.entries[sig.notModified[i]].getChangeMaskOp(world.registry.entries[sig.notModified[i]].rawPointer, zone.block_idx)
+              for j in 0..<maskCount:
+                res[j] = res[j] and not excl[j]
+          
           yield (zone.block_idx, zone.r.s..<zone.r.e, res)
 
 ## Computes and caches the result of a Dense query.
@@ -269,20 +288,23 @@ proc filterExcludedMasks(baseMask: var seq[uint], excludeMasks: seq[seq[uint]]) 
     for i in 0..<minLen:
       baseMask[i] = baseMask[i] and not excludeSeq[i]
 
-proc getChangeMask(world: ECSWorld, modif, nmodif:seq[int], blk:int):uint =
+proc getChangeMask(world: ECSWorld, sig:QuerySignature, modif, nmodif:seq[int], blk:int):uint =
   let mlen = sig.modified.len
   let nmlen = sig.notModified.len
   let maskCount = 1
-  let modDef = 0'u - 1
-  let res = 0'u - 1
+  var modDef = 0'u - 1
+  var res = 0'u - 1
   let nmodDef = 0'u
 
   for i in 0..<max(mlen, nmlen):
-    let incl = if i < mlen: world.registry.entries[modif[i]].getSparseChangeMaskop(blk)[0] else: modDef
-    let excl = if i < nmlen: world.registry.entries[nmodif[i]].getSparseChangeMaskop(blk)[0] else: nmodDef
-
-    for i in 0..<maskCount:
-      res = (res and incl) and not excl
+    if i < mlen: 
+      let modEntry = world.registry.entries[sig.modified[i]]
+      let incl = modEntry.getSparseChangeMaskOp(modentry.rawPointer, blk)
+      res = res and incl
+    if i < nmlen: 
+      let nmodEntry = world.registry.entries[sig.notModified[i]]
+      let excl = nmodEntry.getSparseChangeMaskop(nmodentry.rawPointer, blk)
+      res = res and not excl
 
   return res
 
@@ -307,7 +329,7 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, uint) =
   
   for comp in sig.components:
     case comp.op
-    of qInclude: includeIds.add(comp.id)
+    of qInclude, qModified, qNotModified: includeIds.add(comp.id)
     of qExclude: excludeIds.add(comp.id)
     
   if includeIds.len > 0:
@@ -318,21 +340,16 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, uint) =
     # AND all included masks (intersection)
     var resultMask = andMasks(includeMasks)
   
-    # Filter out excluded components (difference)
-    if excludeIds.len > 0:
-      let excludeMasks = getSparseMasks(world, excludeIds)
-      filterExcludedMasks(resultMask, excludeMasks)
-  
     # Iterate through chunks with entities
     let S = sizeof(uint)*8
-    
+
     if sig.modified.len == 0 and sig.notModified.len == 0:
       for i in 0..<resultMask.len:
         var m = resultMask[i]
         
         while m != 0:
           let chunkIdx = i*S + countTrailingZeroBits(m)
-          var chunkMask = (1'u shl S-1) - 1'u # Initialize mask to all 1s (all entities in chunk)
+          var chunkMask = 0'u - 1 # Initialize mask to all 1s (all entities in chunk)
           m = m and (m-1) # Clear the lowest set bit to move to next
 
           # Refine the mask by ensuring the entity actually has ALL included components
@@ -340,6 +357,11 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, uint) =
             let entry = world.registry.entries[compId]
             let entityMask = entry.getSparseChunkMaskOp(entry.rawPointer, chunkIdx)
             chunkMask = chunkMask and entityMask
+
+          for compId in excludeIds:
+            let entry = world.registry.entries[compId]
+            let entityMask = entry.getSparseChunkMaskOp(entry.rawPointer, chunkIdx)
+            chunkMask = chunkMask and not entityMask
 
           yield (chunkIdx, chunkMask)
     else:
@@ -349,7 +371,7 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, uint) =
         while m != 0:
           let chunkIdx = i*S + countTrailingZeroBits(m)
           var chunkMask = (1'u shl S-1) - 1'u # Initialize mask to all 1s (all entities in chunk)
-          let changeMask = getChangeMask(world, sig.modified, sig.notModified, chunkIdx)
+          let changeMask = getChangeMask(world, sig, sig.modified, sig.notModified, chunkIdx)
           m = m and (m-1) # Clear the lowest set bit to move to next
 
           # Refine the mask by ensuring the entity actually has ALL included components
@@ -357,6 +379,11 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, uint) =
             let entry = world.registry.entries[compId]
             let entityMask = entry.getSparseChunkMaskOp(entry.rawPointer, chunkIdx)
             chunkMask = chunkMask and entityMask
+
+          for compId in excludeIds:
+            let entry = world.registry.entries[compId]
+            let entityMask = entry.getSparseChunkMaskOp(entry.rawPointer, chunkIdx)
+            chunkMask = chunkMask and not entityMask
 
           let res = chunkMask and changeMask
 

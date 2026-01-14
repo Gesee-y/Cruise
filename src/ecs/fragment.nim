@@ -226,10 +226,10 @@ template overrideVals(f, archId, ents, ids, toSwap, toAdd:untyped) =
     e.archetypeId = archId
 
 
-template setChanged[N,P,T,B](f: var SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B], id:uint) =
+template setChanged[N,P,T,B](f: var SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B], id:uint|int) =
   var blk = id shr 6
   var bitp = id and 63
-  f.valMask[blk] = f.valMask[blk] or 1'u shl bitp
+  f.valMask[blk] = f.valMask[blk] or (1'u shl bitp)
 
 template setChanged[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint) =
   var bid = id shr BLK_SHIFT
@@ -239,7 +239,7 @@ template setChanged[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint) =
   if blk.int >= f.blkChangeMask.len:
     f.blkChangeMask.setLen(blk+1)
   
-  f.blkChangeMask[blk] = f.blkChangeMask[blk] or 1'u shl bitp
+  f.blkChangeMask[blk] = f.blkChangeMask[blk] or (1'u shl bitp)
 
 template setChangedSparse[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint) =
   var bid = id shr 6
@@ -310,14 +310,14 @@ proc newBlockAt[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int) =
  var blk:ref SoAFragment[N,P,T,B]
  new(blk)
  blk.offset = N*i
- blk.valMask.setLen((N-1 shr 6) + 1)
+ blk.valMask.setLen(((N-1) shr 6) + 1)
  f.blocks[i] = blk
 
 proc newBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int):bool =
   var blk: ref SoAFragment[N,P,T,B]
   new(blk)
   blk.offset = offset
-  blk.valMask.setLen((N-1 shr 6) + 1)
+  blk.valMask.setLen(((N-1) shr 6) + 1)
   
   if f.blocks.len == 0 or offset >= N+f.blocks[^1].offset:
     f.blocks.add(blk)
@@ -351,9 +351,9 @@ template getBlock[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:uint):ref SoAFragm
 
 proc activateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int|uint) =
   let S = (sizeof(uint)*8).uint
-  let bid = i.uint div S
-  let lid = i.uint mod S
-  let mid = bid div S
+  let bid = i.uint shr 6
+  let lid = i.uint and 63
+  let mid = bid shr 6
 
   if bid.int >= f.toSparse.len:
     f.toSparse.setLen(bid+1)
@@ -399,9 +399,10 @@ proc deactivateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int|ui
   let bid = i.uint div S
   let lid = i.uint mod S
   let mid = bid div S
+  let id = f.toSparse[bid]-1
   
-  f.sparse[bid].mask = f.sparse[bid].mask and not (1.uint shl lid)
-  if f.sparse[bid].mask == 0'u:
+  f.sparse[id].mask = f.sparse[id].mask and not (1.uint shl lid)
+  if f.sparse[id].mask == 0'u:
     f.sparseMask[mid] = f.sparseMask[mid] and not (1.uint shl bid)
 
 proc deactivateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], idxs:openArray[uint]) =
@@ -410,10 +411,11 @@ proc deactivateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], idxs:ope
   for i in idxs:
     let bid = i div S
     let lid = i mod S
-    let mid = bid div S    
+    let mid = bid div S
+    let id = f.toSparse[bid]-1    
 
-    f.sparse[bid].mask = f.sparse[bid].mask and not (1.uint shl lid)
-    if f.sparse[bid].mask == 0'u:
+    f.sparse[id].mask = f.sparse[id].mask and not (1.uint shl lid)
+    if f.sparse[id].mask == 0'u:
       f.sparseMask[mid] = f.sparseMask[mid] and not (1.uint shl bid)
 
 template `[]=`[N,P,T,B](blk:var SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B], i:int|uint, v:untyped) =
@@ -499,5 +501,5 @@ proc clearSparseChanges[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B]) =
   for i in 0..<f.sparseChangeMask.len:
     f.sparseChangeMask[i] = 0'u
     if f.toSparse[i] > 0:
-      let j = f.toSparse[j]
+      let j = f.toSparse[i]-1
       f.sparse[j].valMask[0] = 0'u
