@@ -45,11 +45,13 @@ proc createEntity*(world:var ECSWorld, arch:ArchetypeMask):DenseHandle =
   # Initialize entity metadata.
   e.id = (bid shl BLK_SHIFT) or id.uint 
   e.archetypeId = archId                
-  e.widx = pid                          
+  e.widx = pid
+
+  let d = DenseHandle(obj:e, gen:world.generations[pid])
   
-  world.events.emitDenseEntityCreated(result)
+  world.events.emitDenseEntityCreated(d)
   # Return a public handle containing the pointer and the current generation (for safety checks).
-  return DenseHandle(obj:e, gen:world.generations[pid])
+  return d
 
 ## Overload of `createEntity` that accepts a list of Component IDs.
 ##

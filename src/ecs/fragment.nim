@@ -9,13 +9,17 @@ type
     data*:T
     offset:int
     mask:uint
+    valMask:array[((N-1) shr 6)+1, uint]
 
   SoAFragmentArray*[N:static int,P:static bool,T,S,B] = ref object
     blocks*:seq[ref SoAFragment[N,P,T,B]]
+    blkChangeMask:seq[uint]
     sparse*:seq[SoAFragment[sizeof(uint)*8,P,S,B]]
+    sparseChangeMask:seq[uint]
     toSparse:seq[int]
     mask:seq[uint]
     sparseMask:seq[uint]
+
 
 const
   BLK_MASK = (1 shl 32) - 1
@@ -221,8 +225,31 @@ template overrideVals(f, archId, ents, ids, toSwap, toAdd:untyped) =
     e.id = a
     e.archetypeId = archId
 
-template setComponent[T](blk: ptr T, i:uint, v) = 
-  assert(true, "There is no setter for this component type")
+
+template setChanged[N,P,T,B](f: var SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B], id:uint) =
+  var blk = id shr 6
+  var bitp = id and 63
+  f.valMask[blk] = f.valMask[blk] or 1'u shl bitp
+
+template setChanged[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint) =
+  var bid = id shr BLK_SHIFT
+  var blk = bid shr 6
+  var bitp = bid and 63
+
+  if blk.int >= f.blkChangeMask.len:
+    f.blkChangeMask.setLen(blk+1)
+  
+  f.blkChangeMask[blk] = f.blkChangeMask[blk] or 1'u shl bitp
+
+template setChangedSparse[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint) =
+  var bid = id shr 6
+  var blk = bid shr 6
+  var bitp = bid and 63
+
+  if blk.int >= f.blkChangeMask.len:
+    f.blkChangeMask.setLen(blk+1)
+  
+  f.blkChangeMask[blk] = f.blkChangeMask[blk] or 1'u shl bitp
   
 proc getDataType[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B]):typedesc[B] = B
 
@@ -321,8 +348,8 @@ template getBlock[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:uint):ref SoAFragm
 
 proc activateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int|uint) =
   let S = (sizeof(uint)*8).uint
-  let bid = i div S
-  let lid = i mod S
+  let bid = i.uint div S
+  let lid = i.uint mod S
   let mid = bid div S
 
   if bid.int >= f.toSparse.len:
@@ -366,8 +393,8 @@ proc activateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], idxs:openA
 
 proc deactivateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int|uint) =
   let S = (sizeof(uint)*8).uint
-  let bid = i div S
-  let lid = i mod S
+  let bid = i.uint div S
+  let lid = i.uint mod S
   let mid = bid div S
   
   f.sparse[bid].mask = f.sparse[bid].mask and not (1.uint shl lid)
@@ -392,6 +419,7 @@ template `[]=`[N,P,T,B](blk:var SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B],
   else:
     check(i.int < N, "Invalid access. " & $i & "is out of bound for block of size " & $N)
     when P:
+      setChanged(blk, i)
       setComponent(addr blk, i, v)
     else:
       toObjectMod(B, blk.data, i, v)
@@ -414,7 +442,7 @@ proc `[]`[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:int):B =
 proc `[]=`[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], i:int, v:B) =
   var blk = getBlock(f,i)
   check((i div N) < f.blocks.len, "Invalid access. " & $(i div N) & "is out of bound. The component only has " & $(f.blocks.len) & "blocks")
-  f.blocks[i div N][i mod N] = v
+  f.blocks[i div N][i.uint mod N.uint] = v
 
 template `[]`[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:uint):untyped =
   let blk = (i shr BLK_SHIFT) and BLK_MASK
@@ -429,6 +457,8 @@ template `[]=`[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], i:uint, v:untyped) 
 
   check(blk < f.blocks.len.uint, "Invalid access. " & $blk & "is out of bound. The component only has " & $(f.blocks.len) & "blocks")
   check(not f.blocks[blk].isNil, "Invalid access. Trying to access nil block at " & $blk)
+  
+  when P: setChanged(f, i)
   f.blocks[blk][idx] = v
 
 proc len[N,P,T,B](blk:SoAFragment[N,P,T,B]) = N

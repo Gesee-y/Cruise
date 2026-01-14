@@ -63,7 +63,7 @@ proc setupWorld(entityCount: int): (ECSWorld, ref seq[DenseHandle], int, int, in
 # Benchmarks
 # =========================
 
-const ENTITY_COUNT = 1000
+const ENTITY_COUNT = 100
 
 
 
