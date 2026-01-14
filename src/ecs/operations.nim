@@ -47,6 +47,8 @@ proc createEntity*(world:var ECSWorld, arch:ArchetypeMask):DenseHandle =
   e.archetypeId = archId                
   e.widx = pid                          
   
+  let componentIds = getComponentsFromSig(arch)
+  world.events.emitDenseEntityCreated(result, archId.int, componentIds)
   # Return a public handle containing the pointer and the current generation (for safety checks).
   return DenseHandle(obj:e, gen:world.generations[pid])
 
@@ -128,6 +130,7 @@ template deleteEntity*(world:var ECSWorld, d:DenseHandle) =
 
   # Remove the entity's data row from its archetype block.
   # Returns the index of the last row that was swapped into the deleted position ('l').
+  world.events.emitDenseEntityDestroyed(d, e.archetypeId.int)
   let l = deleteRow(world, e.id, e.archetypeId)
   
   # Update the handle lookup table.
@@ -193,8 +196,10 @@ proc migrateEntity*(world: var ECSWorld, d:DenseHandle, archNode:ArchetypeNode) 
     world.handles[lst].id = e.id
 
     # Update the migrating entity's ID to its new physical position.
+    let oldArchId = e.archetypeId
     e.id = (bid shl BLK_SHIFT) or id
     e.archetypeId = archNode.id
+    world.events.emitDenseEntityMigrated(d, oldArchId.int, archNode.id.int)
     
 ## Batch migration for multiple entities (Dense storage).
 ##
@@ -242,6 +247,7 @@ proc addComponent*(world:var EcsWorld, d:DenseHandle, components:varargs[int]) =
 
   # Perform the migration to the new archetype.
   migrateEntity(world, d, archNode)
+  world.events.emitDenseComponentAdded(d, oldArch.id.int, archNode.id.int, components.toSeq)
 
 ## Removes components from an existing entity (Dense storage).
 ##
@@ -261,6 +267,7 @@ proc removeComponent*(world:var EcsWorld, d:DenseHandle, components:varargs[int]
 
   # Perform the migration to the new archetype.
   migrateEntity(world, d, archNode)
+  world.events.emitDenseComponentRemoved(d, oldArch.id.int, archNode.id.int, components.toSeq)
 
 ###################################################################################################################################################
 ########################################################## SPARSE OPERATIONS ######################################################################
@@ -277,8 +284,10 @@ proc removeComponent*(world:var EcsWorld, d:DenseHandle, components:varargs[int]
 proc createSparseEntity*(w:var ECSWorld, components:varargs[int]):SparseHandle =
   # Allocate space in the sparse set.
   let id = w.allocateSparseEntity(components)
+  let mask = maskOf(components)
   # Return the handle containing the bitmask of components.
-  return SparseHandle(id:id, gen:w.sparse_gens[id], mask:maskOf(components))
+  w.events.emitSparseEntityCreated(result, mask, components.toSeq)
+  return SparseHandle(id:id, gen:w.sparse_gens[id], mask:mask)
 
 ## Creates multiple entities in the sparse ECS storage.
 ##
@@ -304,6 +313,7 @@ proc createSparseEntities*(w:var ECSWorld, n:int, components:varargs[int]):seq[S
 ## @param w: The mutable `ECSWorld` instance.
 ## @param s: The `SparseHandle` of the entity to delete.
 proc deleteEntity*(w:var ECSWorld, s:var SparseHandle) =
+  w.events.emitSparseEntityDestroyed(s, s.mask)
   w.deleteSparseRow(s.id, s.mask)
   # Increment generation to invalidate handles.
   w.sparse_gens[s.id] += 1
@@ -317,8 +327,10 @@ proc deleteEntity*(w:var ECSWorld, s:var SparseHandle) =
 ## @param s: The `SparseHandle` of the entity.
 ## @param components: Variadic list of Component IDs to add.
 proc addComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
+  let oldMask = s.mask
   s.mask.setBit(components)
   w.activateComponentsSparse(s.id, components)
+  w.events.emitSparseComponentAdded(s, oldMask, s.mask, components.toSeq)
 
 ## Removes components from a sparse entity.
 ##
@@ -328,8 +340,10 @@ proc addComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) 
 ## @param s: The `SparseHandle` of the entity.
 ## @param components: Variadic list of Component IDs to remove.
 proc removeComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
+  let oldMask = s.mask
   s.mask.unSetBit(components)
   w.deactivateComponentsSparse(s.id, components)
+  w.events.emitSparseComponentRemoved(s, oldMask, s.mask, components.toSeq)
 
 ###################################################################################################################################################
 #################################################### SPARSE/DENSE OPERATIONS ######################################################################
@@ -359,6 +373,7 @@ proc makeDense*(world:var ECSWorld, s:var SparseHandle):DenseHandle =
 
   # Cleanup the original Sparse entity.
   world.deleteEntity(s)
+  world.events.emitDensified(s, d, s.mask)
 
   return d
 
@@ -384,5 +399,6 @@ proc makeSparse*(world:var ECSWorld, d:DenseHandle):SparseHandle =
 
   # Cleanup the original Dense entity.
   world.deleteEntity(d)
+  world.events.emitSparsified(d, s, d.obj.archetypeId.int)
 
   return s

@@ -5,14 +5,14 @@
 import macros
 
 type
-  SoAFragment[N:static int, T, B] = object
-    data:T
+  SoAFragment*[N:static int, T, B] = object
+    data*:T
     offset:int
     mask:uint
 
-  SoAFragmentArray[N:static int, T, S, B] = ref object
-    blocks:seq[ref SoAFragment[N,T,B]]
-    sparse:seq[SoAFragment[sizeof(uint)*8,S,B]]
+  SoAFragmentArray*[N:static int, T, S, B] = ref object
+    blocks*:seq[ref SoAFragment[N,T,B]]
+    sparse*:seq[SoAFragment[sizeof(uint)*8,S,B]]
     toSparse:seq[int]
     mask:seq[uint]
     sparseMask:seq[uint]
@@ -362,12 +362,18 @@ proc deactivateSparseBit[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], idxs:openArr
       f.sparseMask[mid] = f.sparseMask[mid] and not (1.uint shl bid)
 
 template `[]=`[N,T,B](blk:var SoAFragment[N,T,B] | ref SoAFragment[N,T,B], i:int|uint, v:B) =
-  check(i.int < N, "Invalid access. " & $i & "is out of bound for block of size " & $N)
-  toObjectMod(B, blk.data, i, v)
+  when T is tuple[]:
+    discard
+  else:
+    check(i.int < N, "Invalid access. " & $i & "is out of bound for block of size " & $N)
+    toObjectMod(B, blk.data, i, v)
 
 template `[]`[N,T,B](blk:var SoAFragment[N,T,B] | ref SoAFragment[N,T,B], i:int|uint):B =
-  check(i.int < N, "Invalid access. " & $i & "is out of bound for block of size " & $N)
-  toObject(B, blk.data, i)
+  when T is tuple[]:
+    B()
+  else:
+    check(i.int < N, "Invalid access. " & $i & "is out of bound for block of size " & $N)
+    toObject(B, blk.data, i)
 
 
 proc `[]`[N,T,S,B](f:SoAFragmentArray[N,T,S,B], i:int):B =

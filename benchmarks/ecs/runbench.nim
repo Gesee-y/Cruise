@@ -22,13 +22,12 @@ type
     x, y: float32
 
   Tag = object
-    b:bool
 
   Health = object
     hp:int
 
   Timer = object
-    remaining:float
+    remaining:float32
 
 
 # =========================
@@ -42,7 +41,7 @@ proc setupWorld(entityCount: int): (ECSWorld, ref seq[DenseHandle], int, int, in
   let velID = world.registerComponent(Velocity)
   let accID = world.registerComponent(Acceleration)
   let tagID = world.registerComponent(Tag)
-  let timerID = world.registerComponent(Timer)
+  let timerID = world.registry.registerComponent(Timer)
   let hpID = world.registerComponent(Health)
 
   # Dense archetype: Position + Velocity

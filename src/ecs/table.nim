@@ -42,12 +42,14 @@ type
     fill_index:int
 
 include "archetypes.nim"
+include "events.nim"
 
 type
   ECSWorld* = ref object
     registry:ComponentRegistry
     entities:seq[Entity]
-    commandBufs:seq[CommandBuffer]
+    commandBufs*:seq[CommandBuffer]
+    events*: EventManager
     handles:seq[ptr Entity]
     generations:seq[uint32]
     sparse_gens:seq[uint32]
@@ -82,6 +84,7 @@ proc newECSWorld*(max_entities:int=1000000):ECSWorld =
   w.archGraph = initArchetypeGraph()
   w.entities = newSeqofCap[Entity](max_entities)
   w.free_list = newSeqofCap[uint](max_entities div 2)
+  w.events = initEventManager()
 
   return w
 
@@ -163,8 +166,8 @@ proc getStableEntities(world:ECSWorld, n:int):seq[int] =
 
   return entity_idx
 
-proc registerComponent*[T](world:var ECSWorld, t:typedesc[T]):int =
-  registerComponent(world.registry, T)
+template registerComponent*(world:var ECSWorld, t:typed):int =
+  registerComponent(world.registry, t)
 
 template get*[T](world:ECSWorld,t:typedesc[T]):untyped =
   let id = world.getComponentId(t)
