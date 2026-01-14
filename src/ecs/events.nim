@@ -3,60 +3,44 @@ import tables
 type
   DenseEntityCreatedEvent* = object
     entity*: DenseHandle
-    archetype*: int
-    componentIds*: seq[int]
     
   DenseEntityDestroyedEvent* = object
     entity*: DenseHandle
-    archetype*: int
     
   DenseComponentAddedEvent* = object
     entity*: DenseHandle
-    oldArchetype*: int
-    newArchetype*: int
     componentIds*: seq[int]
     
   DenseComponentRemovedEvent* = object
     entity*: DenseHandle
-    oldArchetype*: int
-    newArchetype*: int
     componentIds*: seq[int]
     
   DenseEntityMigratedEvent* = object
     entity*: DenseHandle
-    oldArchetype*: int
-    newArchetype*: int
+    oldArchetype*: uint16
+    newArchetype*: uint16
 
   SparseEntityCreatedEvent* = object
     entity*: SparseHandle
-    componentMask*: ArchetypeMask
-    componentIds*: seq[int]
     
   SparseEntityDestroyedEvent* = object
     entity*: SparseHandle
-    componentMask*: ArchetypeMask
     
   SparseComponentAddedEvent* = object
     entity*: SparseHandle
-    oldMask*: ArchetypeMask
-    newMask*: ArchetypeMask
     componentIds*: seq[int]
     
   SparseComponentRemovedEvent* = object
     entity*: SparseHandle
-    oldMask*: ArchetypeMask
-    newMask*: ArchetypeMask
     componentIds*: seq[int]
 
   DensifiedEvent* = object
     oldSparse*: SparseHandle
     newDense*: DenseHandle
-    componentMask*: ArchetypeMask
     
   SparsifiedEvent* = object
     oldDense*: DenseHandle
     newSparse*: SparseHandle
-    archetype*: int
 
   CommandBufferFlushedEvent* = object
     bufferId*: int
@@ -214,92 +198,70 @@ proc offCommandBufferFlushed*(em: var EventManager, id: int) =
 proc offArchetypeCreated*(em: var EventManager, id: int) =
   em.archetypeCreated.unsubscribe(id)
 
-proc emitDenseEntityCreated*(em: var EventManager, entity: DenseHandle, 
-                             archetype: int, componentIds: seq[int]) =
+proc emitDenseEntityCreated*(em: var EventManager, entity: DenseHandle) =
   em.denseEntityCreated.trigger(DenseEntityCreatedEvent(
     entity: entity,
-    archetype: archetype,
-    componentIds: componentIds
   ))
 
-proc emitDenseEntityDestroyed*(em: var EventManager, entity: DenseHandle, archetype: int) =
+proc emitDenseEntityDestroyed*(em: var EventManager, entity: DenseHandle) =
   em.denseEntityDestroyed.trigger(DenseEntityDestroyedEvent(
     entity: entity,
-    archetype: archetype
   ))
 
-proc emitDenseComponentAdded*(em: var EventManager, entity: DenseHandle, 
-                             oldArchetype, newArchetype: int, componentIds: seq[int]) =
+proc emitDenseComponentAdded*(em: var EventManager, entity: DenseHandle, componentIds: openArray[int]) =
   em.denseComponentAdded.trigger(DenseComponentAddedEvent(
     entity: entity,
-    oldArchetype: oldArchetype,
-    newArchetype: newArchetype,
-    componentIds: componentIds
+    componentIds: componentIds.toSeq
   ))
 
-proc emitDenseComponentRemoved*(em: var EventManager, entity: DenseHandle, 
-                               oldArchetype, newArchetype: int, componentIds: seq[int]) =
+proc emitDenseComponentRemoved*(em: var EventManager, entity: DenseHandle, componentIds: openArray[int]) =
   em.denseComponentRemoved.trigger(DenseComponentRemovedEvent(
     entity: entity,
-    oldArchetype: oldArchetype,
-    newArchetype: newArchetype,
-    componentIds: componentIds
+    componentIds: componentIds.toSeq
   ))
 
 proc emitDenseEntityMigrated*(em: var EventManager, entity: DenseHandle, 
-                             oldArchetype, newArchetype: int) =
+                             oldArchetype, newArchetype: uint16) =
   em.denseEntityMigrated.trigger(DenseEntityMigratedEvent(
     entity: entity,
     oldArchetype: oldArchetype,
     newArchetype: newArchetype
   ))
 
-proc emitSparseEntityCreated*(em: var EventManager, entity: SparseHandle, 
-                              mask: ArchetypeMask, componentIds: seq[int]) =
+proc emitSparseEntityCreated*(em: var EventManager, entity: SparseHandle) =
   em.sparseEntityCreated.trigger(SparseEntityCreatedEvent(
     entity: entity,
-    componentMask: mask,
-    componentIds: componentIds
   ))
 
-proc emitSparseEntityDestroyed*(em: var EventManager, entity: SparseHandle, mask: ArchetypeMask) =
+proc emitSparseEntityDestroyed*(em: var EventManager, entity: SparseHandle) =
   em.sparseEntityDestroyed.trigger(SparseEntityDestroyedEvent(
     entity: entity,
-    componentMask: mask
   ))
 
-proc emitSparseComponentAdded*(em: var EventManager, entity: SparseHandle, 
-                              oldMask, newMask: ArchetypeMask, componentIds: seq[int]) =
+proc emitSparseComponentAdded*(em: var EventManager, entity: SparseHandle, componentIds: openArray[int]) =
   em.sparseComponentAdded.trigger(SparseComponentAddedEvent(
     entity: entity,
-    oldMask: oldMask,
-    newMask: newMask,
-    componentIds: componentIds
+    componentIds: componentIds.toSeq
   ))
 
-proc emitSparseComponentRemoved*(em: var EventManager, entity: SparseHandle, 
-                                oldMask, newMask: ArchetypeMask, componentIds: seq[int]) =
+proc emitSparseComponentRemoved*(em: var EventManager, entity: SparseHandle, componentIds: openArray[int]) =
   em.sparseComponentRemoved.trigger(SparseComponentRemovedEvent(
     entity: entity,
-    oldMask: oldMask,
-    newMask: newMask,
-    componentIds: componentIds
+    componentIds: componentIds.toSeq
   ))
 
 proc emitDensified*(em: var EventManager, oldSparse: SparseHandle, 
-                   newDense: DenseHandle, mask: ArchetypeMask) =
+                   newDense: DenseHandle) =
   em.densifiedEvent.trigger(DensifiedEvent(
     oldSparse: oldSparse,
     newDense: newDense,
-    componentMask: mask
   ))
 
 proc emitSparsified*(em: var EventManager, oldDense: DenseHandle, 
-                    newSparse: SparseHandle, archetype: int) =
+                    newSparse: SparseHandle) =
   em.sparsifiedEvent.trigger(SparsifiedEvent(
     oldDense: oldDense,
     newSparse: newSparse,
-    archetype: archetype
   ))
 
 proc emitCommandBufferFlushed*(em: var EventManager, bufferId, entitiesProcessed, operationCount: int) =

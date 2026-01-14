@@ -5,14 +5,14 @@
 import macros
 
 type
-  SoAFragment*[N:static int, T, B] = object
+  SoAFragment*[N:static int,P:static bool,T,B] = object
     data*:T
     offset:int
     mask:uint
 
-  SoAFragmentArray*[N:static int, T, S, B] = ref object
-    blocks*:seq[ref SoAFragment[N,T,B]]
-    sparse*:seq[SoAFragment[sizeof(uint)*8,S,B]]
+  SoAFragmentArray*[N:static int,P:static bool,T,S,B] = ref object
+    blocks*:seq[ref SoAFragment[N,P,T,B]]
+    sparse*:seq[SoAFragment[sizeof(uint)*8,P,S,B]]
     toSparse:seq[int]
     mask:seq[uint]
     sparseMask:seq[uint]
@@ -51,19 +51,21 @@ proc toSoATuple(T:NimNode, N:int):NimNode  =
 
   return res
 
-macro castTo(obj:untyped, T:typedesc, N:static int):untyped =
-  let ty = toSoATuple(T.getType[1], N)
-  let sy = toSoATuple(T.getType[1], sizeof(uint)*8)
+macro castTo(obj:untyped, Ty:typedesc, N:static int, P:static bool=false):untyped =
+  let T = Ty.getTypeInst()[1]
+  let ty = toSoATuple(Ty.getType[1], N)
+  let sy = toSoATuple(Ty.getType[1], sizeof(uint)*8)
   return quote("@") do:
-    cast[SoAFragmentArray[`@N`,`@ty`,`@sy`,`@T`]](`@obj`) 
+    cast[SoAFragmentArray[`@N`,`@P`,`@ty`,`@sy`,`@T`]](`@obj`) 
 
-macro newSoAFragArr(T:typedesc, N:static int):untyped =
-  let ty = toSoATuple(T.getType[1], N)
-  let sy = toSoATuple(T.getType[1], sizeof(uint)*8)
+macro newSoAFragArr(Ty:typedesc, N:static int, P:static bool=false):untyped =
+  let T = Ty.getTypeInst()[1]
+  let ty = toSoATuple(Ty.getType[1], N)
+  let sy = toSoATuple(Ty.getType[1], sizeof(uint)*8)
   let S = sizeof(uint)*8
   return quote("@") do:
-    let f = new(SoAFragmentArray[`@N`,`@ty`,`@sy`,`@T`])
-    f.sparse = newSeqOfCap[SoAFragment[`@S`,`@sy`,`@T`]](INITIAL_SPARSE_SIZE)
+    let f = new(SoAFragmentArray[`@N`,`@P`,`@ty`,`@sy`,`@T`])
+    f.sparse = newSeqOfCap[SoAFragment[`@S`,`@P`,`@sy`,`@T`]](INITIAL_SPARSE_SIZE)
     f.toSparse = newSeqOfCap[int](INITIAL_SPARSE_SIZE*`@S`)
     f
 
@@ -95,10 +97,11 @@ macro SoAFragArr(N:static int,stmt:typed) =
 ############################################################### OPERATIONS #########################################################################
 ####################################################################################################################################################
 
-macro toObject(T:typedesc, c:untyped, idx:untyped):untyped =
+macro toObject(Ty:typedesc, c:untyped, idx:untyped):untyped =
+  let T = Ty.getTypeInst()[1]
   var res = newNimNode(nnkObjConstr)
-  let ty = T.getType()[1].getType()[2]
-  res.add(ident(T.getType()[1].strVal))
+  let ty = Ty.getType()[1].getType()[2]
+  res.add(T)
 
   for f in ty:
     var ex = newNimNode(nnkExprColonExpr)
@@ -115,6 +118,25 @@ macro toObject(T:typedesc, c:untyped, idx:untyped):untyped =
 
   return quote("@") do:
     `@res`
+
+macro toObjectParam(T:typedesc, c:untyped, idx:untyped): untyped =
+  ## Cette version respecte l'hygiène de Nim et évite les redéclarations en C.
+  let typeNode = T.getType()
+  
+  let typeName = typeNode[1].strVal
+  let constructorName = ident("new" & typeName)
+
+  let fields = typeNode[1].getType()[2]
+
+  var res = newNimNode(nnkCall)
+  res.add(constructorName)
+
+  for f in fields:
+    let fieldAccess = newDotExpr(c, ident(f.strVal))
+    let bracketAccess = newNimNode(nnkBracketExpr).add(fieldAccess, idx)
+    res.add(bracketAccess)
+
+  return res
 
 macro toObjectMod(T:typedesc, c:untyped, idx:untyped, v:untyped) =
   var res = newNimNode(nnkStmtList)
@@ -177,10 +199,10 @@ template swapVals(b: untyped, i, j:int|uint) =
   b[i] = b[j]
   b[j] = tmp
 
-template overrideVals[N,T,S,B](b: SoAFragmentArray[N,T,S,B], i, j:int|uint) =
+template overrideVals[N,P,T,S,B](b: SoAFragmentArray[N,P,T,S,B], i, j:int|uint) =
   b[i] = b[j]
 
-template overrideVals[N,T,B](b: SoAFragment[N,T,B] | ref SoAFragment[N,T,B], i, j:int|uint) =
+template overrideVals[N,P,T,B](b: SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B], i, j:int|uint) =
   b[i] = b[j]
 
 template overrideVals(f, archId, ents, ids, toSwap, toAdd:untyped) =
@@ -199,9 +221,12 @@ template overrideVals(f, archId, ents, ids, toSwap, toAdd:untyped) =
     e.id = a
     e.archetypeId = archId
 
-proc getDataType[N,T,S,B](f: SoAFragmentArray[N,T,S,B]):typedesc[B] = B
+template setComponent[T](blk: ptr T, i:uint, v) = 
+  assert(true, "There is no setter for this component type")
+  
+proc getDataType[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B]):typedesc[B] = B
 
-proc newSparseBlock[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], offset:int, m:uint) =
+proc newSparseBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, m:uint) =
   let S = sizeof(uint)*8
   var i = offset div S
   var j = i div S
@@ -224,7 +249,7 @@ proc newSparseBlock[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], offset:int, m:uin
   if m != 0:
     f.sparseMask[j] = f.sparseMask[j] or (1.uint shl i)
 
-proc newSparseBlocks[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], masks:openArray[uint]) =
+proc newSparseBlocks[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], masks:openArray[uint]) =
   let S = sizeof(uint)*8
   let base = f.sparse.len
 
@@ -250,17 +275,17 @@ proc newSparseBlocks[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], masks:openArray[
     if m != 0:
       f.sparseMask[j] = f.sparseMask[j] or (1.uint shl i)
 
-proc freeSparseBlock[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], i:int) =
+proc freeSparseBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int) =
   discard#f.sparse[i] = nil
 
-proc newBlockAt[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], i:int) =
- var blk:ref SoAFragment[N,T,B]
+proc newBlockAt[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int) =
+ var blk:ref SoAFragment[N,P,T,B]
  new(blk)
  blk.offset = N*i
  f.blocks[i] = blk
 
-proc newBlock[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], offset:int):bool =
-  var blk: ref SoAFragment[N,T,B]
+proc newBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int):bool =
+  var blk: ref SoAFragment[N,P,T,B]
   new(blk)
   blk.offset = offset
   
@@ -285,16 +310,16 @@ proc newBlock[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], offset:int):bool =
   f.blocks.insert(blk, left)
   return true
 
-proc getBlockIdx[N,T,S,B](f:SoAFragmentArray[N,T,S,B], i:int):int =
+proc getBlockIdx[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:int):int =
   return i div N
 
-proc getBlock[N,T,S,B](f:SoAFragmentArray[N,T,S,B], i:int):ref SoAFragment[N,T,B] =
+proc getBlock[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:int):ref SoAFragment[N,P,T,B] =
   return f.blocks[getBlockIdx(f, i)]
 
-template getBlock[N,T,S,B](f:SoAFragmentArray[N,T,S,B], i:uint):ref SoAFragment[N,T,B] =
+template getBlock[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:uint):ref SoAFragment[N,P,T,B] =
   f.blocks[(i shr BLK_SHIFT) and BLK_MASK]
 
-proc activateSparseBit[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], i:int|uint) =
+proc activateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int|uint) =
   let S = (sizeof(uint)*8).uint
   let bid = i div S
   let lid = i mod S
@@ -315,7 +340,7 @@ proc activateSparseBit[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], i:int|uint) =
   f.sparseMask[mid] = f.sparseMask[mid] or (1.uint shl bid)
   f.sparse[id].mask = f.sparse[id].mask or (1.uint shl lid)
 
-proc activateSparseBit[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], idxs:openArray[uint]) =
+proc activateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], idxs:openArray[uint]) =
   let S = (sizeof(uint)*8).uint
 
   for i in idxs:
@@ -339,7 +364,7 @@ proc activateSparseBit[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], idxs:openArray
     f.sparse[id].mask = f.sparse[id].mask or (1.uint shl lid)
 
 
-proc deactivateSparseBit[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], i:int|uint) =
+proc deactivateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int|uint) =
   let S = (sizeof(uint)*8).uint
   let bid = i div S
   let lid = i mod S
@@ -349,7 +374,7 @@ proc deactivateSparseBit[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], i:int|uint) 
   if f.sparse[bid].mask == 0'u:
     f.sparseMask[mid] = f.sparseMask[mid] and not (1.uint shl bid)
 
-proc deactivateSparseBit[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], idxs:openArray[uint]) =
+proc deactivateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], idxs:openArray[uint]) =
   let S = (sizeof(uint)*8).uint
 
   for i in idxs:
@@ -361,38 +386,44 @@ proc deactivateSparseBit[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], idxs:openArr
     if f.sparse[bid].mask == 0'u:
       f.sparseMask[mid] = f.sparseMask[mid] and not (1.uint shl bid)
 
-template `[]=`[N,T,B](blk:var SoAFragment[N,T,B] | ref SoAFragment[N,T,B], i:int|uint, v:B) =
+template `[]=`[N,P,T,B](blk:var SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B], i:int|uint, v:untyped) =
   when T is tuple[]:
     discard
   else:
     check(i.int < N, "Invalid access. " & $i & "is out of bound for block of size " & $N)
-    toObjectMod(B, blk.data, i, v)
+    when P:
+      setComponent(addr blk, i, v)
+    else:
+      toObjectMod(B, blk.data, i, v)
 
-template `[]`[N,T,B](blk:var SoAFragment[N,T,B] | ref SoAFragment[N,T,B], i:int|uint):B =
+template `[]`[N:static int,P:static bool,T,B](blk:var SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B], i:int|uint):untyped =
   when T is tuple[]:
     B()
   else:
     check(i.int < N, "Invalid access. " & $i & "is out of bound for block of size " & $N)
-    toObject(B, blk.data, i)
 
+    when P == true:
+      toObjectParam(B, blk.data, i)
+    else:
+      toObject(B, blk.data, i)
 
-proc `[]`[N,T,S,B](f:SoAFragmentArray[N,T,S,B], i:int):B =
+proc `[]`[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:int):B =
   let blk = getBlock(f,i)
   return blk[i-blk.offset]
 
-proc `[]=`[N,T,S,B](f:var SoAFragmentArray[N,T,S,B], i:int, v:B) =
+proc `[]=`[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], i:int, v:B) =
   var blk = getBlock(f,i)
   check((i div N) < f.blocks.len, "Invalid access. " & $(i div N) & "is out of bound. The component only has " & $(f.blocks.len) & "blocks")
   f.blocks[i div N][i mod N] = v
 
-proc `[]`[N,T,S,B](f:SoAFragmentArray[N,T,S,B], i:uint):B =
+template `[]`[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:uint):untyped =
   let blk = (i shr BLK_SHIFT) and BLK_MASK
   let idx = i and BLK_MASK
 
   check(blk < f.blocks.len.uint, "Invalid access. " & $blk & "is out of bound. The component only has " & $(f.blocks.len) & "blocks")
-  return f.blocks[blk][idx]
+  f.blocks[blk][idx]
 
-proc `[]=`[N,T,S,B](f:var SoAFragmentArray[N,T,S,B], i:uint, v:B) =
+template `[]=`[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], i:uint, v:untyped) =
   let blk = (i shr BLK_SHIFT) and BLK_MASK
   let idx = i and BLK_MASK
 
@@ -400,27 +431,27 @@ proc `[]=`[N,T,S,B](f:var SoAFragmentArray[N,T,S,B], i:uint, v:B) =
   check(not f.blocks[blk].isNil, "Invalid access. Trying to access nil block at " & $blk)
   f.blocks[blk][idx] = v
 
-proc len[N,T,B](blk:SoAFragment[N,T,B]) = N
+proc len[N,P,T,B](blk:SoAFragment[N,P,T,B]) = N
 
-iterator iter[N,T,B](blk:SoAFragment[N,T,B] | ref SoAFragment[N,T,B]):B =
+iterator iter[N,P,T,B](blk:SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B]):B =
   for i in 0..<N:
     yield blk[i]
 
-iterator pairs[N,T,B](blk:SoAFragment[N,T,B] | ref SoAFragment[N,T,B]):(int, B) =
+iterator pairs[N,P,T,B](blk:SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B]):(int, B) =
   for i in 0..<N:
     yield (i, blk[i])
 
-iterator iter[N,T,S,B](f:SoAFragmentArray[N,T,S,B]):B =
+iterator iter[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B]):B =
   for blk in f.blocks:
     for d in blk.iter:
       yield d
 
-iterator pairs[N,T,S,B](f:SoAFragmentArray[N,T,S,B]):(int,B) =
+iterator pairs[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B]):(int,B) =
   for blk in f.blocks:
     for i in 0..<N:
       yield (i+blk.offset,blk[i])
   
-proc resize[N,T,S,B](f: var SoAFragmentArray[N,T,S,B], n:int) =
+proc resize[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], n:int) =
   check(n >= 0, "Can't resize to negative size. Got " & $n)
   f.blocks.setLen(n)
   

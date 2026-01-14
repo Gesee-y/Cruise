@@ -28,10 +28,6 @@ include "registry.nim"
 include "mask.nim"
 
 type
-  TableColumn[N:static int,T,S,B] = ref object
-    components:SoAFragmentArray[N,T,S,B]
-    mask:seq[uint]
-
   TableRange* = object
     r:Range
     block_idx:int
@@ -61,21 +57,6 @@ type
     free_list:seq[uint]
     max_index:int
     block_count:int
-
-template newTableColumn[N,T,S,B](f:SoAFragmentArray[N,T,S,B]):untyped =
-  var m = newSeq[uint]()
-
-  for i in 0..<f.blocks.len:
-    let idx = i div sizeof(uint)
-    let bitpos = i mod sizeof(uint)
-    if idx >= m.len:
-      m.add(0.uint)
-
-    if not f.blocks[i].isNil:
-      m[idx] = m[idx] or (1 shl bitpos)
-  
-  var res = TableColumn[N,T,B](components:f, mask:m)
-  res
 
 proc newECSWorld*(max_entities:int=1000000):ECSWorld =
   var w:ECSWorld
@@ -166,8 +147,8 @@ proc getStableEntities(world:ECSWorld, n:int):seq[int] =
 
   return entity_idx
 
-template registerComponent*(world:var ECSWorld, t:typed):int =
-  registerComponent(world.registry, t)
+template registerComponent*(world:var ECSWorld, t:typed, P:static bool=false):int =
+  registerComponent(world.registry, t, P)
 
 template get*[T](world:ECSWorld,t:typedesc[T]):untyped =
   let id = world.getComponentId(t)

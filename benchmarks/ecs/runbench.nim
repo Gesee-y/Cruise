@@ -26,9 +26,14 @@ type
   Health = object
     hp:int
 
-  Timer = object
-    remaining:float32
+  Timer[T] = object
+    remaining:T
 
+proc newTimer[T](r:T):Timer[T] = Timer[T]() 
+proc newPosition(x,y:float32):Position = Position() 
+proc setComponent[T](blk: ptr T, i:uint, v:Position) =
+  blk.data.x = v.x*2
+  blk.data.y = v.y/2
 
 # =========================
 # World setup
@@ -37,11 +42,11 @@ type
 proc setupWorld(entityCount: int): (ECSWorld, ref seq[DenseHandle], int, int, int, int, int, int) =
   var world = newECSWorld()
 
-  let posID = world.registerComponent(Position)
+  let posID = world.registerComponent(Position,true)
   let velID = world.registerComponent(Velocity)
   let accID = world.registerComponent(Acceleration)
   let tagID = world.registerComponent(Tag)
-  let timerID = world.registry.registerComponent(Timer)
+  let timerID = world.registry.registerComponent(Timer[int])
   let hpID = world.registerComponent(Health)
 
   # Dense archetype: Position + Velocity
@@ -54,12 +59,11 @@ proc setupWorld(entityCount: int): (ECSWorld, ref seq[DenseHandle], int, int, in
 
   return (world, entities, posID, velID, accID, tagID, timerID, hpID)
 
-
 # =========================
 # Benchmarks
 # =========================
 
-const ENTITY_COUNT = 10000
+const ENTITY_COUNT = 1000
 
 
 
