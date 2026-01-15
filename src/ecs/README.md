@@ -6,7 +6,7 @@ Cruise ECS is there to give a solid base to anyone trying to build his engine wh
 
 ## Quick Start
 
-```
+```nim
 import Cruise
 
 type
@@ -29,7 +29,7 @@ var poscolumn = w.get(Position)
 var e = w.createEntity(posID)
 poscolumn[e] = Pos()
 
-for (bid, r) in w.denseQuery(query(w, Pos)):
+for (bid, r, _) in w.denseQuery(query(w, Pos)):
   var xdata = poscolumn.blocks[bid].data.x
   for i in r:
     xdata[i] += 1
@@ -65,3 +65,82 @@ Here we don't care about data organization, entities are just putted where space
 #### Querying and iteration
 
 Querying is about intersecting the hibitsets of the components to match. and iteration get first the non zero bit to access matching chunks using trailing zeros count and iterate through matching entities using trailing zeros count. This drastically reduce branching during iteration, allows to skipping up to 4096 entities in one instruction.
+
+## Features
+
+- **Really Fast**: Performance is one of the main aspect of any ECS and Cruise doesn't belittle that. Using an SoA + Fragment Vector layout, it allows for extra fast dense iterations and fast sparse iterations.
+
+- **Choose your layout**: Cruise ECS allows you to use dense or sparse entities as you wish or even make entities transitions between them:
+
+```nim
+var w = newECSWorld()
+var d = w.createEntity()
+var s = w.createSparseEntity()
+
+let e = w.makeDense(s)
+let t = w.makeSparse(d)
+```
+
+- **Flexible components**: No need to tell Cruise ECS the components you need before hand, you can add components at any points in your code.
+
+```nim
+world.registerComponent(Position)
+world.registerComponent(Tag)
+world.registerComponent(Inventory[Sword])
+```
+
+- **Setter/getters**: Cruise allows you to have setters and getter for you components. This way you can easily track change and make using components easier
+
+```nim
+proc newPosition(x,y:float32):Position =
+  echo "Fetching position"
+  return Position(x:x*2, y:y/2)
+
+proc setComponent[T](blk: ptr T, i:uint, v:Position) =
+  echo "Setting position"
+  blk.data.x = v.x/2
+  blk.data.y = v.y*2
+
+var positions = world.get(Position, true) # Enable set get access
+
+discard position[entity] # Call the getter `newPosition` defined by the user
+position[entity] = Position() # Call the setter `setComponent` which can be overloaded by the user
+```
+
+- **Change tracking**: Cruise allows you to queries only entities that changed for a given component via the syntax `Modified[Type]`. You can also query components that didn't changed with `not Modified[Type]`
+
+- **Integrated Event System**: Cruise allows you to watch for events like entity creation or more:
+
+```nim
+world.events.onDenseComponentAdded do _:
+  echo "New component added there!"
+```
+
+- **Powerful query system**: Cruise allows you to create powerful queries with an agreable syntax
+
+```nim
+let sig = world.query(Modified[Position] and Velocity and not Tag)
+# The signature can then be used for sparse or dense queries
+```
+
+- **Command buffers**: Cruise allows you to defers some structural changes to avoid corrupting your iterations.
+
+```nim
+var id = world.newCommandBuffer() # Can initialize one per thread if necessary
+world.deleteEntityDefer(entity, id) # We register the deletion command
+world.flush() # We execute all the commands
+```
+
+- **Stable once the peak entity count is reached**: No more allocations will happens and the ECS will reuse his own slots
+
+- **Ease of use**: Heavily relying on Nim's macro to get the best performances without sacrificing simplicity:
+
+- **Rollback friendly**: Cruise ECS use hibitsets to track changes, this allow to track changes for a components just by diffing 2 hibitset (which is basically a `xor`)
+
+- **Granular concurrency**: Using `LockTree` using TRWLocks that allows to locks specific fields of an object for Read/Write 
+
+```nim
+var positions = world.get(Position)
+positions.locks.withWriteLock("x"): # We only lock write access to the `x` field
+  # Do stuffs
+``` 
