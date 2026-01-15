@@ -109,10 +109,6 @@ ts.saveToFile("game_state.json")
 # Currently saves metadata and TTL information
 ```
 
-## License
-
-This is a Nim translation and optimization of the Julia TemporaryStorage module.
-
 ## Warning
 
 Often abusing this kind of KV store leads bad performances. Use it just for global access and logics in your projet, not as the main piece.
