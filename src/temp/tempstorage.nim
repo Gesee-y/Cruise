@@ -13,7 +13,7 @@ type
     ekAddNamespace = "addns"
     ekDeleteNamespace = "deletens"
 
-  EventCallback* = proc(key: string, value: pointer) {.closure, gcsafe.}
+  KVEventCallback* = proc(key: string, value: pointer) {.closure, gcsafe.}
   
   TempEntry = object
     value: pointer
@@ -22,13 +22,13 @@ type
   
   Namespace* = ref object
     data: Table[string, TempEntry]
-    listeners: Table[EventKind, seq[EventCallback]]
+    listeners: Table[EventKind, seq[KVEventCallback]]
     namespaces: Table[string, Namespace]
     lock: Lock
   
   TempStorage* = ref object
     namespaces: Table[string, Namespace]
-    listeners: Table[EventKind, seq[EventCallback]]
+    listeners: Table[EventKind, seq[KVEventCallback]]
     lock: Lock
     cleanupTask: Future[void]
     cleanupActive: bool
@@ -72,7 +72,7 @@ proc isExpired(entry: TempEntry): bool {.inline.} =
 proc newNamespace*(): Namespace =
   result = Namespace(
     data: initTable[string, TempEntry](),
-    listeners: initTable[EventKind, seq[EventCallback]](),
+    listeners: initTable[EventKind, seq[KVEventCallback]](),
     namespaces: initTable[string, Namespace]()
   )
   initLock(result.lock)
@@ -80,14 +80,14 @@ proc newNamespace*(): Namespace =
 proc newTempStorage*(): TempStorage =
   result = TempStorage(
     namespaces: initTable[string, Namespace](),
-    listeners: initTable[EventKind, seq[EventCallback]](),
+    listeners: initTable[EventKind, seq[KVEventCallback]](),
     cleanupActive: false
   )
   initLock(result.lock)
   result.namespaces[""] = newNamespace()
 
 proc emit(ns:var Namespace, event: EventKind, key: string, value: pointer) =
-  var callbacks: seq[EventCallback]
+  var callbacks: seq[KVEventCallback]
   
   withLock ns.lock:
     if event in ns.listeners:
@@ -100,7 +100,7 @@ proc emit(ns:var Namespace, event: EventKind, key: string, value: pointer) =
       discard
 
 proc emit(ts:var TempStorage, event: EventKind, key: string, value: pointer) =
-  var callbacks: seq[EventCallback]
+  var callbacks: seq[KVEventCallback]
   
   withLock ts.lock:
     if event in ts.listeners:
@@ -112,22 +112,22 @@ proc emit(ts:var TempStorage, event: EventKind, key: string, value: pointer) =
     except:
       discard
 
-proc on*(ns:var Namespace, event: EventKind, callback: EventCallback) =
+proc on*(ns:var Namespace, event: EventKind, callback: KVEventCallback) =
   withLock ns.lock:
     if event notin ns.listeners:
       ns.listeners[event] = @[]
     ns.listeners[event].add(callback)
 
-proc on*(ts:var TempStorage, event: EventKind, callback: EventCallback) =
+proc on*(ts:var TempStorage, event: EventKind, callback: KVEventCallback) =
   withLock ts.lock:
     if event notin ts.listeners:
       ts.listeners[event] = @[]
     ts.listeners[event].add(callback)
 
-proc off*(ns:var Namespace, event: EventKind, callback: EventCallback) =
+proc off*(ns:var Namespace, event: EventKind, callback: KVEventCallback) =
   withLock ns.lock:
     if event in ns.listeners:
-      ns.listeners[event].keepIf(proc(cb: EventCallback): bool = 
+      ns.listeners[event].keepIf(proc(cb: KVEventCallback): bool = 
         (addr cb) != addr (callback))
 
 proc addVar*[T](ns:var Namespace, name: string, value: T, ttl: Option[Duration] = none(Duration)) =

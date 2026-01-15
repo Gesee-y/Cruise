@@ -222,3 +222,19 @@ proc `[]=`*[T,L](n:var Notifier[T,L],i:int, args:T) =
     return
   
   emit(n, args)
+
+proc connect*[T](s: CRSubject[T], f: Observer[T]) =
+  s.observers.add(f)
+
+proc disconnect*[T](s: CRSubject[T], f: Observer[T]) =
+  s.observers.keepIf(proc(x: Observer[T]): bool = x != f)
+
+proc notify*[T](s: CRSubject[T]) =
+  for obs in s.observers:
+    obs(s.value)
+
+proc `[]`*[T](s: CRSubject[T]): T =
+  s.value
+
+proc `[]=`*[T](s: CRSubject[T], v: T) =
+  s.value = v
