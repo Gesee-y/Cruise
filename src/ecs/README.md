@@ -144,3 +144,5 @@ var positions = world.get(Position)
 positions.locks.withWriteLock("x"): # We only lock write access to the `x` field
   # Do stuffs
 ``` 
+
+- **0 external dependency**: Cruise ECS doesn't rely on any third party lib to work.

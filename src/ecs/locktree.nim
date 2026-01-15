@@ -40,7 +40,6 @@ proc acquireRead*(l: var TRWLock) =
   acquire(l.m)
   
   block outer:
-    # Si on est déjà l'écrivain, on a implicitement le droit de lire
     if l.writer == tid:
       l.writerCount.inc()
       break outer
@@ -60,9 +59,8 @@ proc acquireWrite*(l: var TRWLock) =
   if l.writer == tid:
     l.writerCount.inc()
   else:
-    # S'inscrire comme écrivain en attente
     l.waitingWriters.inc()
-    # Attendre qu'il n'y ait plus de lecteurs NI d'autres écrivains
+    
     while l.readers > 0 or l.writer != 0:
       wait(l.c, l.m)
     l.waitingWriters.dec()
@@ -77,32 +75,23 @@ proc release*(l: var TRWLock, mode: LockMode) =
 
   case mode
   of lmWrite:
-    # Si on possède le lock en écriture (réentrance ou simple)
+    
     if l.writer == tid:
       dec l.writerCount
       if l.writerCount == 0:
         l.writer = 0
-        # Si on libère l'écriture, on peut réveiller tout le monde (lecteurs ou écrivain suivant)
-        # Le fait que waitingWriters > 0 priorise les écrivains dans acquireRead
         broadcast(l.c)
-    # Note: Si on n'est pas l'écrivain mais qu'on release... erreur logique ou no-op si on avait pris Read via Write?
-    # Ici on est strict.
-  
   of lmRead:
     if l.writer == tid:
-      # Cas où on a implicitement le lock (car on est le Writer)
-      # On libère comme un Write lock alors
       dec l.writerCount
       if l.writerCount == 0:
         l.writer = 0
         broadcast(l.c)
     else:
-      # Lecteur normal
       doAssert(l.readers > 0, "Release read lock without readers")
       dec l.readers
-      # Si c'était le dernier lecteur, on réveille peut-être un écrivain
       if l.readers == 0:
-        signal(l.c) # Un seul écrivain peut passer
+        signal(l.c)
 
   release(l.m)
 
