@@ -36,9 +36,9 @@ This architecture offers several advantages:
 
 - **Optional ECS**: Cruise provides a high performances, optional ECS based on a fragmented storage. Allowing to mimick archetypes and sparse sets in the same structure without losing the best of both.
 
-- ~~**Temporary storage**: To easily share data among your systems, it also support TTL (Time To Live) for data and provides events and serialization support~~
+- **Temporary storage**: To easily share data among your systems, it also support TTL (Time To Live) for data and provides events and serialization support
 
-- ~~**Multiple clear interfaces**: [ECS](https://github.com/Gesee-y/ECSInterface), SceneTree, [Rendering](https://github.com/Gesee-y/Horizons) , [windowing and events](https://github.com/Gesee-y/Outdoors). All clear and set for you to overload with bunch of premade implementations available.~~
+- ~~**Multiple clear interfaces**: windowing, inputs, rendering. All clear and set for you to overload with bunch of premade implementations available.~~
 
 - **Make your own structure**: Cruise doesn't enforce any architecture, build your game as you feel
 
