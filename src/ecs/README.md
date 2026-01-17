@@ -146,7 +146,7 @@ let q = world.query(Position).addFilter(eat_apple or eat_mango)
 
 - **Rollback friendly**: Cruise ECS use hibitsets to track changes, this allow to track changes for a components just by diffing 2 hibitset (which is basically a `xor`)
 
-- **Granular concurrency**: Using `LockTree` using TRWLocks that allows to locks specific fields of an object for Read/Write 
+- **Granular concurrency**: Using `LockTree` using RWLocks that allows to locks specific fields of an object for Read/Write 
 
 ```nim
 var positions = world.get(Position)
