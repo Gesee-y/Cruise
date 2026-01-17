@@ -131,6 +131,17 @@ world.deleteEntityDefer(entity, id) # We register the deletion command
 world.flush() # We execute all the commands
 ```
 
+- **Entity relationships**: Cruise provides you with fast, non fragmenting entities relationships 
+
+```nim
+var eat_apple = newRelationship()
+var eat_mango = newRelationship()
+eat_apple.add(entity1)
+eat_mango.add(entity2)
+
+let q = world.query(Position).addFilter(eat_apple or eat_mango)
+```
+
 - **Stable once the peak entity count is reached**: No more allocations will happens and the ECS will reuse his own slots
 
 - **Ease of use**: Heavily relying on Nim's macro to get the best performances without sacrificing simplicity:
