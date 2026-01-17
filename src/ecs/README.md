@@ -89,15 +89,13 @@ world.registerComponent(Tag)
 world.registerComponent(Inventory[Sword])
 ```
 
-- **Setter/getters**: Cruise allows you to have setters and getter for you components. This way you can easily track change and make using components easier
+- **Setter/getters**: Cruise allows you to have setters and getter for you components. This way you can easily track change and make using components easier. The compiler will guarantees that the setters/getters don't have any side effects.
 
 ```nim
 proc newPosition(x,y:float32):Position =
-  echo "Fetching position"
   return Position(x:x*2, y:y/2)
 
 proc setComponent[T](blk: ptr T, i:uint, v:Position) =
-  echo "Setting position"
   blk.data.x = v.x/2
   blk.data.y = v.y*2
 
