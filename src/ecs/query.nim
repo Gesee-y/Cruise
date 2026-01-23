@@ -254,7 +254,7 @@ proc getSparseMasks(world: ECSWorld, componentIds: seq[int]): seq[seq[uint]] =
   
   for i, compId in componentIds:
     let entry = world.registry.entries[compId]
-    result[i] = entry.getSparseMaskOp(entry.rawPointer)
+    #result[i] = entry.getSparseMaskOp(entry.rawPointer)
 
 ## Helper: Performs a bitwise AND operation across multiple sparse masks.
 ##
@@ -332,62 +332,46 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, uint) =
     of qInclude, qModified, qNotModified: includeIds.add(comp.id)
     of qExclude: excludeIds.add(comp.id)
     
-  if includeIds.len > 0:
-  
-    # Get sparse masks for included components
-    let includeMasks = getSparseMasks(world, includeIds)
-  
-    # AND all included masks (intersection)
-    var resultMask = andMasks(includeMasks)
-  
+  if includeIds.len > 0:  
     # Iterate through chunks with entities
     let S = sizeof(uint)*8
 
     if sig.modified.len == 0 and sig.notModified.len == 0:
-      for i in 0..<resultMask.len:
-        var m = resultMask[i]
-        
-        while m != 0:
-          let chunkIdx = i*S + countTrailingZeroBits(m)
-          var chunkMask = 0'u - 1 # Initialize mask to all 1s (all entities in chunk)
-          m = m and (m-1) # Clear the lowest set bit to move to next
+      let entry = world.registry.entries[includeIds[0]]
+      var res = entry.getSparseMaskOp(entry.rawPointer)[]
+          
+      for compId in includeIds:
+        let entry = world.registry.entries[compId]
+        res = res and entry.getSparseMaskOp(entry.rawPointer)[]
 
-          # Refine the mask by ensuring the entity actually has ALL included components
-          for compId in includeIds:
-            let entry = world.registry.entries[compId]
-            let entityMask = entry.getSparseChunkMaskOp(entry.rawPointer, chunkIdx)
-            chunkMask = chunkMask and entityMask
+      for compId in excludeIds:
+        let entry = world.registry.entries[compId]
+        res = res and not entry.getSparseMaskOp(entry.rawPointer)[]
 
-          for compId in excludeIds:
-            let entry = world.registry.entries[compId]
-            let entityMask = entry.getSparseChunkMaskOp(entry.rawPointer, chunkIdx)
-            chunkMask = chunkMask and not entityMask
-
-          yield (chunkIdx, chunkMask)
+      for chunkIdx in res.blkIter:
+        yield (chunkIdx, res.getL0(chunkIdx))
     else:
-      for i in 0..<resultMask.len:
-        var m = resultMask[i]
-        
-        while m != 0:
-          let chunkIdx = i*S + countTrailingZeroBits(m)
-          var chunkMask = (1'u shl S-1) - 1'u # Initialize mask to all 1s (all entities in chunk)
-          let changeMask = getChangeMask(world, sig, sig.modified, sig.notModified, chunkIdx)
-          m = m and (m-1) # Clear the lowest set bit to move to next
+      let entry = world.registry.entries[includeIds[0]]
+      var res = entry.getSparseMaskOp(entry.rawPointer)[]
+          
+      for compId in includeIds[1..^1]:
+        let entry = world.registry.entries[compId]
+        res = res and entry.getSparseMaskOp(entry.rawPointer)[]
 
-          # Refine the mask by ensuring the entity actually has ALL included components
-          for compId in includeIds:
-            let entry = world.registry.entries[compId]
-            let entityMask = entry.getSparseChunkMaskOp(entry.rawPointer, chunkIdx)
-            chunkMask = chunkMask and entityMask
+      for compId in excludeIds:
+        let entry = world.registry.entries[compId]
+        res = res and not entry.getSparseMaskOp(entry.rawPointer)[]
 
-          for compId in excludeIds:
-            let entry = world.registry.entries[compId]
-            let entityMask = entry.getSparseChunkMaskOp(entry.rawPointer, chunkIdx)
-            chunkMask = chunkMask and not entityMask
+      for compId in sig.modified:
+        let entry = world.registry.entries[compId]
+        res = res and entry.getSparseChangeMaskop(entry.rawPointer)[]
 
-          let res = chunkMask and changeMask
+      for compId in sig.notModified:
+        let entry = world.registry.entries[compId]
+        res = res and not entry.getSparseChangeMaskOp(entry.rawPointer)[]
 
-          if res != 0: yield (chunkIdx, res)
+      for chunkIdx in res.blkIter:
+        yield (chunkIdx, res.getL0(chunkIdx))
 
 ## Computes and caches the result of a Sparse query.
 ##

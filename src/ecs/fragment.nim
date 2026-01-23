@@ -13,7 +13,6 @@ type
 
   SoAFragmentArray*[N:static int,P:static bool,T,S,B] = ref object
     blocks*:seq[ref SoAFragment[N,P,T,B]]
-    blkChanges:HiBitSet
     blkChangeMask:seq[uint]
     sparse*:seq[SoAFragment[sizeof(uint)*8,P,S,B]]
     sparseChanges:HiBitSet
@@ -241,7 +240,6 @@ template setChanged[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint) =
   if blk.int >= f.blkChangeMask.len:
     f.blkChangeMask.setLen(blk+1)
   
-  f.blkChanges.set(bitp + bid)
   f.blkChangeMask[blk] = f.blkChangeMask[blk] or (1'u shl bitp)
 
 template setChangedSparse[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint) =
@@ -252,7 +250,6 @@ template setChangedSparse[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint
   if blk.int >= f.blkChangeMask.len:
     f.blkChangeMask.setLen(blk+1)
   
-  f.blkChangeMask[blk] = f.blkChangeMask[blk] or 1'u shl bitp
   f.sparseChanges.set(id.int)
   
 proc getDataType[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B]):typedesc[B] = B
@@ -270,16 +267,11 @@ proc newSparseBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, m
 
   if id >= f.sparse.len:
     f.sparse.setLen(id+1)
-  
-  if j >= f.sparseMask.len: f.sparseMask.setLen(j+1)
-  
+    
   var blk = addr f.sparse[id]
   blk.offset = offset
   blk.mask = blk.mask or m
   blk.valMask = @[0'u]
-
-  if m != 0:
-    f.sparseMask[j] = f.sparseMask[j] or (1.uint shl i)
 
 proc newSparseBlocks[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], masks:openArray[uint]) =
   let S = sizeof(uint)*8
@@ -299,13 +291,9 @@ proc newSparseBlocks[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], masks:openAr
     if id >= f.sparse.len:
       f.sparse.setLen(id+1)
     
-    if j >= f.sparseMask.len: f.sparseMask.setLen(j+1)
     var blk = addr f.sparse[id]
     
     blk.mask = blk.mask or m
-
-    if m != 0:
-      f.sparseMask[j] = f.sparseMask[j] or (1.uint shl i)
 
 proc freeSparseBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int) =
   discard#f.sparse[i] = nil
