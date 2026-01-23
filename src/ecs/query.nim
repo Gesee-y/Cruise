@@ -53,40 +53,77 @@ type
 ################################################################### MASK ITERATOR ##################################################################
 ####################################################################################################################################################
 
-proc dSet(qf:var QueryFilter, id:uint) =
-  var bid = id shr BLK_SHIFT
-  var lid = id and BLK_MASK
-  var blk = bid shr 6
-  var bitp = bid and 63
-  var lblk = lid shr 6
-  var lbitp = lid and 63
+proc maxLen(a, b: int): int {.inline.} =
+  if a > b: a else: b
+
+proc ensureLen[T](s: var seq[T], n: int) {.inline.} =
+  if s.len < n:
+    s.setLen(n)
+
+proc dGet*(qf: QueryFilter, id: uint): bool =
+  ## Returns 1 if the ID is present in the dense filter, 0 otherwise
+  let bid  = id shr BLK_SHIFT      # Block ID
+  let lid  = id and BLK_MASK       # Local ID inside block
+  let blk  = bid shr 6             # Summary block index
+  let bitp = bid and 63            # Bit position in summary
+  let lblk = lid shr 6             # Leaf block index
+  let lbitp = lid and 63           # Bit position in leaf
+
+  if blk.int >= qf.dLayer1.len: return 0
+  if lblk.int >= qf.dLayer0.len: return 0
+
+  # Fast reject using summary layer
+  if ((qf.dLayer1[blk] shr bitp) and 1'u) == 0'u:
+    return 0
+
+  return ((qf.dLayer0[lblk] shr lbitp) and 1'u)
+
+proc dSet*(qf: var QueryFilter, id: uint) =
+  ## Sets an ID in the dense filter
+  let bid  = id shr BLK_SHIFT
+  let lid  = id and BLK_MASK
+  let blk  = bid shr 6
+  let bitp = bid and 63
+  let lblk = lid shr 6
+  let lbitp = lid and 63
 
   if blk.int >= qf.dLayer1.len:
-    qf.dLayer1.setLen(blk+1)
+    qf.dLayer1.setLen(blk.int + 1)
+
   if lblk.int >= qf.dLayer0.len:
-    qf.dLayer0.setLen(lblk+1)
-  
+    qf.dLayer0.setLen(lblk.int + 1)
+
   qf.dLayer1[blk] = qf.dLayer1[blk] or (1'u shl bitp)
   qf.dLayer0[lblk] = qf.dLayer0[lblk] or (1'u shl lbitp)
 
-proc dUnset(qf:var QueryFilter, id:uint) =
-  var bid = id shr BLK_SHIFT
-  var lid = id and BLK_MASK
-  var blk = bid shr 6
-  var bitp = bid and 63
-  var lblk = lid shr 6
-  var lbitp = lid and 63
+proc dUnset*(qf: var QueryFilter, id: uint) =
+  ## Unsets an ID from the dense filter
+  let bid  = id shr BLK_SHIFT
+  let lid  = id and BLK_MASK
+  let blk  = bid shr 6
+  let bitp = bid and 63
+  let lblk = lid shr 6
+  let lbitp = lid and 63
 
-  if blk.int >= qf.dLayer1.len or lblk.int >= qf.dLayer0.len:
-    return
+  if blk.int >= qf.dLayer1.len: return
+  if lblk.int >= qf.dLayer0.len: return
 
-  qf.dLayer1[blk] = qf.dLayer1[blk] and (not (1'u shl bitp))
-  qf.dLayer0[lblk] = qf.dLayer0[lblk] or (not (1'u shl lbitp))
+  qf.dLayer0[lblk] = qf.dLayer0[lblk] and not (1'u shl lbitp)
 
-proc sSet(qf:var QueryFilter, id:int|uint) =
+  # If leaf becomes empty, clear summary bit
+  if qf.dLayer0[lblk] == 0'u:
+    qf.dLayer1[blk] = qf.dLayer1[blk] and not (1'u shl bitp)
+
+proc sGet*(qf: QueryFilter, id: int | uint): bool =
+  ## Sparse membership check
+  qf.sLayer.get(id.int)
+
+proc sSet*(qf: var QueryFilter, id: int | uint) =
+  ## Insert into sparse filter
   qf.sLayer.set(id.int)
 
-proc sUnset(qf:var QueryFilter, id:int|uint) =
+proc sUnset*(qf: var QueryFilter, id: int | uint) =
+  ## Remove from sparse filter
   qf.sLayer.unset(id.int)
 
 ## Low-level iterator to traverse set bits in an unsigned integer bitmask.

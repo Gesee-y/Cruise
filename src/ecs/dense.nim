@@ -2,6 +2,8 @@
 ###################################################### DENSE ECS LOGICS ###############################################################
 #######################################################################################################################################
 
+## Ensures that an archetype has an associated table partition.
+## If none exists, a new partition is created and attached to the archetype node.
 proc createPartition(table: var ECSWorld, arch: ArchetypeNode): TablePartition =
   check(not arch.isNil, "ArchetypeNode must not be nil")
   if arch.partition.isNil:
@@ -11,8 +13,16 @@ proc createPartition(table: var ECSWorld, arch: ArchetypeNode): TablePartition =
     arch.partition = partition
   return arch.partition
 
-proc allocateNewBlocks(table: var ECSWorld, count: int, res: var seq[(uint, Range)], 
-  partition: var TablePartition): seq[(uint, Range)] =
+## Allocates new dense blocks for a partition.
+## Each block corresponds to DEFAULT_BLK_SIZE contiguous entity slots.
+##
+## The resulting ranges describe which block indices and offsets were allocated.
+proc allocateNewBlocks(
+  table: var ECSWorld,
+  count: int,
+  res: var seq[(uint, Range)],
+  partition: var TablePartition
+): seq[(uint, Range)] =
   
   check(count >= 0, "Allocation count cannot be negative")
   var n = count
@@ -27,18 +37,21 @@ proc allocateNewBlocks(table: var ECSWorld, count: int, res: var seq[(uint, Rang
     var trange: TableRange
     let e = min(n, DEFAULT_BLK_SIZE)
     
-    res.add((bc.uint, Range(s:0, e:e)))
+    ## Register allocated range
+    res.add((bc.uint, Range(s: 0, e: e)))
     trange.r.s = 0
     trange.r.e = e
     trange.block_idx = bc
-    partition.zones[pl+i] = trange
+    partition.zones[pl + i] = trange
     
+    ## Advance fill index if the block is fully occupied
     if n >= DEFAULT_BLK_SIZE:
       partition.fill_index += 1
 
+    ## Materialize the new block for each component in the partition
     for id in partition.components:
       check(id < table.registry.entries.len, "Component ID out of registry bounds")
-      var entry = table.registry.entries[id]
+      let entry = table.registry.entries[id]
       entry.newBlockAtOp(entry.rawPointer, bc)
 
     table.blockCount += 1
@@ -48,10 +61,17 @@ proc allocateNewBlocks(table: var ECSWorld, count: int, res: var seq[(uint, Rang
   table.handles.setLen((table.blockCount + 1) * DEFAULT_BLK_SIZE)
   return res
 
-proc allocateEntities(table: var ECSWorld, n: int, archNode: ArchetypeNode): seq[(uint, Range)] =
+## Allocates `n` entities for a given archetype node.
+## Reuses partially-filled blocks before allocating new ones.
+proc allocateEntities(
+  table: var ECSWorld,
+  n: int,
+  archNode: ArchetypeNode
+): seq[(uint, Range)] =
   check(not archNode.isNil, "ArchetypeNode is nil during entity allocation")
   var res: seq[(uint, Range)]
 
+  ## First allocation for this archetype
   if archNode.partition.isNil:
     var partition: TablePartition
     new(partition)
@@ -62,30 +82,43 @@ proc allocateEntities(table: var ECSWorld, n: int, archNode: ArchetypeNode): seq
   var m = n
   var partition = archNode.partition
 
+  ## Fill existing blocks
   while m > 0 and partition.fill_index < partition.zones.len:
     let id = partition.zones[partition.fill_index].block_idx
     let e = partition.zones[partition.fill_index].r.e
     let r = min(e + m, DEFAULT_BLK_SIZE)
 
     partition.zones[partition.fill_index].r.e = r
-    res.add((id.uint, Range(s:e, e:r)))
+    res.add((id.uint, Range(s: e, e: r)))
     
     if r >= DEFAULT_BLK_SIZE:
       partition.fill_index += 1
 
     m -= r - e
 
+  ## Allocate new blocks if necessary
   if m > 0:
     discard allocateNewBlocks(table, m, res, partition)
 
   return res
 
-proc allocateEntities(table: var ECSWorld, n: int, arch: ArchetypeMask): seq[(uint, Range)] =
-  var archNode = table.archGraph.findArchetypeFast(arch)
+## Allocates multiple entities using an archetype mask.
+## Fast-path through archetype graph lookup.
+proc allocateEntities(
+  table: var ECSWorld,
+  n: int,
+  arch: ArchetypeMask
+): seq[(uint, Range)] =
+  let archNode = table.archGraph.findArchetypeFast(arch)
   return allocateEntities(table, n, archNode)
 
-proc allocateEntity(table: var ECSWorld, arch: ArchetypeMask): (uint, int, uint16) =
-  var archNode = table.archGraph.findArchetypeFast(arch)
+## Allocates a single dense entity and returns:
+## (block index, offset inside block, archetype id)
+proc allocateEntity(
+  table: var ECSWorld,
+  arch: ArchetypeMask
+): (uint, int, uint16) =
+  let archNode = table.archGraph.findArchetypeFast(arch)
   check(not archNode.isNil, "ArchetypeNode not found")
 
   if archNode.partition.isNil:
@@ -97,13 +130,14 @@ proc allocateEntity(table: var ECSWorld, arch: ArchetypeMask): (uint, int, uint1
   var partition = archNode.partition
   var fill_index = partition.fill_index
 
+  ## Allocate a new block if required
   if fill_index >= partition.zones.len:
     partition.zones.setLen(fill_index + 1)
     upsize(table, 1)
 
     for id in partition.components:
       check(id < table.registry.entries.len, "Invalid component ID")
-      var entry = table.registry.entries[id]
+      let entry = table.registry.entries[id]
       entry.newBlockAtOp(entry.rawPointer, table.blockCount)
 
     partition.zones[fill_index].block_idx = table.blockCount
@@ -121,6 +155,8 @@ proc allocateEntity(table: var ECSWorld, arch: ArchetypeMask): (uint, int, uint1
 
   return (id.uint, e, archNode.id)
 
+## Deletes a dense entity row.
+## Performs swap-remove within the archetype partition.
 proc deleteRow(table: var ECSWorld, i: uint, arch: uint16): uint =
   check(arch.int < table.archGraph.nodes.len, "Archetype ID out of bounds")
   let archNode = table.archGraph.nodes[arch]
@@ -128,76 +164,96 @@ proc deleteRow(table: var ECSWorld, i: uint, arch: uint16): uint =
   
   check(not partition.isNil, "Attempting to delete from nil partition")
 
-  if partition.zones.len <= partition.fill_index or isEmpty(partition.zones[partition.fill_index]):
+  if partition.zones.len <= partition.fill_index or
+     isEmpty(partition.zones[partition.fill_index]):
     partition.fill_index -= 1
 
   check(partition.fill_index >= 0, "Partition index underflow during deletion")
-  var zone = addr partition.zones[partition.fill_index]
+  let zone = addr partition.zones[partition.fill_index]
 
   let last = zone.r.e - 1
   let bid = zone.block_idx.uint
   let lid = makeId(last, bid)
 
+  ## Move last entity into the deleted slot
   if lid != i:
     for id in partition.components:
-      var entry = table.registry.entries[id]
+      let entry = table.registry.entries[id]
       entry.overrideValsOp(entry.rawPointer, i, lid)
 
   zone.r.e -= 1
   return last.uint + bid * DEFAULT_BLK_SIZE
 
-proc changePartition(table: var ECSWorld, i: uint, oldArch: uint16, newArch: ArchetypeNode): (int, uint, uint) =
+## Moves a single entity from one archetype partition to another.
+## Returns:
+## (old swapped entity id, new offset, new block id)
+proc changePartition(
+  table: var ECSWorld,
+  i: uint,
+  oldArch: uint16,
+  newArch: ArchetypeNode
+): (int, uint, uint) =
   check(oldArch.int < table.archGraph.nodes.len, "Old archetype ID out of bounds")
   check(not newArch.isNil, "Target ArchetypeNode is nil")
   
-  var oldPartition = table.archGraph.nodes[oldArch].partition
-  var newPartition = createPartition(table, newArch)
-  var oldComponents = oldPartition.components
-  var newComponents = newPartition.components
+  let oldPartition = table.archGraph.nodes[oldArch].partition
+  let newPartition = createPartition(table, newArch)
+  let oldComponents = oldPartition.components
+  let newComponents = newPartition.components
 
-  if oldPartition.zones.len <= oldPartition.fill_index or isEmpty(oldPartition.zones[oldPartition.fill_index]):
+  ## Remove entity from old partition
+  if oldPartition.zones.len <= oldPartition.fill_index or
+     isEmpty(oldPartition.zones[oldPartition.fill_index]):
     oldPartition.fill_index -= 1
 
   check(oldPartition.fill_index >= 0, "Source partition underflow during move")
-  var oldZone = addr oldPartition.zones[oldPartition.fill_index]
+  let oldZone = addr oldPartition.zones[oldPartition.fill_index]
   let last = oldZone.r.e - 1
   let blast = oldZone.block_idx
 
   oldZone.r.e -= 1
 
+  ## Ensure destination has space
   if newPartition.zones.len <= newPartition.fill_index:
     let fi = newPartition.fill_index
     newPartition.zones.setLen(fi + 1)
     let bc = table.blockCount
-    var nZone = addr newPartition.zones[fi]
+    let nZone = addr newPartition.zones[fi]
     nZone.block_idx = bc
     nZone.r.s = 0
     nZone.r.e = 0
+
     for id in newPartition.components:
-      var entry = table.registry.entries[id]
+      let entry = table.registry.entries[id]
       entry.resizeOp(entry.rawPointer, table.blockCount + 1)
       entry.newBlockAtOp(entry.rawPointer, table.blockCount)
 
     table.blockCount += 1
     table.entities.setLen((table.blockCount + 1) * DEFAULT_BLK_SIZE)
 
-  var newZone = addr newPartition.zones[newPartition.fill_index]
+  let newZone = addr newPartition.zones[newPartition.fill_index]
   let new_id = (newZone.r.e mod DEFAULT_BLK_SIZE).uint
   let bid = newZone.block_idx.uint
 
+  ## Copy component data (only intersecting components)
   if oldComponents.len < newComponents.len:
     for id in oldComponents:
-      var entry = table.registry.entries[id]
+      let entry = table.registry.entries[id]
       entry.overrideValsOp(entry.rawPointer, (bid shl BLK_SHIFT) or new_id, i.uint)
   else:
     for id in newComponents:
-      var entry = table.registry.entries[id]
+      let entry = table.registry.entries[id]
       entry.overrideValsOp(entry.rawPointer, (bid shl BLK_SHIFT) or new_id, i.uint)
 
+  ## Fix swap-remove in source partition
   if (i and BLK_MASK).int != last:
     for id in oldComponents:
-      var entry = table.registry.entries[id]
-      entry.overrideValsOp(entry.rawPointer, i.uint, (blast.uint shl BLK_SHIFT) or last.uint)
+      let entry = table.registry.entries[id]
+      entry.overrideValsOp(
+        entry.rawPointer,
+        i.uint,
+        (blast.uint shl BLK_SHIFT) or last.uint
+      )
   
   newZone.r.e += 1
   if isFull(newZone[]):
@@ -205,25 +261,34 @@ proc changePartition(table: var ECSWorld, i: uint, oldArch: uint16, newArch: Arc
 
   return (last + blast * DEFAULT_BLK_SIZE, new_id, bid)
 
-proc changePartition(table: var ECSWorld, ids: var openArray[DenseHandle], oldArch: uint16, newArch: ArchetypeNode) =
+## Batch archetype migration for dense entities.
+## Moves multiple entities while minimizing component copies.
+proc changePartition(
+  table: var ECSWorld,
+  ids: var openArray[DenseHandle],
+  oldArch: uint16,
+  newArch: ArchetypeNode
+) =
   check(ids.len > 0, "Batch change with empty handles")
-  var oldPartition = table.archGraph.nodes[oldArch].partition
-  var newPartition = createPartition(table, newArch)
-  var oldComponents = oldPartition.components
-  var newComponents = newPartition.components
+
+  let oldPartition = table.archGraph.nodes[oldArch].partition
+  let newPartition = createPartition(table, newArch)
+  let oldComponents = oldPartition.components
+  let newComponents = newPartition.components
 
   if oldPartition.zones.len <= oldPartition.fill_index:
     oldPartition.fill_index -= 1
 
   var m = ids.len
   var ofil = oldPartition.fill_index
-  var toSwap = newSeqofCap[uint](m)
-  var toAdd = newSeqofCap[uint](m)
+  var toSwap = newSeqOfCap[uint](m)
+  var toAdd  = newSeqOfCap[uint](m)
   
+  ## Collect entities to remove from old partition
   while toSwap.len < ids.len:
     check(ofil >= 0, "Source partition underflow during batch move")
     let zone = addr oldPartition.zones[ofil]
-    let r = max(0, zone.r.e - m)..<zone.r.e
+    let r = max(0, zone.r.e - m) ..< zone.r.e
     let bid = zone.block_idx.uint
 
     m -= r.b - r.a + 1
@@ -236,6 +301,7 @@ proc changePartition(table: var ECSWorld, ids: var openArray[DenseHandle], oldAr
 
   oldPartition.fill_index = ofil
 
+  ## Allocate destination slots
   var nfil = newPartition.fill_index
   m = ids.len
   while toAdd.len < ids.len:
@@ -244,15 +310,15 @@ proc changePartition(table: var ECSWorld, ids: var openArray[DenseHandle], oldAr
       newPartition.zones[nfil].block_idx = table.blockCount
 
       for id in newPartition.components:
-        var entry = table.registry.entries[id]
+        let entry = table.registry.entries[id]
         entry.resizeOp(entry.rawPointer, table.blockCount + 1)
         entry.newBlockAtOp(entry.rawPointer, table.blockCount)
 
       table.blockCount += 1
       table.handles.setLen((table.blockCount + 1) * DEFAULT_BLK_SIZE)
 
-    var zone = addr newPartition.zones[nfil]
-    let r = zone.r.e..<min(zone.r.e + m, DEFAULT_BLK_SIZE)
+    let zone = addr newPartition.zones[nfil]
+    let r = zone.r.e ..< min(zone.r.e + m, DEFAULT_BLK_SIZE)
     zone.r.e = r.b + 1
     let bid = zone.block_idx.uint
 
@@ -265,18 +331,19 @@ proc changePartition(table: var ECSWorld, ids: var openArray[DenseHandle], oldAr
 
   newPartition.fill_index = nfil
 
-  # Final safety check before raw pointer operations
-  for h in ids: 
+  ## Safety checks before raw pointer operations
+  for h in ids:
     check(not h.obj.isNil, "DenseHandle contains nil entity pointer.")
-    check(h.gen == table.generations[h.obj.widx], "DenseHandle contains stale handles.")
+    check(h.gen == table.generations[h.obj.widx], "DenseHandle contains stale handle.")
 
+  ## Perform batched component migration
   if oldComponents.len < newComponents.len:
     for id in oldComponents:
-      var entry = table.registry.entries[id]
-      var ents = addr table.handles
+      let entry = table.registry.entries[id]
+      let ents = addr table.handles
       entry.overrideValsBatchOp(entry.rawPointer, newArch.id, ents, ids, toSwap, toAdd)
   else:
     for id in newComponents:
-      var entry = table.registry.entries[id]
-      var ents = addr table.handles
+      let entry = table.registry.entries[id]
+      let ents = addr table.handles
       entry.overrideValsBatchOp(entry.rawPointer, newArch.id, ents, ids, toSwap, toAdd)
