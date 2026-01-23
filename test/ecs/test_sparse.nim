@@ -21,8 +21,7 @@ suite "Sparse ECS logic":
     let mask = w.registry.entries[pid].getSparseMaskOp(
       w.registry.entries[pid].rawPointer)
 
-    check mask.len == 1
-    check (mask[0] and 1'u) == 1'u
+    check mask[][0] == true
 
   test "allocate multiple sparse entities sequential":
     var w = newECSWorld()
@@ -34,11 +33,11 @@ suite "Sparse ECS logic":
     for i,e in ents:
       check e.id == uint(i)
 
-    let mask = w.registry.entries[pid].getSparseChunkMaskOp(
-      w.registry.entries[pid].rawPointer, 0)
+    let mask = w.registry.entries[pid].getSparseMaskOp(
+      w.registry.entries[pid].rawPointer)
 
     for i in 0..<10:
-      check ((mask shr i) and 1'u) == 1'u
+      check ((mask[].getL0(0) shr i) and 1'u) == 1'u
 
   test "delete sparse entity and reuse id":
     var w = newECSWorld()
@@ -65,15 +64,12 @@ suite "Sparse ECS logic":
     var vmask = w.registry.entries[vid].getSparseMaskOp(
       w.registry.entries[vid].rawPointer)
 
-    check (pmask[0] and 1'u) == 1'u
-    check (vmask[0] and 1'u) == 1'u
+    check pmask[][0] == true
+    check vmask[][0] == true
 
     w.removeComponent(e, vid)
 
-    vmask = w.registry.entries[vid].getSparseMaskOp(
-      w.registry.entries[vid].rawPointer)
-
-    check (vmask[0] and 1'u) == 0'u
+    check vmask[][0] == false
 
   test "batch allocate activates all bits":
     var w = newECSWorld()
@@ -82,11 +78,8 @@ suite "Sparse ECS logic":
     let ents = w.createSparseEntities(64, pid)
     let mask = w.registry.entries[pid].getSparseMaskOp(
       w.registry.entries[pid].rawPointer)
-    let cmask = w.registry.entries[pid].getSparseChunkMaskOp(
-      w.registry.entries[pid].rawPointer, 0)
 
-    check mask.len == 1
-    check cmask == (not 0'u)
+    check mask[].getL0(0) == (not 0'u)
 
   test "batch activation works":
     var w = newECSWorld()
@@ -99,11 +92,11 @@ suite "Sparse ECS logic":
 
     w.activateComponentsSparse(ids, [vid])
 
-    let vmask = w.registry.entries[vid].getSparseChunkMaskOp(
-      w.registry.entries[vid].rawPointer,0)
+    let vmask = w.registry.entries[vid].getSparseMaskOp(
+      w.registry.entries[vid].rawPointer)
 
     for i in 0..<32:
-      check ((vmask shr i) and 1'u) == 1'u
+      check ((vmask[].getL0(0) shr i) and 1'u) == 1'u
 
   test "batch deactivation works":
     var w = newECSWorld()
@@ -120,8 +113,8 @@ suite "Sparse ECS logic":
     let cmask = w.registry.entries[pid].getSparseChunkMaskOp(
       w.registry.entries[pid].rawPointer, 0)
 
-    check mask[0] == 0'u
-    check cmask == 0'u
+    check mask[][0] == false
+    check mask[].getL0(0) == 0'u
 
   test "free_list integrity after deletes":
     var w = newECSWorld()
@@ -147,4 +140,4 @@ suite "Sparse ECS logic":
     let mask = w.registry.entries[pid].getSparseMaskOp(
       w.registry.entries[pid].rawPointer)
 
-    check (mask[0] and 1'u) == 0'u
+    check mask[][0] == false

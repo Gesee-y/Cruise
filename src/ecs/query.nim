@@ -15,32 +15,79 @@ type
   QueryComponent = object
     id: int   ## The ID of the component to filter by.
     op: QueryOp ## The operation.
+  
+  ## Represent an independent filter that can be used narrow queries
+  QueryFilter* = object
+
+    # Dense Query
+    dLayer0:seq[seq[uint]]
+    dLayer1:seq[uint]
+
+    # Sparse Query
+    sLayer:Hibitset
 
   ## The compiled representation of a query.
   ## It translates a list of component constraints into efficient bitmasks
   ## that can be rapidly compared against archetype masks.
-  QuerySignature = object
+  QuerySignature* = object
     components: seq[QueryComponent] ## The raw list of components in the query (stores Modified info here).
     includeMask: ArchetypeMask      ## Bitmask representing all required components (OR'ed together).
     excludeMask: ArchetypeMask      ## Bitmask representing all forbidden components (OR'ed together).
     modified: seq[int]
     notModified: seq[int]
+    filters:seq[QueryFilter]
 
   ## A cached result object for Dense queries.
   ## Stores the partitions (memory blocks) that matched the query signature,
   ## allowing for efficient re-iteration without re-checking archetype masks.
-  DenseQueryResult = object
-    part: seq[TablePartition] ## Sequence of matching table partitions.
+  DenseQueryResult* = object
+    part*: seq[TablePartition] ## Sequence of matching table partitions.
 
   ## A cached result object for Sparse queries.
   ## Stores the calculated bitmasks representing the matching entities.
-  sparseQueryResult = object
-    rmask: seq[uint]  ## High-level mask indicating which chunks contain at least one matching entity.
-    chunks: seq[uint] ## Low-level masks for each chunk, indicating specific entities within that chunk.
+  sparseQueryResult* = object
+    rmask*: seq[uint]  ## High-level mask indicating which chunks contain at least one matching entity.
+    chunks*: seq[uint] ## Low-level masks for each chunk, indicating specific entities within that chunk.
 
 ####################################################################################################################################################
 ################################################################### MASK ITERATOR ##################################################################
 ####################################################################################################################################################
+
+proc dSet(qf:var QueryFilter, id:uint) =
+  var bid = id shr BLK_SHIFT
+  var lid = id and BLK_MASK
+  var blk = bid shr 6
+  var bitp = bid and 63
+  var lblk = lid shr 6
+  var lbitp = lid and 63
+
+  if blk.int >= qf.dLayer1.len:
+    qf.dLayer1.setLen(blk+1)
+  if lblk.int >= qf.dLayer0.len:
+    qf.dLayer0.setLen(lblk+1)
+  
+  qf.dLayer1[blk] = qf.dLayer1[blk] or (1'u shl bitp)
+  qf.dLayer0[lblk] = qf.dLayer0[lblk] or (1'u shl lbitp)
+
+proc dUnset(qf:var QueryFilter, id:uint) =
+  var bid = id shr BLK_SHIFT
+  var lid = id and BLK_MASK
+  var blk = bid shr 6
+  var bitp = bid and 63
+  var lblk = lid shr 6
+  var lbitp = lid and 63
+
+  if blk.int >= qf.dLayer1.len or lblk.int >= qf.dLayer0.len:
+    return
+
+  qf.dLayer1[blk] = qf.dLayer1[blk] and (not (1'u shl bitp))
+  qf.dLayer0[lblk] = qf.dLayer0[lblk] or (not (1'u shl lbitp))
+
+proc sSet(qf:var QueryFilter, id:int|uint) =
+  qf.sLayer.set(id.int)
+
+proc sUnset(qf:var QueryFilter, id:int|uint) =
+  qf.sLayer.unset(id.int)
 
 ## Low-level iterator to traverse set bits in an unsigned integer bitmask.
 ##
@@ -49,12 +96,12 @@ type
 ##
 ## @param it: The bitmask (uint) to iterate over.
 ## @return: The index (int) of each set bit found.
-iterator maskIter(it: uint): int =
+iterator maskIter*(it: uint): int =
   var m = it
   while m != 0:
     yield countTrailingZeroBits(m)
     m = m and (m-1)
-iterator maskIter(it: (HSlice[int,int],seq[uint])): int =
+iterator maskIter*(it: (HSlice[int,int],seq[uint])): int =
   var current = 0
   var i = 0
   let S = sizeof(uint)*8
@@ -110,6 +157,10 @@ proc buildQuerySignature(world: ECSWorld, components: seq[QueryComponent]): Quer
         # If you need the entity to exist to be checked for modification:
         result.includeMask[layer] = result.includeMask[layer] or (1.uint shl bitPos)
 
+proc addFilter(qs: var QuerySignature, qf:QueryFilter) =
+  ## Adds a new filter to the query
+  qs.filters.add(qf)
+
 ## Checks if an Archetype's mask matches a given Query Signature.
 ##
 ## @param sig: The `QuerySignature` to test against.
@@ -153,35 +204,38 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, HSlice[int, in
       continue
     
     if not archNode.partition.isNil:
-      if sig.modified.len == 0 and sig.notModified.len == 0:
-        # Iterate through filled zones in this partition.
-        for zone in archNode.partition.zones:
-          yield (zone.block_idx, zone.r.s..<zone.r.e, @[])
-      else:
-        let mlen = sig.modified.len
-        let nmlen = sig.notModified.len
-        let maskCount = ((DEFAULT_BLK_SIZE-1) shr 6) + 1
-        var modDef = newSeq[uint](maskCount)
-        var res = newSeq[uint](maskCount)
-        let nmodDef = newSeq[uint](maskCount)
+      let mlen = sig.modified.len
+      let nmlen = sig.notModified.len
+      let maskCount = ((DEFAULT_BLK_SIZE-1) shr 6) + 1
+      var modDef = newSeq[uint](maskCount)
+      var res = newSeq[uint](maskCount)
+      let nmodDef = newSeq[uint](maskCount)
+      
+      for i in 0..<maskCount:
+        modDef[i] = 0'u-1
+        res[i] = 0'u-1
+
+      for zone in archNode.partition.zones:
+        for i in 0..<max(mlen, nmlen):
+          if i < mlen: 
+            let incl = world.registry.entries[sig.modified[i]].getChangeMaskOp(world.registry.entries[sig.modified[i]].rawPointer, zone.block_idx)
+            for j in 0..<maskCount:
+              res[j] = res[j] and incl[j]
+
+          if i < nmlen: 
+            let excl = world.registry.entries[sig.notModified[i]].getChangeMaskOp(world.registry.entries[sig.notModified[i]].rawPointer, zone.block_idx)
+            for j in 0..<maskCount:
+              res[j] = res[j] and not excl[j]
+
+        for qf in sig.filters:
+          if zone.block_idx >= qf.dLayer0.len:
+            for i in 0..<res.len:
+              res[i] = 0'u
+          else:
+            for i in 0..<res.len:
+              res[i] = res[i] and qf.dLayer0[zone.block_idx][i]
         
-        for i in 0..<maskCount:
-          modDef[i] = 0'u-1
-          res[i] = 0'u-1
-
-        for zone in archNode.partition.zones:
-          for i in 0..<max(mlen, nmlen):
-            if i < mlen: 
-              let incl = world.registry.entries[sig.modified[i]].getChangeMaskOp(world.registry.entries[sig.modified[i]].rawPointer, zone.block_idx)
-              for j in 0..<maskCount:
-                res[j] = res[j] and incl[j]
-
-            if i < nmlen: 
-              let excl = world.registry.entries[sig.notModified[i]].getChangeMaskOp(world.registry.entries[sig.notModified[i]].rawPointer, zone.block_idx)
-              for j in 0..<maskCount:
-                res[j] = res[j] and not excl[j]
-          
-          yield (zone.block_idx, zone.r.s..<zone.r.e, res)
+        yield (zone.block_idx, zone.r.s..<zone.r.e, res)
 
 ## Computes and caches the result of a Dense query.
 ##
@@ -335,43 +389,30 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, uint) =
   if includeIds.len > 0:  
     # Iterate through chunks with entities
     let S = sizeof(uint)*8
+    let entry = world.registry.entries[includeIds[0]]
+    var res = entry.getSparseMaskOp(entry.rawPointer)[]
+        
+    for compId in includeIds[1..^1]:
+      let entry = world.registry.entries[compId]
+      res = res and entry.getSparseMaskOp(entry.rawPointer)[]
 
-    if sig.modified.len == 0 and sig.notModified.len == 0:
-      let entry = world.registry.entries[includeIds[0]]
-      var res = entry.getSparseMaskOp(entry.rawPointer)[]
-          
-      for compId in includeIds:
-        let entry = world.registry.entries[compId]
-        res = res and entry.getSparseMaskOp(entry.rawPointer)[]
+    for compId in excludeIds:
+      let entry = world.registry.entries[compId]
+      res = res and not entry.getSparseMaskOp(entry.rawPointer)[]
 
-      for compId in excludeIds:
-        let entry = world.registry.entries[compId]
-        res = res and not entry.getSparseMaskOp(entry.rawPointer)[]
+    for compId in sig.modified:
+      let entry = world.registry.entries[compId]
+      res = res and entry.getSparseChangeMaskop(entry.rawPointer)[]
 
-      for chunkIdx in res.blkIter:
-        yield (chunkIdx, res.getL0(chunkIdx))
-    else:
-      let entry = world.registry.entries[includeIds[0]]
-      var res = entry.getSparseMaskOp(entry.rawPointer)[]
-          
-      for compId in includeIds[1..^1]:
-        let entry = world.registry.entries[compId]
-        res = res and entry.getSparseMaskOp(entry.rawPointer)[]
+    for compId in sig.notModified:
+      let entry = world.registry.entries[compId]
+      res = res and not entry.getSparseChangeMaskOp(entry.rawPointer)[]
 
-      for compId in excludeIds:
-        let entry = world.registry.entries[compId]
-        res = res and not entry.getSparseMaskOp(entry.rawPointer)[]
+    for qf in sig.filters:
+      res = res and qf.sLayer
 
-      for compId in sig.modified:
-        let entry = world.registry.entries[compId]
-        res = res and entry.getSparseChangeMaskop(entry.rawPointer)[]
-
-      for compId in sig.notModified:
-        let entry = world.registry.entries[compId]
-        res = res and not entry.getSparseChangeMaskOp(entry.rawPointer)[]
-
-      for chunkIdx in res.blkIter:
-        yield (chunkIdx, res.getL0(chunkIdx))
+    for chunkIdx in res.blkIter:
+      yield (chunkIdx, res.getL0(chunkIdx))
 
 ## Computes and caches the result of a Sparse query.
 ##

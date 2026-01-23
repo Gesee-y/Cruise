@@ -4,38 +4,79 @@
 
 import macros
 
+## A single Structure-of-Arrays (SoA) fragment.
+##
+## A fragment represents a fixed-size block (`N`) of component data stored
+## in SoA form. Each field of the original component type is stored as a
+## separate array inside `data`.
+##
+## Type parameters:
+## - N: Static size of the fragment (number of elements).
+## - P: Enable/disable change tracking.
+## - T: Tuple type holding the SoA arrays.
+## - B: Original component (AoS) type.
 type
   SoAFragment*[N:static int,P:static bool,T,B] = object
+    ## SoA storage for all fields.
     data*:T
+    ## Global offset of this fragment (start index in the array).
     offset:int
+    ## Bit mask describing which slots are active.
     mask:uint
+    ## Per-slot change mask (used when P == true).
     valMask:seq[uint]
 
+  ## A dynamically-sized array of SoA fragments.
+  ##
+  ## This is the main container used to store a component in SoA layout.
+  ## It supports dense blocks and optional sparse blocks for partial
+  ## materialization.
+  ##
+  ## Type parameters:
+  ## - N: Block size.
+  ## - P: Enable/disable change tracking.
+  ## - T: Tuple type for dense SoA storage.
+  ## - S: Tuple type for sparse SoA storage.
+  ## - B: Original component (AoS) type.
   SoAFragmentArray*[N:static int,P:static bool,T,S,B] = ref object
+    ## Dense blocks.
     blocks*:seq[ref SoAFragment[N,P,T,B]]
+    ## Change mask per dense block.
     blkChangeMask:seq[uint]
+    ## Sparse blocks (one block represents sizeof(uint)*8 entities).
     sparse*:seq[SoAFragment[sizeof(uint)*8,P,S,B]]
+    ## Bitset tracking sparse changes.
     sparseChanges:HiBitSet
+    ## Change mask for sparse blocks.
     sparseChangeMask:seq[uint]
+    ## Mapping from dense indices to sparse blocks.
     toSparse:seq[int]
+    ## Dense activation mask.
     mask:seq[uint]
+    ## Active sparse indices.
     sparseMask:HiBitSet
 
 
 const
+  ## Mask used to extract local indices from packed IDs.
   BLK_MASK = (1 shl 32) - 1
+  ## Bit shift used to extract block indices from packed IDs.
   BLK_SHIFT = 32
+  ## Default size (in elements) of a dense block.
   DEFAULT_BLK_SIZE = 4096
+  ## Initial capacity of the sparse storage.
   INITIAL_SPARSE_SIZE = 1000
 
 proc toSoATuple(T:NimNode, N:int):NimNode  =
-  ## This macro transform a type into a tuple compatible for the SoA fragmebt
-  ## It decompose the type into fields that becomes indepedent array.
-
-  var res = newNimNode(nnkTupleTy) # We initialize the tuple type
-  let o = T.getType()[2] # Here we get the list of fields of our type
+  ## Transform an object type into a tuple-of-arrays (SoA-compatible) type.
+  ##
+  ## Each field of the original object becomes an `array[N, FieldType]`
+  ## entry in the resulting tuple.
+  ##
+  ## This is used at compile time by macros to derive SoA storage layouts.
+  var res = newNimNode(nnkTupleTy)
+  let o = T.getType()[2]
   
-  # Then for each field we build the identifer definition 
   for f in o:
     let v = f.getType()
     var identdef = newNimNode(nnkIdentDefs)
@@ -57,6 +98,10 @@ proc toSoATuple(T:NimNode, N:int):NimNode  =
   return res
 
 macro castTo(obj:untyped, Ty:typedesc, N:static int, P:static bool=false):untyped =
+  ## Cast an existing value to a `SoAFragmentArray` of the given type.
+  ##
+  ## This is a low-level operation and assumes the underlying layout
+  ## already matches the requested SoAFragmentArray.
   let T = Ty.getTypeInst()[1]
   let ty = toSoATuple(Ty.getType[1], N)
   let sy = toSoATuple(Ty.getType[1], sizeof(uint)*8)
@@ -64,6 +109,9 @@ macro castTo(obj:untyped, Ty:typedesc, N:static int, P:static bool=false):untype
     cast[SoAFragmentArray[`@N`,`@P`,`@ty`,`@sy`,`@T`]](`@obj`) 
 
 macro newSoAFragArr(Ty:typedesc, N:static int, P:static bool=false):untyped =
+  ## Allocate and initialize a new `SoAFragmentArray`.
+  ##
+  ## This sets up empty dense storage and pre-allocates sparse structures.
   let T = Ty.getTypeInst()[1]
   let ty = toSoATuple(Ty.getType[1], N)
   let sy = toSoATuple(Ty.getType[1], sizeof(uint)*8)
@@ -75,6 +123,10 @@ macro newSoAFragArr(Ty:typedesc, N:static int, P:static bool=false):untyped =
     f
 
 macro SoAFragArr(N:static int,stmt:typed) =
+  ## Rewrite variable declarations to use `SoAFragmentArray` automatically.
+  ##
+  ## This macro allows declaring SoA-backed components using a more
+  ## ergonomic syntax.
   for section in stmt:
     case section.kind:
       of nnkVarSection, nnkLetSection, nnkConstSection:
@@ -103,6 +155,9 @@ macro SoAFragArr(N:static int,stmt:typed) =
 ####################################################################################################################################################
 
 macro toObject(Ty:typedesc, c:untyped, idx:untyped):untyped =
+  ## Materialize an AoS object from SoA storage at a given index.
+  ##
+  ## This version builds an object literal directly.
   let T = Ty.getTypeInst()[1]
   var res = newNimNode(nnkObjConstr)
   let ty = Ty.getType()[1].getType()[2]
@@ -125,7 +180,9 @@ macro toObject(Ty:typedesc, c:untyped, idx:untyped):untyped =
     `@res`
 
 macro toObjectParam(T:typedesc, c:untyped, idx:untyped): untyped =
-  ## Cette version respecte l'hygiène de Nim et évite les redéclarations en C.
+  ## Materialize an AoS object using a constructor call.
+  ##
+  ## This version respects Nim hygiene and avoids redeclarations in C backends.
   let typeNode = T.getType()
   
   let typeName = typeNode[1].strVal
@@ -144,6 +201,7 @@ macro toObjectParam(T:typedesc, c:untyped, idx:untyped): untyped =
   return res
 
 macro toObjectMod(T:typedesc, c:untyped, idx:untyped, v:untyped) =
+  ## Assign all fields of an AoS value into SoA storage at a given index.
   var res = newNimNode(nnkStmtList)
   let ty = T.getType()[1].getType()[2]
 
@@ -168,6 +226,7 @@ macro toObjectMod(T:typedesc, c:untyped, idx:untyped, v:untyped) =
     `@res`
 
 macro toObjectOverride(T:typedesc, c:untyped, idx:untyped, v:untyped) =
+  ## Override SoA values using another SoA-backed value.
   var res = newNimNode(nnkStmtList)
   let ty = T.getType()[1].getType()[2]
 
@@ -195,22 +254,27 @@ macro toObjectOverride(T:typedesc, c:untyped, idx:untyped, v:untyped) =
     `@res`
 
 template toIdx(i:uint):untyped =
+  ## Convert a packed (block,index) ID into a linear index.
   let id = i and BLK_MASK
   let bid = (i shr BLK_SHIFT) and BLK_MASK
   id+bid*DEFAULT_BLK_SIZE
 
 template swapVals(b: untyped, i, j:int|uint) =
+  ## Swap two values inside a buffer.
   let tmp = b[i]
   b[i] = b[j]
   b[j] = tmp
 
 template overrideVals[N,P,T,S,B](b: SoAFragmentArray[N,P,T,S,B], i, j:int|uint) =
+  ## Override one value with another inside a fragment array.
   b[i] = b[j]
 
 template overrideVals[N,P,T,B](b: SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B], i, j:int|uint) =
+  ## Override one value with another inside a fragment.
   b[i] = b[j]
 
 template overrideVals(f, archId, ents, ids, toSwap, toAdd:untyped) =
+  ## Specialized override logic used during archetype transitions.
   for i in 0..<ids.len:
     let e = ids[i].obj
     let s = toSwap[i]
@@ -228,11 +292,13 @@ template overrideVals(f, archId, ents, ids, toSwap, toAdd:untyped) =
 
 
 template setChanged[N,P,T,B](f: var SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B], id:uint|int) =
+  ## Mark a slot inside a fragment as modified.
   var blk = id shr 6
   var bitp = id and 63
   f.valMask[blk] = f.valMask[blk] or (1'u shl bitp)
 
 template setChanged[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint) =
+  ## Mark a dense block as modified.
   var bid = id shr BLK_SHIFT
   var blk = bid shr 6
   var bitp = bid and 63
@@ -243,6 +309,7 @@ template setChanged[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint) =
   f.blkChangeMask[blk] = f.blkChangeMask[blk] or (1'u shl bitp)
 
 template setChangedSparse[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint) =
+  ## Mark a sparse entry as modified.
   var bid = id shr 6
   var blk = bid shr 6
   var bitp = bid and 63
@@ -251,10 +318,13 @@ template setChangedSparse[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint
     f.blkChangeMask.setLen(blk+1)
   
   f.sparseChanges.set(id.int)
-  
-proc getDataType[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B]):typedesc[B] = B
+
+proc getDataType[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B]):typedesc[B] =
+  ## Return the AoS component type stored in this array.
+  B
 
 proc newSparseBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, m:uint) =
+  ## Allocate or update a sparse block covering a given offset.
   let S = sizeof(uint)*8
   var i = offset div S
   var j = i div S
@@ -274,6 +344,7 @@ proc newSparseBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, m
   blk.valMask = @[0'u]
 
 proc newSparseBlocks[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], masks:openArray[uint]) =
+  ## Allocate multiple sparse blocks at once.
   let S = sizeof(uint)*8
   let base = f.sparse.len
 
@@ -296,16 +367,22 @@ proc newSparseBlocks[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], masks:openAr
     blk.mask = blk.mask or m
 
 proc freeSparseBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int) =
-  discard#f.sparse[i] = nil
+  ## Free a sparse block (currently a no-op placeholder).
+  discard
 
 proc newBlockAt[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int) =
- var blk:ref SoAFragment[N,P,T,B]
- new(blk)
- blk.offset = N*i
- blk.valMask.setLen(((N-1) shr 6) + 1)
- f.blocks[i] = blk
+  ## Allocate a new dense block at a specific index.
+  var blk:ref SoAFragment[N,P,T,B]
+  new(blk)
+  blk.offset = N*i
+  blk.valMask.setLen(((N-1) shr 6) + 1)
+  f.blocks[i] = blk
 
 proc newBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int):bool =
+  ## Insert a new dense block at the given offset.
+  ##
+  ## Returns true if the block was inserted, false if it overlaps
+  ## an existing block.
   var blk: ref SoAFragment[N,P,T,B]
   new(blk)
   blk.offset = offset
@@ -333,29 +410,37 @@ proc newBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int):bool =
   return true
 
 proc getBlockIdx[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:int):int =
+  ## Compute the block index for a linear index.
   return i div N
 
 proc getBlock[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:int):ref SoAFragment[N,P,T,B] =
+  ## Get the dense block containing a given linear index.
   return f.blocks[getBlockIdx(f, i)]
 
 template getBlock[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:uint):ref SoAFragment[N,P,T,B] =
+  ## Get the dense block from a packed ID.
   f.blocks[(i shr BLK_SHIFT) and BLK_MASK]
 
 proc activateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int|uint) =
+  ## Mark a sparse index as active.
   f.sparseMask.set(i.int)
 
 proc activateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], idxs:openArray[uint]) =
+  ## Mark multiple sparse indices as active.
   for i in idxs:
     f.sparseMask.set(i.int)
 
 proc deactivateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int|uint) =
+  ## Deactivate a sparse index.
   f.sparseMask.unset(i.int)
 
 proc deactivateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], idxs:openArray[uint]) =
+  ## Deactivate multiple sparse indices.
   for i in idxs:
     f.sparseMask.unset(i.int)
 
 template `[]=`[N,P,T,B](blk:var SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B], i:int|uint, v:untyped) =
+  ## Write a value into a fragment slot.
   when T is tuple[]:
     discard
   else:
@@ -367,6 +452,7 @@ template `[]=`[N,P,T,B](blk:var SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B],
       toObjectMod(B, blk.data, i, v)
 
 template `[]`[N:static int,P:static bool,T,B](blk:var SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B], i:int|uint):untyped =
+  ## Read a value from a fragment slot.
   when T is tuple[]:
     B()
   else:
@@ -378,15 +464,18 @@ template `[]`[N:static int,P:static bool,T,B](blk:var SoAFragment[N,P,T,B] | ref
       toObject(B, blk.data, i)
 
 proc `[]`[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:int):B =
+  ## Read a value from the fragment array using a linear index.
   let blk = getBlock(f,i)
   return blk[i-blk.offset]
 
 proc `[]=`[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], i:int, v:B) =
+  ## Write a value into the fragment array using a linear index.
   var blk = getBlock(f,i)
   check((i div N) < f.blocks.len, "Invalid access. " & $(i div N) & "is out of bound. The component only has " & $(f.blocks.len) & "blocks")
   f.blocks[i div N][i.uint mod N.uint] = v
 
 template `[]`[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:uint):untyped =
+  ## Read a value using a packed (block,index) ID.
   let blk = (i shr BLK_SHIFT) and BLK_MASK
   let idx = i and BLK_MASK
 
@@ -394,6 +483,7 @@ template `[]`[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:uint):untyped =
   f.blocks[blk][idx]
 
 template `[]=`[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], i:uint, v:untyped) =
+  ## Write a value using a packed (block,index) ID.
   let blk = (i shr BLK_SHIFT) and BLK_MASK
   let idx = i and BLK_MASK
 
@@ -403,31 +493,39 @@ template `[]=`[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], i:uint, v:untyped) 
   when P: setChanged(f, i)
   f.blocks[blk][idx] = v
 
-proc len[N,P,T,B](blk:SoAFragment[N,P,T,B]) = N
+proc len[N,P,T,B](blk:SoAFragment[N,P,T,B]) =
+  ## Return the capacity of a fragment.
+  N
 
 iterator iter[N,P,T,B](blk:SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B]):B =
+  ## Iterate over all values in a fragment.
   for i in 0..<N:
     yield blk[i]
 
 iterator pairs[N,P,T,B](blk:SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B]):(int, B) =
+  ## Iterate over (index, value) pairs in a fragment.
   for i in 0..<N:
     yield (i, blk[i])
 
 iterator iter[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B]):B =
+  ## Iterate over all values in the fragment array.
   for blk in f.blocks:
     for d in blk.iter:
       yield d
 
 iterator pairs[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B]):(int,B) =
+  ## Iterate over (global index, value) pairs.
   for blk in f.blocks:
     for i in 0..<N:
       yield (i+blk.offset,blk[i])
   
 proc resize[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], n:int) =
+  ## Resize the number of dense blocks.
   check(n >= 0, "Can't resize to negative size. Got " & $n)
   f.blocks.setLen(n)
   
 proc clearDenseChanges[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B]) =
+  ## Clear all dense change tracking state.
   for i in 0..<f.blkChangeMask.len:
     f.blkChangeMask[i] = 0'u
     if not f.blocks[i].isNil:
@@ -435,8 +533,5 @@ proc clearDenseChanges[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B]) =
         f.blocks[i].valMask[j] = 0'u
 
 proc clearSparseChanges[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B]) =
-  for i in 0..<f.sparseChangeMask.len:
-    f.sparseChangeMask[i] = 0'u
-    if f.toSparse[i] > 0:
-      let j = f.toSparse[i]-1
-      f.sparse[j].valMask[0] = 0'u
+  ## Clear all sparse change tracking state.
+  f.sparseChanges.clear()
