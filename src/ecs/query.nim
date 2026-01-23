@@ -288,23 +288,23 @@ proc filterExcludedMasks(baseMask: var seq[uint], excludeMasks: seq[seq[uint]]) 
     for i in 0..<minLen:
       baseMask[i] = baseMask[i] and not excludeSeq[i]
 
-proc getChangeMask(world: ECSWorld, sig:QuerySignature, modif, nmodif:seq[int], blk:int):uint =
+proc getChangeMask(world: ECSWorld, sig:QuerySignature, modif, nmodif:seq[int], blk:int):Hibitset =
   let mlen = sig.modified.len
   let nmlen = sig.notModified.len
   let maskCount = 1
   var modDef = 0'u - 1
-  var res = 0'u - 1
+  var res:Hibitset
   let nmodDef = 0'u
 
   for i in 0..<max(mlen, nmlen):
     if i < mlen: 
       let modEntry = world.registry.entries[sig.modified[i]]
-      let incl = modEntry.getSparseChangeMaskOp(modentry.rawPointer, blk)
-      res = res and incl
+      let incl = modEntry.getSparseChangeMaskOp(modentry.rawPointer)
+      res = res and incl[]
     if i < nmlen: 
       let nmodEntry = world.registry.entries[sig.notModified[i]]
-      let excl = nmodEntry.getSparseChangeMaskop(nmodentry.rawPointer, blk)
-      res = res and not excl
+      let excl = nmodEntry.getSparseChangeMaskop(nmodentry.rawPointer)
+      res = res and not excl[]
 
   return res
 

@@ -21,6 +21,7 @@ template onDanger(code) =
   when not defined(danger):
     code
 
+include "hibitset.nim"
 include "fragment.nim"
 include "entity.nim"
 include "commands.nim"
