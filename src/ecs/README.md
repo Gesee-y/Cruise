@@ -107,23 +107,45 @@ discard position[entity] # Call the getter `newPosition` defined by the user
 position[entity] = Position() # Call the setter `setComponent` which can be overloaded by the user
 ```
 
-- **Change tracking**: Cruise allows you to queries only entities that changed for a given component via the syntax `Modified[Type]`. You can also query components that didn't changed with `not Modified[Type]`
+- **Abstract query filter**: Cruise ECS allows yser to define their own queries constraint through query filter. Then they can be incrementally maintained to get all entities matching a filter. Theybsupport all bitwise operations.
 
-- **Integrated Event System**: Cruise allows you to watch for events like entity creation or more:
+```nim
+var fil = newQueryFilter()
+fil.set(entity)
+var sig = world.query(Position)
+sig.addFilter(fil)
+```
+
+- **Pluggable views**: Cruise ECS allows you to make multiple views or projections of the world through hooks and filter. These are *plugins**. Allowing people to share views of the ECS and work as they like.
+
+```nim
+var tree = initSceneTree()
+world.setUp(tree)
+
+tree.addChild(entity)
+tree.addChild(entity1, entity2)
+
+for (bid, m) in tree.getChildren(entity1):
+  # Modify the childrens
+```
+
+- **Change tracking**: Cruise ECS allows you to queries only entities that changed for a given component via the syntax `Modified[Type]`. You can also query components that didn't changed with `not Modified[Type]`
+
+- **Integrated Event System**: Cruise ECS allows you to watch for events like entity creation or more:
 
 ```nim
 world.events.onDenseComponentAdded do _:
   echo "New component added there!"
 ```
 
-- **Powerful query system**: Cruise allows you to create powerful queries with an agreable syntax
+- **Powerful query system**: Cruise ECS allows you to create powerful queries with an agreable syntax
 
 ```nim
 let sig = world.query(Modified[Position] and Velocity and not Tag)
 # The signature can then be used for sparse or dense queries
 ```
 
-- **Command buffers**: Cruise allows you to defers some structural changes to avoid corrupting your iterations.
+- **Command buffers**: Cruise ECS allows you to defers some structural changes to avoid corrupting your iterations.
 
 ```nim
 var id = world.newCommandBuffer() # Can initialize one per thread if necessary
