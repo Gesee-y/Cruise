@@ -111,8 +111,8 @@ suite "Dense query change tracking":
     pos[e2] = Position(x:3, y:4)
 
     let sig = query(world, Modified[Position])
-    for (bid, r, m) in denseQuery(world, sig):
-      for _ in (r,m).maskIter:
+    for (bid, r) in denseQuery(world, sig):
+      for _ in r:
         c += 1
 
     check c == 2
@@ -120,8 +120,8 @@ suite "Dense query change tracking":
   test "not modified":
     let sig = query(world, Position and not Modified[Position])
     var c = 0
-    for (bid, r, m) in denseQuery(world, sig):
-      for _ in (r,m).maskIter:
+    for (bid, r) in denseQuery(world, sig):
+      for _ in r:
         c += 1
 
     check c == 2
@@ -165,8 +165,8 @@ suite "Dense / Sparse equivalence":
     check sparseQueryCount(world, sig) == 2
 
     let d2 = world.makeDense(s)
-    for (bid, r, m) in denseQuery(world, sig):
-      for _ in (r,m).maskIter:
+    for (bid, r) in denseQuery(world, sig):
+      for _ in r:
         c += 1
 
     check c == 3

@@ -53,10 +53,10 @@ type
     getChangeMaskop: proc (p:pointer, id:int):seq[uint] {.noSideEffect, nimcall, inline.}
 
     ## Get the global sparse change bitset.
-    getSparseChangeMaskop: proc (p:pointer):ptr Hibitset {.noSideEffect, nimcall, inline.}
+    getSparseChangeMaskop: proc (p:pointer):ptr HibitsetType {.noSideEffect, nimcall, inline.}
 
     ## Get the sparse activation mask.
-    getSparseMaskOp: proc (p:pointer):ptr Hibitset {.noSideEffect, nimcall, inline.}
+    getSparseMaskOp: proc (p:pointer):ptr HibitsetType {.noSideEffect, nimcall, inline.}
 
     ## Get the mask of a specific sparse chunk.
     getSparseChunkMaskOp: proc(p:pointer, i:int):uint {.noSideEffect, nimcall, inline.}
@@ -169,11 +169,11 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
       return fr.blocks[id].valMask
 
-    let getSchangeMask = proc (p:pointer):ptr Hibitset {.noSideEffect, nimcall, inline.} =
+    let getSchangeMask = proc (p:pointer):ptr HibitsetType {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
       return addr fr.sparseChanges
 
-    let getsmask = proc (p:pointer):ptr Hibitset {.noSideEffect, nimcall, inline.} =
+    let getsmask = proc (p:pointer):ptr HibitsetType {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
       return addr fr.sparseMask
 

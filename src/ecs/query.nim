@@ -20,11 +20,10 @@ type
   QueryFilter* = object
 
     # Dense Query
-    dLayer0:seq[seq[uint]]
-    dLayer1:seq[uint]
+    dLayer:HibitsetType
 
     # Sparse Query
-    sLayer:Hibitset
+    sLayer:HibitsetType
 
   ## The compiled representation of a query.
   ## It translates a list of component constraints into efficient bitmasks
@@ -43,76 +42,53 @@ type
   DenseQueryResult* = object
     part*: seq[TablePartition] ## Sequence of matching table partitions.
 
+  ## Iterator for dense queries.
+  DenseIterator* = object
+    r:HSlice[int, int]
+    m:ptr seq[uint]
+    masked:bool
+
   ## A cached result object for Sparse queries.
   ## Stores the calculated bitmasks representing the matching entities.
   sparseQueryResult* = object
     rmask*: seq[uint]  ## High-level mask indicating which chunks contain at least one matching entity.
     chunks*: seq[uint] ## Low-level masks for each chunk, indicating specific entities within that chunk.
 
+  ## Iterator obtained from sparse queries.
+  SparseIterator* = object
+    m:uint
+
 ####################################################################################################################################################
 ################################################################### MASK ITERATOR ##################################################################
 ####################################################################################################################################################
 
-proc maxLen(a, b: int): int {.inline.} =
-  if a > b: a else: b
+proc `and`*(a, b: QueryFilter): QueryFilter =
+  result.dLayer = a.dLayer and b.dLayer
+  result.sLayer = a.sLayer and b.sLayer
 
-proc ensureLen[T](s: var seq[T], n: int) {.inline.} =
-  if s.len < n:
-    s.setLen(n)
+proc `or`*(a, b: QueryFilter): QueryFilter =
+  result.dLayer = a.dLayer or b.dLayer
+  result.sLayer = a.sLayer or b.sLayer
+
+proc `xor`*(a, b: QueryFilter): QueryFilter =
+  result.dLayer = a.dLayer xor b.dLayer
+  result.sLayer = a.sLayer xor b.sLayer
+
+proc `not`*(a: QueryFilter): QueryFilter =
+  result.dLayer = not a.dLayer 
+  result.sLayer = not a.sLayer
 
 proc dGet*(qf: QueryFilter, id: uint): bool =
   ## Returns 1 if the ID is present in the dense filter, 0 otherwise
-  let bid  = id shr BLK_SHIFT      # Block ID
-  let lid  = id and BLK_MASK       # Local ID inside block
-  let blk  = bid shr 6             # Summary block index
-  let bitp = bid and 63            # Bit position in summary
-  let lblk = lid shr 6             # Leaf block index
-  let lbitp = lid and 63           # Bit position in leaf
-
-  if blk.int >= qf.dLayer1.len: return 0
-  if lblk.int >= qf.dLayer0.len: return 0
-
-  # Fast reject using summary layer
-  if ((qf.dLayer1[blk] shr bitp) and 1'u) == 0'u:
-    return 0
-
-  return ((qf.dLayer0[lblk] shr lbitp) and 1'u)
+  qf.dLayer.get(id.int)
 
 proc dSet*(qf: var QueryFilter, id: uint) =
   ## Sets an ID in the dense filter
-  let bid  = id shr BLK_SHIFT
-  let lid  = id and BLK_MASK
-  let blk  = bid shr 6
-  let bitp = bid and 63
-  let lblk = lid shr 6
-  let lbitp = lid and 63
-
-  if blk.int >= qf.dLayer1.len:
-    qf.dLayer1.setLen(blk.int + 1)
-
-  if lblk.int >= qf.dLayer0.len:
-    qf.dLayer0.setLen(lblk.int + 1)
-
-  qf.dLayer1[blk] = qf.dLayer1[blk] or (1'u shl bitp)
-  qf.dLayer0[lblk] = qf.dLayer0[lblk] or (1'u shl lbitp)
+  qf.dLayer.set(id.int)
 
 proc dUnset*(qf: var QueryFilter, id: uint) =
   ## Unsets an ID from the dense filter
-  let bid  = id shr BLK_SHIFT
-  let lid  = id and BLK_MASK
-  let blk  = bid shr 6
-  let bitp = bid and 63
-  let lblk = lid shr 6
-  let lbitp = lid and 63
-
-  if blk.int >= qf.dLayer1.len: return
-  if lblk.int >= qf.dLayer0.len: return
-
-  qf.dLayer0[lblk] = qf.dLayer0[lblk] and not (1'u shl lbitp)
-
-  # If leaf becomes empty, clear summary bit
-  if qf.dLayer0[lblk] == 0'u:
-    qf.dLayer1[blk] = qf.dLayer1[blk] and not (1'u shl bitp)
+  qf.dLayer.unset(id.int)
 
 proc sGet*(qf: QueryFilter, id: int | uint): bool =
   ## Sparse membership check
@@ -133,12 +109,12 @@ proc sUnset*(qf: var QueryFilter, id: int | uint) =
 ##
 ## @param it: The bitmask (uint) to iterate over.
 ## @return: The index (int) of each set bit found.
-iterator maskIter*(it: uint): int =
+iterator maskIter(it: uint): int =
   var m = it
   while m != 0:
     yield countTrailingZeroBits(m)
     m = m and (m-1)
-iterator maskIter*(it: (HSlice[int,int],seq[uint])): int =
+iterator maskIter(it: (HSlice[int,int],seq[uint])): int =
   var current = 0
   var i = 0
   let S = sizeof(uint)*8
@@ -153,6 +129,31 @@ iterator maskIter*(it: (HSlice[int,int],seq[uint])): int =
       yield current
 
     i += 1
+
+proc count*(it:DenseIterator|SparseIterator):int =
+  var res = 0
+  for i in it:
+    res += 1
+
+  return res
+
+iterator items*(it: DenseIterator): int =
+  ## Iterate a `DenseIterator` obtained from a query
+  ## 
+  ## It return the index of the matching entity in a given block.
+  if it.masked:
+    for i in (it.r, it.m[]).maskIter:
+      yield i
+  else:
+    for i in it.r:
+      yield i
+
+## Iterate a `SparseIterator` obtained from a sparse query.
+## 
+## It return the index of the matching entities in a given block.
+iterator items*(it: SparseIterator): int =
+  for i in it.m.maskIter:
+    yield i
 
 ####################################################################################################################################################
 ################################################################### QUERY BUILDER ##################################################################
@@ -230,7 +231,7 @@ proc matchesArchetype(sig: QuerySignature, arch: ArchetypeMask): bool =
 ## @yield: A tuple containing:
 ##         - `int`: The Block Index (identifying the memory chunk).
 ##         - `HSlice[int, int]`: A slice representing the range of valid entity indices within that block.
-iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, HSlice[int, int], seq[uint]) =
+iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator) =
   ## Iterate through all partitions that match the query signature
   ## Returns block index and range for each matching zone
   
@@ -253,7 +254,9 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, HSlice[int, in
         res[i] = 0'u-1
 
       for zone in archNode.partition.zones:
+        var masked = false
         for i in 0..<max(mlen, nmlen):
+          masked = true
           if i < mlen: 
             let incl = world.registry.entries[sig.modified[i]].getChangeMaskOp(world.registry.entries[sig.modified[i]].rawPointer, zone.block_idx)
             for j in 0..<maskCount:
@@ -265,14 +268,15 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, HSlice[int, in
               res[j] = res[j] and not excl[j]
 
         for qf in sig.filters:
-          if zone.block_idx >= qf.dLayer0.len:
+          masked = true
+          if zone.block_idx >= qf.dLayer.maxLen:
             for i in 0..<res.len:
               res[i] = 0'u
           else:
             for i in 0..<res.len:
-              res[i] = res[i] and qf.dLayer0[zone.block_idx][i]
+              res[i] = res[i] and qf.dLayer.getL0(zone.block_idx*sizeof(uint)*8 + i)
         
-        yield (zone.block_idx, zone.r.s..<zone.r.e, res)
+        yield (zone.block_idx, DenseIterator(r:zone.r.s..<zone.r.e, m:addr res, masked:masked))
 
 ## Computes and caches the result of a Dense query.
 ##
@@ -314,21 +318,8 @@ proc denseQueryCount*(world: ECSWorld, sig: QuerySignature): int =
   ## Count total entities matching the dense query
   result = 0
   
-  for archNode in world.archGraph.nodes:
-    let arch = archNode.mask
-    if not matchesArchetype(sig, arch):
-      continue
-    
-    let partition = archNode.partition
-
-    if not partition.isNil:
-      for zoneIdx in 0..partition.fill_index:
-        if zoneIdx >= partition.zones.len:
-          break
-        
-        let zone = partition.zones[zoneIdx]
-        if not isEmpty(zone):
-          result += zone.r.e - zone.r.s
+  for bid, r in world.denseQuery(sig):
+    result += r.count
 
 ####################################################################################################################################################
 ################################################################### SPARSE QUERIES #################################################################
@@ -379,12 +370,12 @@ proc filterExcludedMasks(baseMask: var seq[uint], excludeMasks: seq[seq[uint]]) 
     for i in 0..<minLen:
       baseMask[i] = baseMask[i] and not excludeSeq[i]
 
-proc getChangeMask(world: ECSWorld, sig:QuerySignature, modif, nmodif:seq[int], blk:int):Hibitset =
+proc getChangeMask(world: ECSWorld, sig:QuerySignature, modif, nmodif:seq[int], blk:int):HibitsetType =
   let mlen = sig.modified.len
   let nmlen = sig.notModified.len
   let maskCount = 1
   var modDef = 0'u - 1
-  var res:Hibitset
+  var res:HibitsetType
   let nmodDef = 0'u
 
   for i in 0..<max(mlen, nmlen):
@@ -411,7 +402,7 @@ proc getChangeMask(world: ECSWorld, sig:QuerySignature, modif, nmodif:seq[int], 
 ## @yield: A tuple containing:
 ##         - `int`: The Chunk Index.
 ##         - `uint`: A bitmask where set bits indicate valid entity indices within that chunk.
-iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, uint) =
+iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, SparseIterator) =
   ## Iterate through sparse entities matching the query
   ## Returns chunk index and mask iterator for each matching chunk
   
@@ -449,7 +440,7 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, uint) =
       res = res and qf.sLayer
 
     for chunkIdx in res.blkIter:
-      yield (chunkIdx, res.getL0(chunkIdx))
+      yield (chunkIdx, SparseIterator(m:res.getL0(chunkIdx)))
 
 ## Computes and caches the result of a Sparse query.
 ##
@@ -534,7 +525,7 @@ proc sparseQueryCount*(world: ECSWorld, sig: QuerySignature): int =
   result = 0
   
   for _,mask in sparseQuery(world, sig):
-    for _ in mask.maskIter:
+    for _ in mask:
       result += 1
 
 ####################################################################################################################################################
@@ -633,3 +624,31 @@ macro query*(world: untyped, expr: untyped): untyped =
   # Return the call to buildQuerySignature
   result = quote do:
     buildQuerySignature(`world`, @`componentsSeq`)
+
+#####################################################################################################################################
+####################################################### Query and Entity ############################################################
+#####################################################################################################################################
+
+proc get*(qf: QueryFilter, d: DenseHandle): bool =
+  ## Dense handle membership check
+  qf.dGet(d.obj.id)
+
+proc get*(qf: QueryFilter, s: SparseHandle): bool =
+  ## Sparse handle membership check
+  qf.sGet(s.id)
+
+proc set*(qf: var QueryFilter, d: DenseHandle) =
+  ## Insert dense handle into query filter
+  qf.dSet(d.obj.id)
+
+proc set*(qf: var QueryFilter, s: SparseHandle) =
+  ## Insert sparse handle into query filter
+  qf.sSet(s.id)
+
+proc unset*(qf: var QueryFilter, d: DenseHandle) =
+  ## Remove dense handle from query filter
+  qf.dUnset(d.obj.id)
+
+proc unset*(qf: var QueryFilter, s: SparseHandle) =
+  ## Remove sparse handle from query filter
+  qf.sUnset(s.id)

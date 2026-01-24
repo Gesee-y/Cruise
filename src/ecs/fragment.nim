@@ -46,7 +46,7 @@ type
     ## Sparse blocks (one block represents sizeof(uint)*8 entities).
     sparse*:seq[SoAFragment[sizeof(uint)*8,P,S,B]]
     ## Bitset tracking sparse changes.
-    sparseChanges:HiBitSet
+    sparseChanges:HiBitSetType
     ## Change mask for sparse blocks.
     sparseChangeMask:seq[uint]
     ## Mapping from dense indices to sparse blocks.
@@ -54,7 +54,7 @@ type
     ## Dense activation mask.
     mask:seq[uint]
     ## Active sparse indices.
-    sparseMask:HiBitSet
+    sparseMask:HiBitSetType
 
 
 const
@@ -331,14 +331,14 @@ proc newSparseBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, m
 
   if i >= f.toSparse.len: 
     f.toSparse.setLen(i+1)
-    f.toSparse[i] = f.sparse.len+1
   
-  let id = f.toSparse[i]-1
-
-  if id >= f.sparse.len:
-    f.sparse.setLen(id+1)
-    
+  if f.toSparse[i] == 0:
+    f.toSparse[i] = f.sparse.len+1
+    f.sparse.setLen(f.sparse.len+1)
+  
+  let id = f.toSparse[i]-1    
   var blk = addr f.sparse[id]
+
   blk.offset = offset
   blk.mask = blk.mask or m
   blk.valMask = @[0'u]
@@ -356,12 +356,9 @@ proc newSparseBlocks[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], masks:openAr
     if i >= f.toSparse.len: 
       f.toSparse.setLen(i+1)
       f.toSparse[i] = f.sparse.len+1
+      f.sparse.setLen(f.sparse.len+1)
     
     let id = f.toSparse[i]-1
-
-    if id >= f.sparse.len:
-      f.sparse.setLen(id+1)
-    
     var blk = addr f.sparse[id]
     
     blk.mask = blk.mask or m
@@ -423,12 +420,14 @@ template getBlock[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:uint):ref SoAFragm
 
 proc activateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int|uint) =
   ## Mark a sparse index as active.
+  if i.int > f.toSparse.len or f.toSparse[i] == 0:
+    f.newSparseBlock(i.int, 0'u)
   f.sparseMask.set(i.int)
 
 proc activateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], idxs:openArray[uint]) =
   ## Mark multiple sparse indices as active.
   for i in idxs:
-    f.sparseMask.set(i.int)
+    f.activateSparseBit(i)
 
 proc deactivateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int|uint) =
   ## Deactivate a sparse index.

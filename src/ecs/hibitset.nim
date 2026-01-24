@@ -38,6 +38,8 @@ type
     layer1DenseIdx: seq[int]
     layer1Count: int
 
+  HiBitSetType = HiBitSet
+
 # ============================================================================
 # Dense HiBitSet Implementation
 # ============================================================================
@@ -220,11 +222,12 @@ iterator blkIter*(h: HiBitSet): int =
 
 proc card*(h: HiBitSet): int =
   ## Returns the number of set bits (cardinality).
-  ## 
-  ## Time complexity: O(n) where n is number of blocks
   result = 0
   for blk in h.layer0:
     result += countSetBits(blk)
+
+proc maxLen(h: HiBitSet):int =
+  return h.layer0.len  
 
 proc `$`*(h: HiBitSet): string =
   ## String representation showing all set bit indices.
@@ -502,6 +505,36 @@ proc `xor`*(a, b: SparseHiBitSet): SparseHiBitSet =
       let l1Old = result.getL1(l1Idx)
       result.setL1(l1Idx, l1Old or (1'u64 shl l1Bit))
 
+proc `not`*(a: SparseHiBitSet): SparseHiBitSet =
+  ## Bitwise NOT operation: inverts all bits.
+  ## Note: For sparse bitsets, NOT creates a dense result because
+  ## all previously zero blocks become non-zero (all 1s).
+  ## This operation is generally not recommended for sparse bitsets
+  ## as it defeats the purpose of sparse storage.
+  ## 
+  ## If you need negation in a sparse context, consider using
+  ## set difference or XOR with a mask instead.
+  result = newSparseHiBitSet()
+  
+  if a.layer0Count == 0:
+    # NOT of empty set - all bits become 1 (not practical for sparse)
+    return result
+  
+  # Find the maximum block index to determine range
+  var maxL0Idx = 0
+  for i in 0..<a.layer0Count:
+    maxL0Idx = max(maxL0Idx, a.layer0DenseIdx[i])
+  
+  # Invert all blocks up to max
+  for l0Idx in 0..maxL0Idx:
+    let notValue = not a.getL0(l0Idx)
+    if notValue != 0:
+      result.setL0(l0Idx, notValue)
+      let l1Idx = l0Idx shr L0_SHIFT
+      let l1Bit = l0Idx and L0_MASK
+      let l1Old = result.getL1(l1Idx)
+      result.setL1(l1Idx, l1Old or (1'u64 shl l1Bit))
+
 iterator items*(h: SparseHiBitSet): int =
   ## Iterates over all indices where the bit is set.
   ## Extremely efficient for sparse data as it only processes existing blocks.
@@ -544,8 +577,6 @@ iterator blkIter*(h: SparseHiBitSet): int =
 proc card*(h: SparseHiBitSet): int =
   ## Returns the number of set bits.
   ## Only counts bits in existing blocks.
-  ## 
-  ## Time complexity: O(k) where k is number of non-zero blocks
   result = 0
   for i in 0..<h.layer0Count:
     result += countSetBits(h.layer0Dense[i])

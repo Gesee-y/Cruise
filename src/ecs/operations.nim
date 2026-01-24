@@ -386,19 +386,15 @@ proc makeDense*(world:var ECSWorld, s:var SparseHandle):DenseHandle =
 ## @param d: The `DenseHandle` to convert.
 ## @return: A new `SparseHandle` representing the entity in sparse storage.
 proc makeSparse*(world:var ECSWorld, d:DenseHandle):SparseHandle =
-  var s = world.createSparseEntity(world.archGraph.nodes[d.obj.archetypeId].partition.components)
+  var comps = world.archGraph.nodes[d.obj.archetypeId].partition.components
+  var s = world.createSparseEntity(comps)
   
   # Iterate through the component mask.
-  for m in s.mask:
-    var mask = m
-    while mask != 0:
-      let id = countTrailingZeroBits(mask)
-      var entry = world.registry.entries[id]
-      
-      # Invoke the specific copy operation (Dense to Sparse).
-      entry.overrideSDOp(entry.rawPointer, s, d)
-      
-      mask = mask and (mask - 1)
+  for id in comps:
+    var entry = world.registry.entries[id]
+    
+    # Invoke the specific copy operation (Dense to Sparse).
+    entry.overrideSDOp(entry.rawPointer, s, d)
 
   # Cleanup the original Dense entity.
   world.deleteEntity(d)

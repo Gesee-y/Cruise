@@ -75,31 +75,7 @@ proc `[]=`*[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], d:DenseHandle, v:B) =
 proc `[]=`*[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], d:SparseHandle, v:B) = 
   let S = sizeof(uint)*8
   when P: setChangedSparse(f, d.id)
-  f.sparse[d.id shr 6][d.id and (S-1).uint] = v
-
-proc get*(qf: QueryFilter, d: DenseHandle): bool =
-  ## Dense handle membership check
-  qf.dGet(d.obj.id) != 0
-
-proc get*(qf: QueryFilter, s: SparseHandle): bool =
-  ## Sparse handle membership check
-  qf.sGet(s.id)
-
-proc set*(qf: var QueryFilter, d: DenseHandle) =
-  ## Insert dense handle into query filter
-  qf.dSet(d.obj.id)
-
-proc set*(qf: var QueryFilter, s: SparseHandle) =
-  ## Insert sparse handle into query filter
-  qf.sSet(s.id)
-
-proc unset*(qf: var QueryFilter, d: DenseHandle) =
-  ## Remove dense handle from query filter
-  qf.dUnset(d.obj.id)
-
-proc unset*(qf: var QueryFilter, s: SparseHandle) =
-  ## Remove sparse handle from query filter
-  qf.sUnset(s.id)
+  f.sparse[f.toSparse[d.id shr 6]-1][d.id and (S-1).uint] = v
 
 ####################################################################################################################################################
 ################################################################# OPERATORS #######################################################################
