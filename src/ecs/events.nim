@@ -6,6 +6,7 @@ type
     
   DenseEntityDestroyedEvent* = object
     entity*: DenseHandle
+    last*: uint
     
   DenseComponentAddedEvent* = object
     entity*: DenseHandle
@@ -17,6 +18,8 @@ type
     
   DenseEntityMigratedEvent* = object
     entity*: DenseHandle
+    oldId*:uint
+    lastId*:uint
     oldArchetype*: uint16
     newArchetype*: uint16
 
@@ -203,9 +206,10 @@ proc emitDenseEntityCreated*(em: var EventManager, entity: DenseHandle) =
     entity: entity,
   ))
 
-proc emitDenseEntityDestroyed*(em: var EventManager, entity: DenseHandle) =
+proc emitDenseEntityDestroyed*(em: var EventManager, entity: DenseHandle, last:uint) =
   em.denseEntityDestroyed.trigger(DenseEntityDestroyedEvent(
     entity: entity,
+    last: last
   ))
 
 proc emitDenseComponentAdded*(em: var EventManager, entity: DenseHandle, componentIds: openArray[int]) =
@@ -220,10 +224,12 @@ proc emitDenseComponentRemoved*(em: var EventManager, entity: DenseHandle, compo
     componentIds: componentIds.toSeq
   ))
 
-proc emitDenseEntityMigrated*(em: var EventManager, entity: DenseHandle, 
+proc emitDenseEntityMigrated*(em: var EventManager, entity: DenseHandle, old,lst:uint, 
                              oldArchetype, newArchetype: uint16) =
   em.denseEntityMigrated.trigger(DenseEntityMigratedEvent(
     entity: entity,
+    oldId: old,
+    lastId: lst,
     oldArchetype: oldArchetype,
     newArchetype: newArchetype
   ))

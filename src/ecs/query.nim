@@ -102,14 +102,15 @@ proc sUnset*(qf: var QueryFilter, id: int | uint) =
   ## Remove from sparse filter
   qf.sLayer.unset(id.int)
 
-## Low-level iterator to traverse set bits in an unsigned integer bitmask.
-##
-## This uses the "Brian Kernighan's algorithm" approach (`m & (m-1)`), which efficiently
-## jumps to the next set bit.
-##
-## @param it: The bitmask (uint) to iterate over.
-## @return: The index (int) of each set bit found.
 iterator maskIter(it: uint): int =
+  ## Low-level iterator to traverse set bits in an unsigned integer bitmask.
+  ##
+  ## This uses the "Brian Kernighan's algorithm" approach (`m & (m-1)`), which efficiently
+  ## jumps to the next set bit.
+  ##
+  ## @param it: The bitmask (uint) to iterate over.
+  ## @return: The index (int) of each set bit found.
+
   var m = it
   while m != 0:
     yield countTrailingZeroBits(m)
@@ -141,6 +142,7 @@ iterator items*(it: DenseIterator): int =
   ## Iterate a `DenseIterator` obtained from a query
   ## 
   ## It return the index of the matching entity in a given block.
+
   if it.masked:
     for i in (it.r, it.m[]).maskIter:
       yield i
@@ -148,10 +150,11 @@ iterator items*(it: DenseIterator): int =
     for i in it.r:
       yield i
 
-## Iterate a `SparseIterator` obtained from a sparse query.
-## 
-## It return the index of the matching entities in a given block.
 iterator items*(it: SparseIterator): int =
+  ## Iterate a `SparseIterator` obtained from a sparse query.
+  ## 
+  ## It return the index of the matching entities in a given block.
+
   for i in it.m.maskIter:
     yield i
 
@@ -159,17 +162,18 @@ iterator items*(it: SparseIterator): int =
 ################################################################### QUERY BUILDER ##################################################################
 ####################################################################################################################################################
 
-## Constructs a `QuerySignature` from a list of component constraints.
-##
-## This function calculates the aggregate `includeMask` and `excludeMask` from the
-## individual `QueryComponent` objects.
-## Note: Processing logic for qModified/qNotModified is not implemented here per request,
-## only the ID is cached in the components sequence.
-##
-## @param world: The `ECSWorld` (used for context or future expansion).
-## @param components: A sequence of `QueryComponent` objects defining the filter.
-## @return: A fully constructed `QuerySignature`.
 proc buildQuerySignature(world: ECSWorld, components: seq[QueryComponent]): QuerySignature =
+  ## Constructs a `QuerySignature` from a list of component constraints.
+  ##
+  ## This function calculates the aggregate `includeMask` and `excludeMask` from the
+  ## individual `QueryComponent` objects.
+  ## Note: Processing logic for qModified/qNotModified is not implemented here per request,
+  ## only the ID is cached in the components sequence.
+  ##
+  ## @param world: The `ECSWorld` (used for context or future expansion).
+  ## @param components: A sequence of `QueryComponent` objects defining the filter.
+  ## @return: A fully constructed `QuerySignature`.
+
   result.components = components
   
   for comp in components:
@@ -199,12 +203,13 @@ proc addFilter(qs: var QuerySignature, qf:QueryFilter) =
   ## Adds a new filter to the query
   qs.filters.add(qf)
 
-## Checks if an Archetype's mask matches a given Query Signature.
-##
-## @param sig: The `QuerySignature` to test against.
-## @param arch: The `ArchetypeMask` of the archetype being tested.
-## @return: True if the archetype matches the query, False otherwise.
 proc matchesArchetype(sig: QuerySignature, arch: ArchetypeMask): bool =
+  ## Checks if an Archetype's mask matches a given Query Signature.
+  ##
+  ## @param sig: The `QuerySignature` to test against.
+  ## @param arch: The `ArchetypeMask` of the archetype being tested.
+  ## @return: True if the archetype matches the query, False otherwise.
+
   # Check if all included components are present.
   # (A & B) == B ensures B is a subset of A.
   if (sig.includeMask and arch) != sig.includeMask:
@@ -221,16 +226,6 @@ proc matchesArchetype(sig: QuerySignature, arch: ArchetypeMask): bool =
 ################################################################### DENSE QUERIES ##################################################################
 ####################################################################################################################################################
 
-## Iterates over entities matching the query in Dense storage.
-##
-## This iterator scans the archetype graph. For every matching archetype, it yields
-## the memory blocks (zones) containing the entities.
-##
-## @param world: The `ECSWorld` to query.
-## @param sig: The `QuerySignature` defining the filter.
-## @yield: A tuple containing:
-##         - `int`: The Block Index (identifying the memory chunk).
-##         - `HSlice[int, int]`: A slice representing the range of valid entity indices within that block.
 iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator) =
   ## Iterate through all partitions that match the query signature
   ## Returns block index and range for each matching zone
@@ -278,18 +273,16 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator)
         
         yield (zone.block_idx, DenseIterator(r:zone.r.s..<zone.r.e, m:addr res, masked:masked))
 
-## Computes and caches the result of a Dense query.
-##
-## Useful if you need to iterate over the results multiple times, as it avoids
-## re-scanning the archetype graph on subsequent iterations.
-##
-## @param world: The `ECSWorld` to query.
-## @param sig: The `QuerySignature` defining the filter.
-## @return: A `DenseQueryResult` containing the matching partitions.
 proc denseQueryCache*(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
-  ## Iterate through all partitions that match the query signature
-  ## Returns block index and range for each matching zone
-  
+  ## Computes and caches the result of a Dense query.
+  ##
+  ## Useful if you need to iterate over the results multiple times, as it avoids
+  ## re-scanning the archetype graph on subsequent iterations.
+  ##
+  ## @param world: The `ECSWorld` to query.
+  ## @param sig: The `QuerySignature` defining the filter.
+  ## @return: A `DenseQueryResult` containing the matching partitions.
+
   for archNode in world.archGraph.nodes:
     let arch = archNode.mask
     if not matchesArchetype(sig, arch):
@@ -298,22 +291,18 @@ proc denseQueryCache*(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
     if not archNode.partition.isNil: 
       result.part.add(archNode.partition)
 
-## Iterator for the cached `DenseQueryResult`.
-##
-## @param qr: The `DenseQueryResult` to iterate over.
-## @yield: A tuple containing:
-##         - `int`: The Block Index.
-##         - `HSlice[int, int]`: The range of entity indices.
 iterator items*(qr:DenseQueryResult):(int, HSlice[int, int]) =
+  ## Iterator for the cached `DenseQueryResult`.
+  ##
+  ## @param qr: The `DenseQueryResult` to iterate over.
+  ## @yield: A tuple containing:
+  ##         - `int`: The Block Index.
+  ##         - `HSlice[int, int]`: The range of entity indices.
+
   for partition in qr.part:
     for zone in partition.zones:
       yield (zone.block_idx, zone.r.s..<zone.r.e)
 
-## Counts the total number of entities matching a query in Dense storage.
-##
-## @param world: The `ECSWorld` to query.
-## @param sig: The `QuerySignature` defining the filter.
-## @return: The total count of matching entities.
 proc denseQueryCount*(world: ECSWorld, sig: QuerySignature): int =
   ## Count total entities matching the dense query
   result = 0
@@ -325,11 +314,6 @@ proc denseQueryCount*(world: ECSWorld, sig: QuerySignature): int =
 ################################################################### SPARSE QUERIES #################################################################
 ####################################################################################################################################################
 
-## Helper: Retrieves the existence masks for a list of components in Sparse storage.
-##
-## @param world: The `ECSWorld`.
-## @param componentIds: Sequence of Component IDs to look up.
-## @return: A sequence of sparse masks (sequences of uint), one per component ID.
 proc getSparseMasks(world: ECSWorld, componentIds: seq[int]): seq[seq[uint]] =
   ## Get sparse masks for each component
   result = newSeq[seq[uint]](componentIds.len)
@@ -338,12 +322,6 @@ proc getSparseMasks(world: ECSWorld, componentIds: seq[int]): seq[seq[uint]] =
     let entry = world.registry.entries[compId]
     #result[i] = entry.getSparseMaskOp(entry.rawPointer)
 
-## Helper: Performs a bitwise AND operation across multiple sparse masks.
-##
-## This intersection finds which entities/chunks exist in all provided masks.
-##
-## @param masks: A sequence of sparse masks (sequences of uint).
-## @return: A single resulting mask representing the intersection.
 proc andMasks(masks: seq[seq[uint]]): seq[uint] =
   ## Perform AND operation on all sparse masks
   if masks.len == 0:
@@ -358,10 +336,6 @@ proc andMasks(masks: seq[seq[uint]]): seq[uint] =
     for j in 0..<minLen:
       result[j] = result[j] and masks[i][j]
 
-## Helper: Filters a base mask by removing bits defined in exclusion masks.
-##
-## @param baseMask: The mask to filter (modified in place).
-## @param excludeMasks: A sequence of masks containing bits to clear.
 proc filterExcludedMasks(baseMask: var seq[uint], excludeMasks: seq[seq[uint]]) =
   ## Remove excluded components from base mask
   for excludeSeq in excludeMasks:
@@ -390,18 +364,6 @@ proc getChangeMask(world: ECSWorld, sig:QuerySignature, modif, nmodif:seq[int], 
 
   return res
 
-## Iterates over entities matching the query in Sparse storage.
-##
-## Logic:
-## 1. Compute the intersection of all "included" component masks.
-## 2. Remove any bits found in "excluded" component masks.
-## 3. Iterate through the resulting chunks, yielding the chunk index and the specific entity mask.
-##
-## @param world: The `ECSWorld` to query.
-## @param sig: The `QuerySignature` defining the filter.
-## @yield: A tuple containing:
-##         - `int`: The Chunk Index.
-##         - `uint`: A bitmask where set bits indicate valid entity indices within that chunk.
 iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, SparseIterator) =
   ## Iterate through sparse entities matching the query
   ## Returns chunk index and mask iterator for each matching chunk
@@ -442,11 +404,6 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, SparseIterato
     for chunkIdx in res.blkIter:
       yield (chunkIdx, SparseIterator(m:res.getL0(chunkIdx)))
 
-## Computes and caches the result of a Sparse query.
-##
-## @param world: The `ECSWorld` to query.
-## @param sig: The `QuerySignature` defining the filter.
-## @return: A `sparseQueryResult` containing the calculated masks.
 proc sparseQueryCache*(world: ECSWorld, sig: QuerySignature): sparseQueryResult =
   ## Iterate through sparse entities matching the query
   ## Returns chunk index and mask iterator for each matching chunk
@@ -495,13 +452,14 @@ proc sparseQueryCache*(world: ECSWorld, sig: QuerySignature): sparseQueryResult 
     result.rmask = resultMask
     result.chunks = chk
 
-## Iterator for the cached `sparseQueryResult`.
-##
-## @param sr: The `sparseQueryResult` to iterate over.
-## @yield: A tuple containing:
-##         - `int`: The Chunk Index.
-##         - `uint`: The bitmask of valid entities within the chunk.
 iterator items*(sr:sparseQueryResult):(int, uint) =
+  ## Iterator for the cached `sparseQueryResult`.
+  ##
+  ## @param sr: The `sparseQueryResult` to iterate over.
+  ## @yield: A tuple containing:
+  ##         - `int`: The Chunk Index.
+  ##         - `uint`: The bitmask of valid entities within the chunk.
+
   var c = 0
   let S = sizeof(uint)*8
   for i in 0..<sr.rmask.len:
@@ -515,11 +473,6 @@ iterator items*(sr:sparseQueryResult):(int, uint) =
       yield (chunkIdx, chunkMask)
       c += 1
 
-## Counts the total number of entities matching a query in Sparse storage.
-##
-## @param world: The `ECSWorld` to query.
-## @param sig: The `QuerySignature` defining the filter.
-## @return: The total count of matching entities.
 proc sparseQueryCount*(world: ECSWorld, sig: QuerySignature): int =
   ## Count total entities matching the sparse query
   result = 0
@@ -534,34 +487,35 @@ proc sparseQueryCount*(world: ECSWorld, sig: QuerySignature): int =
 
 # Helper procs for building queries
 
-## Creates a `QueryComponent` that requires a specific component.
 proc includeComp*(componentId: int): QueryComponent =
+  ## Creates a `QueryComponent` that requires a specific component.
   QueryComponent(id: componentId, op: qInclude)
 
-## Creates a `QueryComponent` that forbids a specific component.
 proc excludeComp*(componentId: int): QueryComponent =
+  ## Creates a `QueryComponent` that forbids a specific component.
   QueryComponent(id: componentId, op: qExclude)
 
-## Creates a `QueryComponent` that requires a component to be modified.
 proc modifiedComp*(componentId: int): QueryComponent =
+  ## Creates a `QueryComponent` that requires a component to be modified.
   QueryComponent(id: componentId, op: qModified)
 
-## Creates a `QueryComponent` that requires a component to be not modified.
 proc notModifiedComp*(componentId: int): QueryComponent =
+  ## Creates a `QueryComponent` that requires a component to be not modified.
   QueryComponent(id: componentId, op: qNotModified)
 
-## Macro for Domain Specific Language (DSL) query syntax.
-##
-## Allows writing queries using `and`, `not`, and `Modified[]` operators, e.g.:
-## `query(world, Position and Modified[Velocity] and not Dead)`
-##
-## The macro parses the Abstract Syntax Tree (AST) of the expression and converts
-## the identifiers (types) into their Component IDs using the world's registry.
-##
-## @param world: The `ECSWorld` instance.
-## @param expr: The query expression (e.g., `Pos and Modified[Vel]`).
-## @return: A `QuerySignature` ready for use in query functions.
 macro query*(world: untyped, expr: untyped): untyped =
+  ## Macro for Domain Specific Language (DSL) query syntax.
+  ##
+  ## Allows writing queries using `and`, `not`, and `Modified[]` operators, e.g.:
+  ## `query(world, Position and Modified[Velocity] and not Dead)`
+  ##
+  ## The macro parses the Abstract Syntax Tree (AST) of the expression and converts
+  ## the identifiers (types) into their Component IDs using the world's registry.
+  ##
+  ## @param world: The `ECSWorld` instance.
+  ## @param expr: The query expression (e.g., `Pos and Modified[Vel]`).
+  ## @return: A `QuerySignature` ready for use in query functions.
+
   var components = newSeq[NimNode]()
   
   proc processExpr(world: NimNode, node: NimNode) =

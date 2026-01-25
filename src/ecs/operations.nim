@@ -131,8 +131,8 @@ template deleteEntity*(world:var ECSWorld, d:DenseHandle) =
 
   # Remove the entity's data row from its archetype block.
   # Returns the index of the last row that was swapped into the deleted position ('l').
-  world.events.emitDenseEntityDestroyed(d)
   let l = deleteRow(world, e.id, e.archetypeId)
+  world.events.emitDenseEntityDestroyed(d, l)
   
   # Update the handle lookup table.
   # The handle at the deleted entity's position now points to the entity that was moved.
@@ -177,6 +177,8 @@ proc migrateEntity*(world: var ECSWorld, d:DenseHandle, archNode:ArchetypeNode) 
   
   # Only perform migration if the target archetype is different from the current one.
   if archNode.id != e.archetypeId:
+    let oldId = e.id # Keep this for events
+
     # Move the data. 
     # changePartition moves component data from old archetype to new archetype.
     # Returns: index of the swapped-in last element (lst), new ID, new Block ID.
@@ -198,9 +200,10 @@ proc migrateEntity*(world: var ECSWorld, d:DenseHandle, archNode:ArchetypeNode) 
 
     # Update the migrating entity's ID to its new physical position.
     let oldArchId = e.archetypeId
-    e.id = (bid shl BLK_SHIFT) or id
+    let newId = (bid shl BLK_SHIFT) or id
+    e.id = newId
     e.archetypeId = archNode.id
-    world.events.emitDenseEntityMigrated(d, oldArchId, archNode.id)
+    world.events.emitDenseEntityMigrated(d, oldId, lst, oldArchId, archNode.id)
     
 ## Batch migration for multiple entities (Dense storage).
 ##
@@ -388,7 +391,7 @@ proc makeDense*(world:var ECSWorld, s:var SparseHandle):DenseHandle =
 proc makeSparse*(world:var ECSWorld, d:DenseHandle):SparseHandle =
   var comps = world.archGraph.nodes[d.obj.archetypeId].partition.components
   var s = world.createSparseEntity(comps)
-  
+
   # Iterate through the component mask.
   for id in comps:
     var entry = world.registry.entries[id]
