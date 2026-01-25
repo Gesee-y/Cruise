@@ -164,7 +164,7 @@ proc runSparseBenchmarks() =
         var posby = addr posc.sparse[bid].data.y
         let velby = addr velc.sparse[bid].data.y
 
-        for i in r.maskIter:
+        for i in r:
           posbx[i] += velbx[i]+1
           posby[i] += velby[i]+1
     )

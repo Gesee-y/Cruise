@@ -203,7 +203,7 @@ proc migrateEntity*(world: var ECSWorld, d:DenseHandle, archNode:ArchetypeNode) 
     let newId = (bid shl BLK_SHIFT) or id
     e.id = newId
     e.archetypeId = archNode.id
-    world.events.emitDenseEntityMigrated(d, oldId, lst, oldArchId, archNode.id)
+    world.events.emitDenseEntityMigrated(d, oldId, lst.uint, oldArchId, archNode.id)
     
 ## Batch migration for multiple entities (Dense storage).
 ##

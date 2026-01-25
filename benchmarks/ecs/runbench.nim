@@ -108,7 +108,7 @@ let res2 = benchmark("Create Query signature (Position + Velocity)", SAMPLE):
 showDetailed(res2)
 
 let res3 = benchmark("Create Query signature (Position + Velocity)", SAMPLE):
-  for (_,_,_) in world2.denseQuery(query(world2, Position and Velocity)):
+  for (_,_) in world2.denseQuery(query(world2, Position and Velocity)):
     continue
 showDetailed(res3)
 
