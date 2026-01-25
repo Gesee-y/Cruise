@@ -42,6 +42,34 @@ proc initTestWorld(): ECSWorld =
 
 var world = initTestWorld()
 
+suite "QueryFilter":
+
+  test "dense and sparse set/get":
+    var q = newQueryFilter()
+
+    q.dSet(3)
+    q.sSet(7)
+
+    check q.dGet(3)
+    check q.sGet(7)
+    check not q.dGet(2)
+
+  test "logic ops":
+    var a,b: QueryFilter
+    a.dLayer = newSparseHiBitSet()
+    b.dLayer = newSparseHiBitSet()
+    a.sLayer = newSparseHiBitSet()
+    b.sLayer = newSparseHiBitSet()
+
+    a.dSet(1); b.dSet(2)
+    a.sSet(1); b.sSet(2)
+
+    let c = a or b
+    check c.dGet(1)
+    check c.dGet(2)
+    check c.sGet(1)
+    check c.sGet(2)
+
 suite "QuerySignature building":
 
   test "include only":
@@ -93,9 +121,18 @@ suite "Dense query basic":
     let sig = query(world, Position)
     check denseQueryCount(world, sig) == 2
 
+  test "dense filter":
+    var q = newQueryFilter()
+    let e = world.createEntity(0)
+    q.set(e)
+
+    var sig = query(world, Position)
+    sig.addFilter(q)
+    check denseQueryCount(world, sig) == 1
+
   test "dense include + exclude":
     let sig = query(world, Position and not Velocity)
-    check denseQueryCount(world, sig) == 1
+    check denseQueryCount(world, sig) == 2
 
 suite "Dense query change tracking":
 
@@ -124,7 +161,7 @@ suite "Dense query change tracking":
       for _ in r:
         c += 1
 
-    check c == 2
+    check c == 3
 
 suite "Sparse query basic":
 

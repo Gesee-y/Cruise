@@ -38,7 +38,7 @@ type
     layer1DenseIdx: seq[int]
     layer1Count: int
 
-  HiBitSetType = HiBitSet
+  HiBitSetType = SparseHiBitSet
 
 # ============================================================================
 # Dense HiBitSet Implementation
@@ -534,6 +534,9 @@ proc `not`*(a: SparseHiBitSet): SparseHiBitSet =
       let l1Bit = l0Idx and L0_MASK
       let l1Old = result.getL1(l1Idx)
       result.setL1(l1Idx, l1Old or (1'u64 shl l1Bit))
+
+proc maxLen(h: SparseHiBitSet): int =
+  return h.layer1Count
 
 iterator items*(h: SparseHiBitSet): int =
   ## Iterates over all indices where the bit is set.

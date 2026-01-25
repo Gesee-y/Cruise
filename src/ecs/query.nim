@@ -34,7 +34,7 @@ type
     excludeMask: ArchetypeMask      ## Bitmask representing all forbidden components (OR'ed together).
     modified: seq[int]
     notModified: seq[int]
-    filters:seq[QueryFilter]
+    filters:seq[ptr QueryFilter]
 
   ## A cached result object for Dense queries.
   ## Stores the partitions (memory blocks) that matched the query signature,
@@ -62,6 +62,13 @@ type
 ################################################################### MASK ITERATOR ##################################################################
 ####################################################################################################################################################
 
+proc newQueryFilter(): QueryFilter =
+  var q: QueryFilter
+  q.dLayer = newSparseHiBitSet()
+  q.sLayer = newSparseHiBitSet()
+
+  return q
+
 proc `and`*(a, b: QueryFilter): QueryFilter =
   result.dLayer = a.dLayer and b.dLayer
   result.sLayer = a.sLayer and b.sLayer
@@ -78,11 +85,11 @@ proc `not`*(a: QueryFilter): QueryFilter =
   result.dLayer = not a.dLayer 
   result.sLayer = not a.sLayer
 
-proc dGet*(qf: QueryFilter, id: uint): bool =
+proc dGet*(qf: QueryFilter, id: uint|int): bool =
   ## Returns 1 if the ID is present in the dense filter, 0 otherwise
   qf.dLayer.get(id.int)
 
-proc dSet*(qf: var QueryFilter, id: uint) =
+proc dSet*(qf: var QueryFilter, id: uint|int) =
   ## Sets an ID in the dense filter
   qf.dLayer.set(id.int)
 
@@ -115,6 +122,7 @@ iterator maskIter(it: uint): int =
   while m != 0:
     yield countTrailingZeroBits(m)
     m = m and (m-1)
+
 iterator maskIter(it: (HSlice[int,int],seq[uint])): int =
   var current = 0
   var i = 0
@@ -201,7 +209,7 @@ proc buildQuerySignature(world: ECSWorld, components: seq[QueryComponent]): Quer
 
 proc addFilter(qs: var QuerySignature, qf:QueryFilter) =
   ## Adds a new filter to the query
-  qs.filters.add(qf)
+  qs.filters.add(addr qf)
 
 proc matchesArchetype(sig: QuerySignature, arch: ArchetypeMask): bool =
   ## Checks if an Archetype's mask matches a given Query Signature.
@@ -264,12 +272,8 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator)
 
         for qf in sig.filters:
           masked = true
-          if zone.block_idx >= qf.dLayer.maxLen:
-            for i in 0..<res.len:
-              res[i] = 0'u
-          else:
-            for i in 0..<res.len:
-              res[i] = res[i] and qf.dLayer.getL0(zone.block_idx*sizeof(uint)*8 + i)
+          for i in 0..<res.len:
+            res[i] = res[i] and qf.dLayer.getL0(zone.block_idx*sizeof(uint)*8 + i)
         
         yield (zone.block_idx, DenseIterator(r:zone.r.s..<zone.r.e, m:addr res, masked:masked))
 
@@ -585,7 +589,7 @@ macro query*(world: untyped, expr: untyped): untyped =
 
 proc get*(qf: QueryFilter, d: DenseHandle): bool =
   ## Dense handle membership check
-  qf.dGet(d.obj.id)
+  qf.dGet(d.obj.id.toIdx)
 
 proc get*(qf: QueryFilter, s: SparseHandle): bool =
   ## Sparse handle membership check
@@ -593,7 +597,7 @@ proc get*(qf: QueryFilter, s: SparseHandle): bool =
 
 proc set*(qf: var QueryFilter, d: DenseHandle) =
   ## Insert dense handle into query filter
-  qf.dSet(d.obj.id)
+  qf.dSet(d.obj.id.toIdx)
 
 proc set*(qf: var QueryFilter, s: SparseHandle) =
   ## Insert sparse handle into query filter
