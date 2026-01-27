@@ -348,4 +348,16 @@ proc changePartition(
       let ents = addr table.handles
       entry.overrideValsBatchOp(entry.rawPointer, newArch.id, ents, ids, toSwap, toAdd)
 
+  for i in 0..<ids.len:
+    var e = ids[i].obj
+    let s = toSwap[i]
+    let a = toAdd[i]
+    
+    table.handles[a.toIdx] = e
+    table.handles[e.id.toIdx] = table.handles[s.toIdx]
+    table.handles[s.toIdx].id = e.id
+
+    e.id = a
+    e.archetypeId = newArch.id
+
   return (toSwap, toAdd)

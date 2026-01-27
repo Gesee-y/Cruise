@@ -384,8 +384,8 @@ proc makeDense*(world:var ECSWorld, s:var SparseHandle):DenseHandle =
       mask = mask and (mask - 1)
 
   # Cleanup the original Sparse entity.
+  world.events.emitDensified(s, d) 
   world.deleteEntity(s)
-  world.events.emitDensified(s, d)
 
   return d
 
@@ -406,7 +406,7 @@ proc makeSparse*(world:var ECSWorld, d:DenseHandle):SparseHandle =
     entry.overrideSDOp(entry.rawPointer, s, d)
 
   # Cleanup the original Dense entity.
-  world.deleteEntity(d)
   world.events.emitSparsified(d, s)
-
+  world.deleteEntity(d)
+  
   return s

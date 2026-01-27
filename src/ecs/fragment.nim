@@ -276,20 +276,12 @@ template overrideVals[N,P,T,B](b: SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B
 template overrideVals(f, archId, ents, ids, toSwap, toAdd:untyped) =
   ## Specialized override logic used during archetype transitions.
   for i in 0..<ids.len:
-    let e = ids[i].obj
+    var e = ids[i].obj
     let s = toSwap[i]
     let a = toAdd[i]
     
     f[a] = f[e]
     f[e] = f[s]
-    
-    ents[a.toIdx] = e
-    ents[e.id.toIdx] = ents[s.toIdx]
-    ents[s.toIdx].id = e.id
-
-    e.id = a
-    e.archetypeId = archId
-
 
 template setChanged[N,P,T,B](f: var SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B], id:uint|int) =
   ## Mark a slot inside a fragment as modified.

@@ -84,9 +84,11 @@ proc dDestroyNode(tree:var SceneTree, id:uint) =
 
   for i in node.children.dLayer:
     dDestroyNode(tree, i.uint)
+    tree.toDFilter[i] = 0
 
   for i in node.children.sLayer:
     sDestroyNode(tree, i.uint)
+    tree.toSFilter[i] = 0
 
 proc sDestroyNode(tree:var SceneTree, id:uint) =
   let filID = tree.toSFilter[id]-1
@@ -99,9 +101,11 @@ proc sDestroyNode(tree:var SceneTree, id:uint) =
 
   for i in node.children.dLayer:
     dDestroyNode(tree, i.uint)
+    tree.toDFilter[i] = 0
 
   for i in node.children.sLayer:
     sDestroyNode(tree, i.uint)
+    tree.toSFilter[i] = 0
 
 proc overrideNodes(tree:var SceneTree, id1, id2:uint) =
   if id1.int >= tree.toDFilter.len: 
@@ -166,6 +170,10 @@ proc addChild*(tree:var SceneTree, h:DenseHandle|SparseHandle) =
 proc addChild*(tree:var SceneTree, d:DenseHandle, h:DenseHandle|SparseHandle) =
   var node = tree.nodes[tree.toDFilter[d.obj.id.toIdx]-1]
   tree.addChild(node, h)
+
+proc addChild*(tree:var SceneTree, s:SparseHandle, h:DenseHandle|SparseHandle) =
+  var node = tree.nodes[tree.toSFilter[s.id]-1]
+  tree.addChild(node, h)
   
 proc getParent(tree:SceneTree, d:DenseHandle): SceneNode =
   return tree.getParent(tree.nodes[tree.toDFilter[d.obj.id.toIdx]])
@@ -196,12 +204,14 @@ template setUp*(world:var ECSWorld, tree:var SceneTree, r:DenseHandle|SparseHand
       let id = ev.entity.obj.id.toIdx
       dDestroyNode(tree, id.uint)
       tree.overrideNodes(id.uint, ev.last)
+      tree.toDFilter[id] = 0
   )
 
   discard world.events.onSparseEntityDestroyed(
     proc (ev:SparseEntityDestroyedEvent) =
       let id = ev.entity.id
       sDestroyNode(tree, id.uint)
+      tree.toSFilter[id] = 0
   )
 
   discard world.events.onDenseEntityMigrated(
@@ -221,12 +231,12 @@ template setUp*(world:var ECSWorld, tree:var SceneTree, r:DenseHandle|SparseHand
     proc (ev:DenseEntityMigratedBatchEvent) =
       for i in 0..<ev.newIds.len:
         let id = ev.newIds[i].toIdx
-        let oldId = ev.oldIds[i].toIdx
-        let lastId = ev.ids[i].toIdx
+        let oldId = ev.ids[i].toIdx
+        let lastId = ev.oldIds[i].toIdx
         if oldId.int < tree.toDFilter.len and tree.toDFilter[oldId] > 0:
-          if id.int < tree.toDFilter.len and tree.toDFilter[id] > 0:
-            var n = addr tree.nodes[tree.toDFilter[id]-1]
-            tree.getParent(n).unsetChild(n)
+          var n = tree.nodes[tree.toDFilter[oldId]-1]
+          var par = tree.getParent(n)
+          if not par.isNil: par.unsetChild(n)
 
           tree.overrideNodes(id, oldId.uint)
           tree.overrideNodes(oldId.uint, lastId)
@@ -245,6 +255,11 @@ template setUp*(world:var ECSWorld, tree:var SceneTree, r:DenseHandle|SparseHand
           par.children.dLayer.set(nid.int)
 
         n.id = SceneID(kind:rDense, id:nid)
+
+        if nid.int >= tree.toDFilter.len:
+          tree.toDFilter.setLen(nid+1)
+
+        tree.toDFilter[nid] = tree.toSFilter[id]
   )
 
   discard world.events.onSparsified(
@@ -260,4 +275,8 @@ template setUp*(world:var ECSWorld, tree:var SceneTree, r:DenseHandle|SparseHand
           par.children.sLayer.set(nid.int)
 
         n.id = SceneID(kind:rSparse, id:nid)
+        if nid.int >= tree.toSFilter.len:
+          tree.toSFilter.setLen(nid+1)
+
+        tree.toSFilter[nid] = tree.toDFilter[id]
   )
