@@ -348,4 +348,4 @@ proc changePartition(
       let ents = addr table.handles
       entry.overrideValsBatchOp(entry.rawPointer, newArch.id, ents, ids, toSwap, toAdd)
 
-  return toSwap, toAdd
+  return (toSwap, toAdd)

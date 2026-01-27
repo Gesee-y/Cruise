@@ -217,6 +217,21 @@ template setUp*(world:var ECSWorld, tree:var SceneTree, r:DenseHandle|SparseHand
         tree.overrideNodes(ev.oldId.toIdx.uint, ev.lastId)
   )
 
+  discard world.events.onDenseEntityMigratedBatch(
+    proc (ev:DenseEntityMigratedBatchEvent) =
+      for i in 0..<ev.newIds.len:
+        let id = ev.newIds[i].toIdx
+        let oldId = ev.oldIds[i].toIdx
+        let lastId = ev.ids[i].toIdx
+        if oldId.int < tree.toDFilter.len and tree.toDFilter[oldId] > 0:
+          if id.int < tree.toDFilter.len and tree.toDFilter[id] > 0:
+            var n = addr tree.nodes[tree.toDFilter[id]-1]
+            tree.getParent(n).unsetChild(n)
+
+          tree.overrideNodes(id, oldId.uint)
+          tree.overrideNodes(oldId.uint, lastId)
+  )
+
   discard world.events.onDensified(
     proc (ev:DensifiedEvent) =
       let id = ev.oldSparse.id

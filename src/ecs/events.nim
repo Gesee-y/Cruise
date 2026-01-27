@@ -36,6 +36,13 @@ type
     oldArchetype*: uint16
     newArchetype*: uint16
 
+  DenseEntityMigratedBatchEvent* = object
+    ids*: seq[uint]
+    oldIds*: seq[uint]
+    newIds*: seq[uint]
+    oldArchetype*: uint16
+    newArchetype*: uint16
+
   ## Event emitted when a sparse entity is created.
   SparseEntityCreatedEvent* = object
     entity*: SparseHandle
@@ -98,6 +105,7 @@ type
     denseComponentAdded: EventPool[DenseComponentAddedEvent]
     denseComponentRemoved: EventPool[DenseComponentRemovedEvent]
     denseEntityMigrated: EventPool[DenseEntityMigratedEvent]
+    denseEntityMigratedBatch: EventPool[DenseEntityMigratedBatchEvent]
 
     sparseEntityCreated: EventPool[SparseEntityCreatedEvent]
     sparseEntityDestroyed: EventPool[SparseEntityDestroyedEvent]
@@ -157,6 +165,7 @@ proc initEventManager*(): EventManager =
   result.denseComponentAdded = initEventPool[DenseComponentAddedEvent]()
   result.denseComponentRemoved = initEventPool[DenseComponentRemovedEvent]()
   result.denseEntityMigrated = initEventPool[DenseEntityMigratedEvent]()
+  result.denseEntityMigratedBatch = initEventPool[DenseEntityMigratedBatchEvent]()
 
   result.sparseEntityCreated = initEventPool[SparseEntityCreatedEvent]()
   result.sparseEntityDestroyed = initEventPool[SparseEntityDestroyedEvent]()
@@ -184,6 +193,9 @@ proc onDenseComponentRemoved*(em: var EventManager, cb: EventCallback[DenseCompo
 
 proc onDenseEntityMigrated*(em: var EventManager, cb: EventCallback[DenseEntityMigratedEvent]): int =
   em.denseEntityMigrated.subscribe(cb)
+
+proc onDenseEntityMigratedBatch*(em: var EventManager, cb: EventCallback[DenseEntityMigratedBatchEvent]): int =
+  em.denseEntityMigratedBatch.subscribe(cb)
 
 proc onSparseEntityCreated*(em: var EventManager, cb: EventCallback[SparseEntityCreatedEvent]): int =
   em.sparseEntityCreated.subscribe(cb)
@@ -223,6 +235,9 @@ proc offDenseComponentRemoved*(em: var EventManager, id: int) =
 
 proc offDenseEntityMigrated*(em: var EventManager, id: int) =
   em.denseEntityMigrated.unsubscribe(id)
+
+proc offDenseEntityMigratedBatch*(em: var EventManager, id: int) =
+  em.denseEntityMigratedBatch.unsubscribe(id)
 
 proc offSparseEntityCreated*(em: var EventManager, id: int) =
   em.sparseEntityCreated.unsubscribe(id)
@@ -277,6 +292,16 @@ proc emitDenseEntityMigrated*(em: var EventManager, entity: DenseHandle, old,lst
     entity: entity,
     oldId: old,
     lastId: lst,
+    oldArchetype: oldArchetype,
+    newArchetype: newArchetype
+  ))
+
+proc emitDenseEntityMigratedBatch*(em: var EventManager, ids,old,lst:seq[uint], 
+                             oldArchetype, newArchetype: uint16) =
+  em.denseEntityMigratedBatch.trigger(DenseEntityMigratedBatchEvent(
+    ids: ids,
+    oldIds: old,
+    newIds: lst,
     oldArchetype: oldArchetype,
     newArchetype: newArchetype
   ))

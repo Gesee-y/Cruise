@@ -216,10 +216,16 @@ template migrateEntity*(world: var ECSWorld, ents:var openArray, archNode:Archet
   if ents.len != 0:
     # Assume all entities in the batch are currently in the same archetype (based on the first one).
     let e = ents[0].obj
+    let oldArchId = e.archetypeId
 
-    if archNode.id != e.archetypeId:
+    if archNode.id != oldArchId:
+      var ids = newSeq[uint](ents.len)
+      for i in 0..<ents.len:
+        ids[i] = ents[i].obj.id
+
       # Perform batch partition change.
-      let toSwap, toAdd = changePartition(world, ents, e.archetypeId, archNode)
+      let (toSwap, toAdd) = changePartition(world, ents, oldArchId, archNode)
+      world.events.emitDenseEntityMigratedBatch(ids, toSwap, toAdd, oldArchId, archNode.id)
 
 ## Defers the migration of an entity.
 ##
