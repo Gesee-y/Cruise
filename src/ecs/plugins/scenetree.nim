@@ -176,16 +176,16 @@ proc addChild*(tree:var SceneTree, s:SparseHandle, h:DenseHandle|SparseHandle) =
   tree.addChild(node, h)
   
 proc getParent(tree:SceneTree, d:DenseHandle): SceneNode =
-  return tree.getParent(tree.nodes[tree.toDFilter[d.obj.id.toIdx]])
+  return tree.getParent(tree.nodes[tree.toDFilter[d.obj.id.toIdx]-1])
 
 proc getParent(tree:SceneTree, s:SparseHandle): SceneNode =
-  return tree.getParent(tree.nodes[tree.toSFilter[s.id]])
+  return tree.getParent(tree.nodes[tree.toSFilter[s.id]-1])
 
 proc getChildren(tree:SceneTree, d:DenseHandle): ptr QueryFilter =
-  return getChildren(tree.nodes[tree.toDFilter[d.obj.id.toIdx]])
+  return getChildren(tree.nodes[tree.toDFilter[d.obj.id.toIdx]-1])
 
 proc getChildren(tree:SceneTree, s:SparseHandle): ptr QueryFilter =
-  return getChildren(tree.nodes[tree.toSFilter[s.id]])
+  return getChildren(tree.nodes[tree.toSFilter[s.id]-1])
 
 proc deleteNode*(tree: var SceneTree, d:DenseHandle) =
   tree.dDestroyNode(d.obj.id.toIdx.uint)
