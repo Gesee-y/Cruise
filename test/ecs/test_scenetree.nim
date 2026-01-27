@@ -37,7 +37,6 @@ suite "SceneTree with real ECS":
     tree.addChild(a, b)
 
     let root = addr tree.nodes[tree.toDFilter[a.obj.id.toIdx]-1]
-    echo root.children.dLayer
     check root.children.dLayer.get(b.obj.id.toIdx.int)
 
   test "sparse root attach":
@@ -59,7 +58,7 @@ suite "SceneTree with real ECS":
 
     var tree: SceneTree
     let d = world.createEntity(0)
-    let s = world.createSparseEntity(world.getComponentId(Position))
+    let s = world.createSparseEntity(0)
 
     world.setUp(tree, d)
     tree.addChild(d)

@@ -18,6 +18,7 @@ type
     root: ArchetypeNode
     nodes: seq[ArchetypeNode]
     maskToId: Table[ArchetypeMask, uint16]
+    lru_active: bool
     lastMask: ArchetypeMask
     lastNode: ArchetypeNode
 
@@ -158,10 +159,11 @@ proc findArchetype*(graph: var ArchetypeGraph,
 
 proc findArchetypeFast*(graph: var ArchetypeGraph, 
                         mask: ArchetypeMask): ArchetypeNode {.inline.} =
-  if graph.lastMask == mask:
+  if graph.lastMask == mask and graph.lru_active:
     return graph.lastNode
   
   let idPtr = graph.maskToId.getOrDefault(mask, uint16.high)
+  graph.lru_active = true
   if idPtr != uint16.high:
     result = graph.nodes[idPtr]
     graph.lastMask = mask

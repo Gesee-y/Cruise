@@ -48,8 +48,8 @@ proc createEntity*(world:var ECSWorld, arch:ArchetypeMask):DenseHandle =
   e.widx = pid
 
   let d = DenseHandle(obj:e, gen:world.generations[pid])
-  
   world.events.emitDenseEntityCreated(d)
+  
   # Return a public handle containing the pointer and the current generation (for safety checks).
   return d
 
@@ -219,7 +219,7 @@ template migrateEntity*(world: var ECSWorld, ents:var openArray, archNode:Archet
 
     if archNode.id != e.archetypeId:
       # Perform batch partition change.
-      changePartition(world, ents, e.archetypeId, archNode)
+      let toSwap, toAdd = changePartition(world, ents, e.archetypeId, archNode)
 
 ## Defers the migration of an entity.
 ##

@@ -268,7 +268,7 @@ proc changePartition(
   ids: var openArray[DenseHandle],
   oldArch: uint16,
   newArch: ArchetypeNode
-) =
+):(seq[uint], seq[uint]) =
   check(ids.len > 0, "Batch change with empty handles")
 
   let oldPartition = table.archGraph.nodes[oldArch].partition
@@ -347,3 +347,5 @@ proc changePartition(
       let entry = table.registry.entries[id]
       let ents = addr table.handles
       entry.overrideValsBatchOp(entry.rawPointer, newArch.id, ents, ids, toSwap, toAdd)
+
+  return toSwap, toAdd

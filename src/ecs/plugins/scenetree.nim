@@ -2,7 +2,6 @@
 ############################################################# SCENETREE PLUGIN #####################################################################
 ####################################################################################################################################################
 
-
 type
   RootKind = enum
     rDense, rSparse
@@ -18,13 +17,13 @@ type
     kind:RootKind
     id:uint
 
-  SceneNode = object
+  SceneNode = ref object
     id: SceneID
-    parent: SceneID
+    parent: ptr SceneID
     children: QueryFilter
   
   SceneTree = object
-    root:RootNode
+    root:SceneNode
     toDFilter:seq[int]
     toSFilter:seq[int]
     nodes:seq[SceneNode]
@@ -35,15 +34,28 @@ type
 proc dDestroyNode(tree:var SceneTree, id:uint)
 proc sDestroyNode(tree:var SceneTree, id:uint)
 
-proc getNode(tree:SceneTree, id:SceneID): ptr SceneNode =
+proc dGetNode(tree:SceneTree, id:uint): SceneNode =
+  if id.int < tree.toDFilter.len and tree.toDFilter[id] > 0:
+    return tree.nodes[tree.toDFilter[id]-1]
+    
+  return nil
+
+proc sGetNode(tree:SceneTree, id:uint): SceneNode =
+  if id.int < tree.toSFilter.len and tree.toSFilter[id] > 0:
+    return tree.nodes[tree.toSFilter[id]-1]
+
+  return nil
+
+proc getNode(tree:SceneTree, id:SceneID): SceneNode =
   case id.kind:
     of rDense:
-      return addr tree.nodes[tree.toDFilter[id.id]-1]
+      return tree.dGetNode(id.id)
     of rSparse:
-      return addr tree.nodes[tree.toSFilter[id.id]-1]
+      return tree.sGetNode(id.id)
 
-proc getParent(tree:SceneTree, n:SomeSceneNode):ptr SceneNode =
-  return tree.getNode(n.parent)
+proc getParent(tree:SceneTree, n:SomeSceneNode):SceneNode =
+  if n.parent.isNil: return nil
+  return tree.getNode(n.parent[])
 
 proc getChildren(n:SomeSceneNode): ptr QueryFilter =
   return addr n.children
@@ -55,14 +67,20 @@ proc unsetChild(par:var SceneNode|ptr SceneNode, child:SomeSceneNode) =
     of rSparse:
       par.children.sLayer.unset(child.id.id.int)
 
+proc getFreeId(tree:var SceneTree):int =
+  if tree.freelist.len > 0:
+    return tree.freelist.pop()
+
+  tree.nodes.setLen(tree.nodes.len+1)
+  return tree.nodes.len-1
+
 proc dDestroyNode(tree:var SceneTree, id:uint) =
   let filID = tree.toDFilter[id]-1
   var node = addr tree.nodes[filID]
   var par = tree.getParent(node)
 
-  par.unsetChild(node)
+  if not par.isNil: par.unsetChild(node)
   tree.freelist.add(filID)
-  tree.toDFilter[id.toIdx] = 0
 
   for i in node.children.dLayer:
     dDestroyNode(tree, i.uint)
@@ -75,7 +93,7 @@ proc sDestroyNode(tree:var SceneTree, id:uint) =
   var node = addr tree.nodes[filID]
   var par = tree.getParent(node)
 
-  par.unsetChild(node)
+  if not par.isNil: par.unsetChild(node)
   tree.freelist.add(filID)
   tree.toSFilter[id] = 0
 
@@ -86,18 +104,24 @@ proc sDestroyNode(tree:var SceneTree, id:uint) =
     sDestroyNode(tree, i.uint)
 
 proc overrideNodes(tree:var SceneTree, id1, id2:uint) =
+  if id1.int >= tree.toDFilter.len: 
+    tree.toDFilter.setLen(id1+1)
+    tree.toDFilter[id1] = tree.getFreeId() + 1
+  if id2.int >= tree.toDFilter.len: return
+  
   let f1 = tree.toDFilter[id1]-1
   let f2 = tree.toDFilter[id2]-1
   tree.toDFilter[id2] = 0
   
-  if f2 != -1:
+  if f2 != -1 and f1 != f2:
     var n = addr tree.nodes[f2]
     var par = tree.getParent(n)
 
-    par.children.dLayer.unset(id2.int)
-    par.children.dLayer.set(id1.int)
+    if par != nil:
+      par.children.dLayer.unset(id2.int)
+      par.children.dLayer.set(id1.int)
+    
     n.id.id = id1
-
     tree.nodes[f1] = tree.nodes[f2]
 
 proc makeNode(tree:var SceneTree, d:DenseHandle): SceneNode =
@@ -110,38 +134,15 @@ proc makeNode(tree:var SceneTree, s:SparseHandle): SceneNode =
   assert hid.int >= tree.toSFilter.len or tree.toSFilter[hid] == 0
   return SceneNode(id:SceneID(kind:rSparse, id:hid), children:newQueryFilter())
 
-proc getFreeId(tree:var SceneTree):int =
-  if tree.freelist.len > 0:
-    return tree.freelist.pop()
-
-  tree.nodes.setLen(tree.nodes.len+1)
-  return tree.nodes.len-1
-
 #=###################################################################################################################################=#
 #=####################################################### EXPORTED API ##############################################################=#
 #=###################################################################################################################################=#
 
-proc addChild*(tree:var SceneTree, h:DenseHandle|SparseHandle) =
+proc addChild*(tree:var SceneTree, node:SceneNode|ptr SceneNode, h:DenseHandle|SparseHandle) =
   var n = tree.makeNode(h)
   var id = tree.getFreeId()
   tree.nodes[id] = n
-
-  case n.id.kind:
-    of rDense:
-      if n.id.id.int >= tree.toDFilter.len:
-        tree.toDFilter.setLen(n.id.id+1)
-
-      tree.toDFilter[n.id.id] = id+1
-    of rSparse:
-      if n.id.id.int >= tree.toSFilter.len:
-        tree.toSFilter.setLen(n.id.id+1)
-
-      tree.toSFilter[n.id.id] = id+1
-
-proc addChild*(tree:var SceneTree, node:ptr SceneNode, h:DenseHandle|SparseHandle) =
-  var n = tree.makeNode(h)
-  var id = tree.getFreeId()
-  tree.nodes[id] = n
+  n.parent = addr node.id
 
   case n.id.kind:
     of rDense:
@@ -159,32 +160,17 @@ proc addChild*(tree:var SceneTree, node:ptr SceneNode, h:DenseHandle|SparseHandl
       tree.toSFilter[hid] = id+1
       node.children.sLayer.set(hid)
 
+proc addChild*(tree:var SceneTree, h:DenseHandle|SparseHandle) =
+  tree.addChild(tree.root, h)
+
 proc addChild*(tree:var SceneTree, d:DenseHandle, h:DenseHandle|SparseHandle) =
-  var node = addr tree.nodes[tree.toDFilter[d.obj.id.toIdx]-1]
-  var n = tree.makeNode(h)
-  var id = tree.getFreeId()
-  tree.nodes[id] = n
-
-  case n.id.kind:
-    of rDense:
-      let hid = n.id.id.int
-      if hid >= tree.toDFilter.len:
-        tree.toDFilter.setLen(hid+1)
-
-      tree.toDFilter[hid] = id+1
-      tree.nodes[tree.toDFilter[d.obj.id.toIdx]-1].children.dLayer.set(hid)
-    of rSparse:
-      let hid = n.id.id.int
-      if hid >= tree.toSFilter.len:
-        tree.toSFilter.setLen(hid+1)
-
-      tree.toSFilter[hid] = id+1
-      tree.nodes[tree.toSFilter[d.obj.id.toIdx]-1].children.sLayer.set(hid)
-
-proc getParent(tree:SceneTree, d:DenseHandle): ptr SceneNode =
+  var node = tree.nodes[tree.toDFilter[d.obj.id.toIdx]-1]
+  tree.addChild(node, h)
+  
+proc getParent(tree:SceneTree, d:DenseHandle): SceneNode =
   return tree.getParent(tree.nodes[tree.toDFilter[d.obj.id.toIdx]])
 
-proc getParent(tree:SceneTree, s:SparseHandle): ptr SceneNode =
+proc getParent(tree:SceneTree, s:SparseHandle): SceneNode =
   return tree.getParent(tree.nodes[tree.toSFilter[s.id]])
 
 proc getChildren(tree:SceneTree, d:DenseHandle): ptr QueryFilter =
@@ -199,7 +185,12 @@ proc deleteNode*(tree: var SceneTree, d:DenseHandle) =
 proc deleteNode*(tree: var SceneTree, s:SparseHandle) =
   tree.sDestroyNode(s.id)
 
-template setUp*(world:var ECSWorld, tree:var SceneTree, root:DenseHandle|SparseHandle) =
+template setUp*(world:var ECSWorld, tree:var SceneTree, r:DenseHandle|SparseHandle) =
+  var root = tree.makeNode(r)
+  var id = tree.getFreeId()
+  tree.nodes[id] = root
+  tree.root = root
+
   discard world.events.onDenseEntityDestroyed(
     proc (ev:DenseEntityDestroyedEvent) =
       let id = ev.entity.obj.id.toIdx
@@ -216,6 +207,42 @@ template setUp*(world:var ECSWorld, tree:var SceneTree, root:DenseHandle|SparseH
   discard world.events.onDenseEntityMigrated(
     proc (ev:DenseEntityMigratedEvent) =
       let id = ev.entity.obj.id.toIdx
-      tree.overrideNodes(id, ev.oldId.toIdx.uint)
-      tree.overrideNodes(ev.oldId.toIdx.uint, ev.lastId)
+      let oldId = ev.oldId.toIdx
+      if oldId.int < tree.toDFilter.len and tree.toDFilter[oldId] > 0:
+        if id.int < tree.toDFilter.len and tree.toDFilter[id] > 0:
+          var n = addr tree.nodes[tree.toDFilter[id]-1]
+          tree.getParent(n).unsetChild(n)
+
+        tree.overrideNodes(id, ev.oldId.toIdx.uint)
+        tree.overrideNodes(ev.oldId.toIdx.uint, ev.lastId)
+  )
+
+  discard world.events.onDensified(
+    proc (ev:DensifiedEvent) =
+      let id = ev.oldSparse.id
+      let nid = ev.newDense.obj.id.toIdx
+      if id.int < tree.toSFilter.len and tree.toSFilter[id] > 0:
+        var n = tree.sGetNode(id)
+        var par = tree.getParent(n)
+
+        if not par.isNil:
+          par.children.sLayer.unset(id.int)
+          par.children.dLayer.set(nid.int)
+
+        n.id = SceneID(kind:rDense, id:nid)
+  )
+
+  discard world.events.onSparsified(
+    proc (ev:SparsifiedEvent) =
+      let id = ev.oldDense.obj.id.toIdx
+      let nid = ev.newSparse.id
+      if id.int < tree.toDFilter.len and tree.toDFilter[id] > 0:
+        var n = tree.dGetNode(id)
+        var par = tree.getParent(n)
+
+        if not par.isNil:
+          par.children.dLayer.unset(id.int)
+          par.children.sLayer.set(nid.int)
+
+        n.id = SceneID(kind:rSparse, id:nid)
   )
