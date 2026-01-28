@@ -242,7 +242,7 @@ proc deleteNode*(tree: var SceneTree, s:SparseHandle) =
     return
   tree.sDestroyNode(s.id)
 
-template setUp*(world:var ECSWorld, tree:var SceneTree, r:DenseHandle|SparseHandle) =
+template setUp*(world:var ECSWorld, tree:var SceneTree) =
 
   discard world.events.onDenseEntityDestroyed(
     proc (ev:DenseEntityDestroyedEvent) =

@@ -15,8 +15,8 @@ suite "SceneTree extended torture":
     discard world.registerComponent(Position)
 
     let r = world.createEntity(0)
-    var tree: SceneTree
-    world.setUp(tree, r)
+    var tree = initSceneTree(r)
+    world.setUp(tree)
 
     check tree.root != nil
     check tree.root.id.id == r.obj.id.toIdx
@@ -28,8 +28,8 @@ suite "SceneTree extended torture":
     let r = world.createEntity(0)
     let a = world.createEntity(0)
 
-    var tree: SceneTree
-    world.setUp(tree, r)
+    var tree = initSceneTree(r)
+    world.setUp(tree)
     tree.addChild(a)
 
     let n = tree.dGetNode(a.obj.id.toIdx)
@@ -42,8 +42,8 @@ suite "SceneTree extended torture":
     let r = world.createEntity(0)
     let s = world.createSparseEntity(world.getComponentId(Position))
 
-    var tree: SceneTree
-    world.setUp(tree, r)
+    var tree = initSceneTree(r)
+    world.setUp(tree)
     tree.addChild(s)
 
     let root = tree.root
@@ -57,8 +57,8 @@ suite "SceneTree extended torture":
     let a = world.createEntity(0)
     let b = world.createEntity(0)
 
-    var tree: SceneTree
-    world.setUp(tree, r)
+    var tree = initSceneTree(r)
+    world.setUp(tree)
     tree.addChild(a)
     tree.addChild(a, b)
 
@@ -74,8 +74,8 @@ suite "SceneTree extended torture":
     let r = world.createEntity(0)
     let a = world.createEntity(0)
 
-    var tree: SceneTree
-    world.setUp(tree, r)
+    var tree = initSceneTree(r)
+    world.setUp(tree)
     tree.addChild(a)
 
     let old = a.obj.id.toIdx
@@ -94,8 +94,8 @@ suite "SceneTree extended torture":
     let r = world.createEntity(0)
     let a = world.createEntity(0)
 
-    var tree: SceneTree
-    world.setUp(tree, r)
+    var tree = initSceneTree(r)
+    world.setUp(tree)
     tree.addChild(a)
 
     world.deleteEntity(a)
@@ -113,8 +113,8 @@ suite "SceneTree extended torture":
     let r = world.createEntity(0)
     var s = world.createSparseEntity(pid)
 
-    var tree: SceneTree
-    world.setUp(tree, r)
+    var tree = initSceneTree(r)
+    world.setUp(tree)
     tree.addChild(s)
 
     var d = world.makeDense(s)
@@ -129,8 +129,8 @@ suite "SceneTree extended torture":
     let r = world.createEntity(0)
     var a = world.createEntity(0)
 
-    var tree: SceneTree
-    world.setUp(tree, r)
+    var tree = initSceneTree(r)
+    world.setUp(tree)
     tree.addChild(a)
 
     let s = world.makeSparse(a)
@@ -147,8 +147,8 @@ suite "SceneTree extended torture":
     let a = world.createEntity(0)
     let b = world.createEntity(0)
 
-    var tree: SceneTree
-    world.setUp(tree, r)
+    var tree = initSceneTree(r)
+    world.setUp(tree)
     tree.addChild(a)
     tree.addChild(b)
     var ents = @[a,b]
