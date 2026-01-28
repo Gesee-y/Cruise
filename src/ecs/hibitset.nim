@@ -420,7 +420,7 @@ proc `[]=`*(h: var SparseHiBitSet, idx: int, value: bool) {.inline.} =
   ## Array assignment syntax
   if value: h.set(idx) else: h.unset(idx)
 
-proc clear*(h: var SparseHiBitSet) =
+template clear*(h: SparseHiBitSet) =
   ## Resets all bits to 0 by clearing the sparse set counters.
   ## Does not deallocate memory, but makes all blocks logically non-existent.
   ## 

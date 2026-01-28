@@ -28,10 +28,39 @@ suite.add benchmarkWithSetup(
     
     for i in 0..<ENTITY_COUNT:
       ents[i] = w.createEntity()
+
+    for e in ents:
+      tree.addChild(e)
+
+    for e in ents:
+      tree.deleteNode(e)
   ),
   (
     for e in ents:
-      tree.addChild(e) 
+      tree.addChild(e)
   )
 )
 showDetailed(suite.benchmarks[0])
+
+suite.add benchmarkWithSetup(
+  "tree_remove_node",
+  Samples,
+  Warmup,
+  (
+    var w = newECSWorld()
+    var root = w.createEntity()
+    var tree = initSceneTree(root)
+    var ents = newSeq[DenseHandle](ENTITY_COUNT)
+    
+    for i in 0..<ENTITY_COUNT:
+      ents[i] = w.createEntity()
+
+    for e in ents:
+      tree.addChild(e)
+  ),
+  (
+    for e in ents:
+      tree.deleteNode(e)
+  )
+)
+showDetailed(suite.benchmarks[1])

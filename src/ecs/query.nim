@@ -211,6 +211,10 @@ proc addFilter(qs: var QuerySignature, qf:QueryFilter) =
   ## Adds a new filter to the query
   qs.filters.add(addr qf)
 
+template clear*(qf: QueryFilter) = 
+  qf.dLayer.clear()
+  qf.sLayer.clear()
+
 proc matchesArchetype(sig: QuerySignature, arch: ArchetypeMask): bool =
   ## Checks if an Archetype's mask matches a given Query Signature.
   ##
