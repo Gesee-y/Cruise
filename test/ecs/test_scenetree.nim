@@ -18,8 +18,8 @@ suite "SceneTree extended torture":
     var tree = initSceneTree(r)
     world.setUp(tree)
 
-    check tree.root != nil
-    check tree.root.id.id == r.obj.id.toIdx
+    check tree.getRoot != nil
+    check tree.getRoot.id.id == r.obj.id.toIdx
 
   test "parent pointer wiring":
     var world = newECSWorld()
@@ -33,7 +33,7 @@ suite "SceneTree extended torture":
     tree.addChild(a)
 
     let n = tree.dGetNode(a.obj.id.toIdx)
-    check n.parent[] == tree.root.id
+    check tree.getParent(n).id == tree.getRoot.id
 
   test "dense + sparse hierarchy":
     var world = newECSWorld()
@@ -46,7 +46,8 @@ suite "SceneTree extended torture":
     world.setUp(tree)
     tree.addChild(s)
 
-    let root = tree.root
+    let root = tree.getRoot
+    echo root.children
     check root.children.sLayer.get(s.id.int)
 
   test "recursive delete":
@@ -85,7 +86,7 @@ suite "SceneTree extended torture":
 
     let n = tree.dGetNode(a.obj.id.toIdx)
     check n != nil
-    check n.parent[] == tree.root.id
+    check tree.getParent(n).id == tree.getRoot.id
 
   test "freelist reuse":
     var world = newECSWorld()
@@ -103,7 +104,7 @@ suite "SceneTree extended torture":
     let b = world.createEntity(0)
     tree.addChild(b)
 
-    let root = tree.root
+    let root = tree.getRoot
     check root.children.dLayer.get(b.obj.id.toIdx.int)
 
   test "densify keeps parent":
@@ -120,7 +121,7 @@ suite "SceneTree extended torture":
     var d = world.makeDense(s)
     let n = tree.dGetNode(d.obj.id.toIdx)
     check n != nil
-    check n.parent[] == tree.root.id
+    check tree.getParent(n).id == tree.getRoot.id
 
   test "sparsify keeps parent":
     var world = newECSWorld()
@@ -137,7 +138,7 @@ suite "SceneTree extended torture":
     let n = tree.sGetNode(s.id)
 
     check n != nil
-    check n.parent[] == tree.root.id
+    check tree.getParent(n).id == tree.getRoot.id
 
   test "batch migration stable":
     var world = newECSWorld()
@@ -159,5 +160,5 @@ suite "SceneTree extended torture":
     let na = tree.dGetNode(a.obj.id.toIdx)
     let nb = tree.dGetNode(b.obj.id.toIdx)
 
-    check na.parent[] == tree.root.id
-    check nb.parent[] == tree.root.id
+    check tree.getParent(na).id == tree.getRoot.id
+    check tree.getParent(nb).id == tree.getRoot.id

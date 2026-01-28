@@ -118,7 +118,7 @@ sig.addFilter(fil)
 * **Pluggable views**: Cruise ECS allows multiple views or projections of the world using hooks and filters. These are implemented as **plugins**, allowing users to share ECS views and work in their preferred way.
 
 ```nim
-var tree = initSceneTree()
+var tree = initSceneTree(rootEntity)
 world.setUp(tree)
 
 tree.addChild(entity)

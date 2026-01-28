@@ -17,13 +17,13 @@ type
     kind:RootKind
     id:uint
 
-  SceneNode = ref object
+  SceneNode = object
     id: SceneID
-    parent: ptr SceneID
+    parent: int
     children: QueryFilter
-  
+
   SceneTree = object
-    root:SceneNode
+    root:int
     toDFilter:seq[int]
     toSFilter:seq[int]
     nodes:seq[SceneNode]
@@ -38,40 +38,41 @@ proc getId(d:DenseHandle):uint = d.obj.id.toIdx
 proc getId(s:SparseHandle):uint = s.id
 
 proc reset*(tree: var SceneTree) =
-  tree.root = nil
+  tree.root = -1
   tree.toDFilter = @[]
   tree.toSFilter = @[]
   tree.nodes = @[]
   tree.freelist = @[]
 
 proc isRoot(tree: SceneTree, d:DenseHandle|SparseHandle):bool =
-  tree.root.id.kind == d.getKind and tree.root.id.id == d.getId()
+  let rid = tree.getRoot().id
+  rid.kind == d.getKind and rid.id == d.getId()
 
 proc dDestroyNode(tree:var SceneTree, id:uint)
 proc sDestroyNode(tree:var SceneTree, id:uint)
 
-proc dGetNode(tree:SceneTree, id:uint): SceneNode =
+proc dGetNode(tree:SceneTree, id:uint): ptr SceneNode =
   if id.int < tree.toDFilter.len and tree.toDFilter[id] > 0:
-    return tree.nodes[tree.toDFilter[id]-1]
+    return addr tree.nodes[tree.toDFilter[id]-1]
     
   return nil
 
-proc sGetNode(tree:SceneTree, id:uint): SceneNode =
+proc sGetNode(tree:SceneTree, id:uint): ptr SceneNode =
   if id.int < tree.toSFilter.len and tree.toSFilter[id] > 0:
-    return tree.nodes[tree.toSFilter[id]-1]
+    return addr tree.nodes[tree.toSFilter[id]-1]
 
   return nil
 
-proc getNode(tree:SceneTree, id:SceneID): SceneNode =
+proc getNode(tree:SceneTree, id:SceneID): ptr SceneNode =
   case id.kind:
     of rDense:
       return tree.dGetNode(id.id)
     of rSparse:
       return tree.sGetNode(id.id)
 
-proc getParent(tree:SceneTree, n:SomeSceneNode):SceneNode =
-  if n.parent.isNil: return nil
-  return tree.getNode(n.parent[])
+proc getParent(tree:SceneTree, n:SomeSceneNode):ptr SceneNode =
+  if n.parent == -1: return nil
+  return addr tree.nodes[n.parent]
 
 proc getChildren(n:SomeSceneNode): ptr QueryFilter =
   return addr n.children
@@ -142,17 +143,17 @@ proc overrideNodes(tree:var SceneTree, id1, id2:uint) =
       par.children.dLayer.set(id1.int)
     
     n.id.id = id1
-    tree.nodes[f1] = tree.nodes[f2]
+    tree.toDFilter[id1] = f2+1
 
 proc makeNode(tree:var SceneTree, d:DenseHandle): SceneNode =
   let hid = d.obj.id.toIdx
   assert hid.int >= tree.toDFilter.len or tree.toDFilter[hid] == 0
-  return SceneNode(id:SceneID(kind:rDense, id:hid), children:newQueryFilter())
+  return SceneNode(id:SceneID(kind:rDense, id:hid), parent: -1, children:newQueryFilter())
 
 proc makeNode(tree:var SceneTree, s:SparseHandle): SceneNode =
   let hid = s.id
   assert hid.int >= tree.toSFilter.len or tree.toSFilter[hid] == 0
-  return SceneNode(id:SceneID(kind:rSparse, id:hid), children:newQueryFilter())
+  return SceneNode(id:SceneID(kind:rSparse, id:hid), parent: -1, children:newQueryFilter())
 
 #=###################################################################################################################################=#
 #=####################################################### EXPORTED API ##############################################################=#
@@ -163,7 +164,7 @@ proc setRoot*(tree: var SceneTree, h:DenseHandle|SparseHandle) =
   var n = tree.makeNode(h)
   var id = tree.getFreeId()
   tree.nodes[id] = n
-  tree.root = n
+  tree.root = id
 
   case n.id.kind:
     of rDense:
@@ -179,17 +180,24 @@ proc setRoot*(tree: var SceneTree, h:DenseHandle|SparseHandle) =
 
       tree.toSFilter[hid] = id+1
 
+proc getRoot*(tree: SceneTree): ptr SceneNode =
+  return addr tree.nodes[tree.root]
+
 proc initSceneTree*(root:DenseHandle|SparseHandle): SceneTree =
   var tree:SceneTree
   tree.setRoot(root)
 
   return tree
 
-proc addChild*(tree:var SceneTree, node:SceneNode|ptr SceneNode, h:DenseHandle|SparseHandle) =
-  var n = tree.makeNode(h)
-  var id = tree.getFreeId()
-  tree.nodes[id] = n
-  n.parent = addr node.id
+proc addChild*(tree:var SceneTree, node:ptr SceneNode, h:DenseHandle|SparseHandle, id:int) =
+  tree.nodes[id] = tree.makeNode(h)
+  var n = addr tree.nodes[id]
+
+  case node.id.kind:
+    of rDense:
+      n.parent = tree.toDFilter[node.id.id]-1
+    of rSparse:
+      n.parent = tree.toSFilter[node.id.id]-1
 
   case n.id.kind:
     of rDense:
@@ -208,20 +216,23 @@ proc addChild*(tree:var SceneTree, node:SceneNode|ptr SceneNode, h:DenseHandle|S
       node.children.sLayer.set(hid)
 
 proc addChild*(tree:var SceneTree, h:DenseHandle|SparseHandle) =
-  tree.addChild(tree.root, h)
+  var id = tree.getFreeId()
+  tree.addChild(tree.getRoot, h, id)
 
 proc addChild*(tree:var SceneTree, d:DenseHandle, h:DenseHandle|SparseHandle) =
-  var node = tree.nodes[tree.toDFilter[d.obj.id.toIdx]-1]
-  tree.addChild(node, h)
+  var id = tree.getFreeId()
+  var node = addr tree.nodes[tree.toDFilter[d.obj.id.toIdx]-1]
+  tree.addChild(node, h, id)
 
 proc addChild*(tree:var SceneTree, s:SparseHandle, h:DenseHandle|SparseHandle) =
-  var node = tree.nodes[tree.toSFilter[s.id]-1]
-  tree.addChild(node, h)
+  var id = tree.getFreeId()
+  var node = addr tree.nodes[tree.toSFilter[s.id]-1]
+  tree.addChild(node, h, id)
   
-proc getParent*(tree:SceneTree, d:DenseHandle): SceneNode =
+proc getParent*(tree:SceneTree, d:DenseHandle):ptr SceneNode =
   return tree.getParent(tree.nodes[tree.toDFilter[d.obj.id.toIdx]-1])
 
-proc getParent*(tree:SceneTree, s:SparseHandle): SceneNode =
+proc getParent*(tree:SceneTree, s:SparseHandle):ptr SceneNode =
   return tree.getParent(tree.nodes[tree.toSFilter[s.id]-1])
 
 proc getChildren*(tree:SceneTree, d:DenseHandle): ptr QueryFilter =
