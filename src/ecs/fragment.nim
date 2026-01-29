@@ -308,7 +308,7 @@ proc newSparseBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, m
 proc newSparseBlocks[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, masks:openArray[uint]) =
   ## Allocate multiple sparse blocks at once.
   let S = sizeof(uint)*8
-  let base = f.toSparse.len
+  let base = offset shr 6
 
   for c in 0..<masks.len:
     let m = masks[c]
@@ -321,7 +321,6 @@ proc newSparseBlocks[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, 
       f.sparse.setLen(f.sparse.len+1)
     
     let id = f.toSparse[i]-1
-    let offset = i*S
     var msk = m
     
     while msk != 0:

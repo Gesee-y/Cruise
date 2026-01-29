@@ -129,9 +129,11 @@ proc allocateSparseEntity(table: var ECSWorld, components:openArray[int]):uint =
   ## Push remaining slots of the block into the free list
   let diff = (table.max_index + S) - table.max_index
   let base = table.free_list.len
+  var c = 0
   table.free_list.setLen(base+diff)
   for i in table.max_index+1..<table.max_index + S:
-    table.free_list[base+i] = i.uint
+    table.free_list[base+c] = i.uint
+    c += 1
 
   let id = table.max_index
   table.max_index += S

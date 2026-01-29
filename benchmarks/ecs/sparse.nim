@@ -23,8 +23,6 @@ type
   Heal = object
     hp:int
 
-
-# Fake component ids pour les tests
 let
   Pos = 0
   Vel = 1
