@@ -110,8 +110,6 @@ suite "Sparse ECS logic":
 
     let mask = w.registry.entries[pid].getSparseMaskOp(
       w.registry.entries[pid].rawPointer)
-    let cmask = w.registry.entries[pid].getSparseChunkMaskOp(
-      w.registry.entries[pid].rawPointer, 0)
 
     check mask[][0] == false
     check mask[].getL0(0) == 0'u

@@ -28,7 +28,7 @@ type
     newSparseBlockOp: proc (p:pointer, offset:int, m:uint) {.noSideEffect, nimcall, inline.}
 
     ## Allocate multiple sparse blocks at once.
-    newSparseBlocksOp: proc (p:pointer, m:seq[uint]) {.noSideEffect, nimcall, inline.}
+    newSparseBlocksOp: proc (p:pointer, offset:int, m:seq[uint]) {.noSideEffect, nimcall, inline.}
 
     ## Override one value with another (dense/dense or sparse/sparse via packed IDs).
     overrideValsOp: proc (p:pointer, i:uint, j:uint)  {.noSideEffect, nimcall, inline.}
@@ -50,7 +50,7 @@ type
     )
 
     ## Get the per-slot change mask for a dense block.
-    getChangeMaskop: proc (p:pointer, id:int):seq[uint] {.noSideEffect, nimcall, inline.}
+    getChangeMaskop: proc (p:pointer):ptr QueryFilter {.noSideEffect, nimcall, inline.}
 
     ## Get the global sparse change bitset.
     getSparseChangeMaskop: proc (p:pointer):ptr HibitsetType {.noSideEffect, nimcall, inline.}
@@ -123,19 +123,15 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
       fr.newBlockAt(i)
 
-    let newBlk = proc (p:pointer, offset:int) {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      discard fr.newBlock(offset)
-
     # --- Sparse operations ---
 
     let newSparseBlk = proc (p:pointer, offset:int, m:uint) {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
       fr.newSparseBlock(offset, m)
 
-    let newSparseBlks = proc (p:pointer, m:seq[uint]) {.noSideEffect, nimcall, inline.} =
+    let newSparseBlks = proc (p:pointer, offset:int, m:seq[uint]) {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      fr.newSparseBlocks(m)
+      fr.newSparseBlocks(offset, m)
 
     let actBitB = proc (p:pointer, idxs:seq[uint]) {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
@@ -167,13 +163,9 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
 
     # --- Change tracking accessors ---
 
-    let getchangeMask = proc (p:pointer, id:int):seq[uint] {.noSideEffect, nimcall, inline.} =
+    let getchangeMask = proc (p:pointer):ptr QueryFilter {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      return fr.blocks[id].valMask
-
-    let getSchangeMask = proc (p:pointer):ptr HibitsetType {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      return addr fr.sparseChanges
+      return addr fr.changeFilter
 
     let getsmask = proc (p:pointer):ptr HibitsetType {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
@@ -186,14 +178,6 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
     let clearSCh = proc (p:pointer) {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
       fr.clearSparseChanges()
-
-    let getscmask = proc (p:pointer, i:int):uint {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      return fr.sparse[fr.toSparse[i]-1].mask
-
-    let setsmask = proc (p:pointer, m:seq[uint]) {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      # Placeholder: sparse mask assignment can be implemented here.
 
     let actSparseBit = proc (p:pointer, i:uint) {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
@@ -210,7 +194,6 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
     entry.rawPointer = pt
     entry.resizeOp = res
     entry.newBlockAtOp = newBlkAt
-    entry.newBlockOp = newBlk
     entry.newSparseBlockOp = newSparseBlk
     entry.newSparseBlocksOp = newSparseBlks
     entry.overrideValsOp = overv
@@ -218,10 +201,7 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
     entry.overrideSDOp = overSD
     entry.overrideValsBatchOp = overvb
     entry.getChangeMaskop = getchangeMask
-    entry.getSparseChangeMaskOp = getSchangeMask
     entry.getSparseMaskOp = getsmask
-    entry.getSparseChunkMaskOp = getscmask
-    entry.setSparseMaskOp = setsmask
     entry.clearDenseChangeOp = clearDCh
     entry.clearSparseChangeOp = clearSCh
     entry.deactivateSparseBitOp = deactSparseBit

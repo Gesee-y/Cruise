@@ -16,15 +16,6 @@ type
     id: int   ## The ID of the component to filter by.
     op: QueryOp ## The operation.
   
-  ## Represent an independent filter that can be used narrow queries
-  QueryFilter* = object
-
-    # Dense Query
-    dLayer:HibitsetType
-
-    # Sparse Query
-    sLayer:HibitsetType
-
   ## The compiled representation of a query.
   ## It translates a list of component constraints into efficient bitmasks
   ## that can be rapidly compared against archetype masks.
@@ -265,14 +256,14 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator)
         for i in 0..<max(mlen, nmlen):
           masked = true
           if i < mlen: 
-            let incl = world.registry.entries[sig.modified[i]].getChangeMaskOp(world.registry.entries[sig.modified[i]].rawPointer, zone.block_idx)
+            let incl = world.registry.entries[sig.modified[i]].getChangeMaskOp(world.registry.entries[sig.modified[i]].rawPointer).dLayer
             for j in 0..<maskCount:
-              res[j] = res[j] and incl[j]
+              res[j] = res[j] and incl.getL0(zone.block_idx*sizeof(uint)*8 + j)
 
           if i < nmlen: 
-            let excl = world.registry.entries[sig.notModified[i]].getChangeMaskOp(world.registry.entries[sig.notModified[i]].rawPointer, zone.block_idx)
+            let excl = world.registry.entries[sig.notModified[i]].getChangeMaskOp(world.registry.entries[sig.notModified[i]].rawPointer).dLayer
             for j in 0..<maskCount:
-              res[j] = res[j] and not excl[j]
+              res[j] = res[j] and not excl.getL0(zone.block_idx*sizeof(uint)*8 + j)
 
         for qf in sig.filters:
           masked = true
@@ -322,56 +313,6 @@ proc denseQueryCount*(world: ECSWorld, sig: QuerySignature): int =
 ################################################################### SPARSE QUERIES #################################################################
 ####################################################################################################################################################
 
-proc getSparseMasks(world: ECSWorld, componentIds: seq[int]): seq[seq[uint]] =
-  ## Get sparse masks for each component
-  result = newSeq[seq[uint]](componentIds.len)
-  
-  for i, compId in componentIds:
-    let entry = world.registry.entries[compId]
-    #result[i] = entry.getSparseMaskOp(entry.rawPointer)
-
-proc andMasks(masks: seq[seq[uint]]): seq[uint] =
-  ## Perform AND operation on all sparse masks
-  if masks.len == 0:
-    return @[]
-  
-  result = masks[0]
-  
-  for i in 1..<masks.len:
-    let minLen = min(result.len, masks[i].len)
-    result.setLen(minLen)
-    
-    for j in 0..<minLen:
-      result[j] = result[j] and masks[i][j]
-
-proc filterExcludedMasks(baseMask: var seq[uint], excludeMasks: seq[seq[uint]]) =
-  ## Remove excluded components from base mask
-  for excludeSeq in excludeMasks:
-    let minLen = min(baseMask.len, excludeSeq.len)
-    
-    for i in 0..<minLen:
-      baseMask[i] = baseMask[i] and not excludeSeq[i]
-
-proc getChangeMask(world: ECSWorld, sig:QuerySignature, modif, nmodif:seq[int], blk:int):HibitsetType =
-  let mlen = sig.modified.len
-  let nmlen = sig.notModified.len
-  let maskCount = 1
-  var modDef = 0'u - 1
-  var res:HibitsetType
-  let nmodDef = 0'u
-
-  for i in 0..<max(mlen, nmlen):
-    if i < mlen: 
-      let modEntry = world.registry.entries[sig.modified[i]]
-      let incl = modEntry.getSparseChangeMaskOp(modentry.rawPointer)
-      res = res and incl[]
-    if i < nmlen: 
-      let nmodEntry = world.registry.entries[sig.notModified[i]]
-      let excl = nmodEntry.getSparseChangeMaskop(nmodentry.rawPointer)
-      res = res and not excl[]
-
-  return res
-
 iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, SparseIterator) =
   ## Iterate through sparse entities matching the query
   ## Returns chunk index and mask iterator for each matching chunk
@@ -400,65 +341,17 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, SparseIterato
 
     for compId in sig.modified:
       let entry = world.registry.entries[compId]
-      res = res and entry.getSparseChangeMaskop(entry.rawPointer)[]
+      res = res and entry.getChangeMaskop(entry.rawPointer).sLayer
 
     for compId in sig.notModified:
       let entry = world.registry.entries[compId]
-      res = res and not entry.getSparseChangeMaskOp(entry.rawPointer)[]
+      res = res and not entry.getChangeMaskOp(entry.rawPointer).sLayer
 
     for qf in sig.filters:
       res = res and qf.sLayer
 
     for chunkIdx in res.blkIter:
       yield (chunkIdx, SparseIterator(m:res.getL0(chunkIdx)))
-
-proc sparseQueryCache*(world: ECSWorld, sig: QuerySignature): sparseQueryResult =
-  ## Iterate through sparse entities matching the query
-  ## Returns chunk index and mask iterator for each matching chunk
-  
-  var includeIds: seq[int]
-  var excludeIds: seq[int]
-  
-  for comp in sig.components:
-    if comp.op == qInclude:
-      includeIds.add(comp.id)
-    elif comp.op == qExclude:
-      excludeIds.add(comp.id)
-    # Note: qModified and qNotModified are cached but not processed in this implementation
-  
-  if includeIds.len > 0:
-  
-    # Get sparse masks for included components
-    let includeMasks = getSparseMasks(world, includeIds)
-  
-    # AND all included masks
-    var resultMask = andMasks(includeMasks)
-  
-    # Filter out excluded components
-    if excludeIds.len > 0:
-      let excludeMasks = getSparseMasks(world, excludeIds)
-      filterExcludedMasks(resultMask, excludeMasks)
-  
-    # Iterate through chunks with entities
-    let S = sizeof(uint)*8
-    var chk = newSeq[uint]()
-    for i in 0..<resultMask.len:
-      var m = resultMask[i]
-      
-      while m != 0:
-        let chunkIdx = i*S + countTrailingZeroBits(m)
-        var chunkMask = (1'u shl S-1) - 1'u
-        m = m and (m-1)
-
-        for compId in includeIds:
-          let entry = world.registry.entries[compId]
-          let entityMask = entry.getSparseChunkMaskOp(entry.rawPointer, chunkIdx)
-          chunkMask = chunkMask and entityMask
-
-        chk.add(chunkMask)
-
-    result.rmask = resultMask
-    result.chunks = chk
 
 iterator items*(sr:sparseQueryResult):(int, uint) =
   ## Iterator for the cached `sparseQueryResult`.

@@ -19,12 +19,6 @@ type
   SoAFragment*[N:static int,P:static bool,T,B] = object
     ## SoA storage for all fields.
     data*:T
-    ## Global offset of this fragment (start index in the array).
-    offset:int
-    ## Bit mask describing which slots are active.
-    mask:uint
-    ## Per-slot change mask (used when P == true).
-    valMask:seq[uint]
 
   ## A dynamically-sized array of SoA fragments.
   ##
@@ -41,14 +35,9 @@ type
   SoAFragmentArray*[N:static int,P:static bool,T,S,B] = ref object
     ## Dense blocks.
     blocks*:seq[ref SoAFragment[N,P,T,B]]
-    ## Change mask per dense block.
-    blkChangeMask:seq[uint]
     ## Sparse blocks (one block represents sizeof(uint)*8 entities).
     sparse*:seq[SoAFragment[sizeof(uint)*8,P,S,B]]
-    ## Bitset tracking sparse changes.
-    sparseChanges:HiBitSetType
-    ## Change mask for sparse blocks.
-    sparseChangeMask:seq[uint]
+    changeFilter:QueryFilter
     ## Mapping from dense indices to sparse blocks.
     toSparse:seq[int]
     ## Dense activation mask.
@@ -283,33 +272,14 @@ template overrideVals(f, archId, ents, ids, toSwap, toAdd:untyped) =
     f[a] = f[e]
     f[e] = f[s]
 
-template setChanged[N,P,T,B](f: var SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B], id:uint|int) =
-  ## Mark a slot inside a fragment as modified.
-  var blk = id shr 6
-  var bitp = id and 63
-  f.valMask[blk] = f.valMask[blk] or (1'u shl bitp)
 
 template setChanged[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint) =
   ## Mark a dense block as modified.
-  var bid = id shr BLK_SHIFT
-  var blk = bid shr 6
-  var bitp = bid and 63
-
-  if blk.int >= f.blkChangeMask.len:
-    f.blkChangeMask.setLen(blk+1)
-  
-  f.blkChangeMask[blk] = f.blkChangeMask[blk] or (1'u shl bitp)
+  f.changeFilter.dSet(id.toIdx.int)
 
 template setChangedSparse[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint) =
   ## Mark a sparse entry as modified.
-  var bid = id shr 6
-  var blk = bid shr 6
-  var bitp = bid and 63
-
-  if blk.int >= f.blkChangeMask.len:
-    f.blkChangeMask.setLen(blk+1)
-  
-  f.sparseChanges.set(id.int)
+  f.changeFilter.sSet(id.int)
 
 proc getDataType[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B]):typedesc[B] =
   ## Return the AoS component type stored in this array.
@@ -328,17 +298,17 @@ proc newSparseBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, m
     f.toSparse[i] = f.sparse.len+1
     f.sparse.setLen(f.sparse.len+1)
   
-  let id = f.toSparse[i]-1    
-  var blk = addr f.sparse[id]
+  let id = f.toSparse[i]-1
 
-  blk.offset = offset
-  blk.mask = blk.mask or m
-  blk.valMask = @[0'u]
+  var msk = m
+  while msk != 0:
+    f.sparseMask.set(offset + countTrailingZeroBits(msk))
+    msk = msk and (msk-1)
 
-proc newSparseBlocks[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], masks:openArray[uint]) =
+proc newSparseBlocks[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, masks:openArray[uint]) =
   ## Allocate multiple sparse blocks at once.
   let S = sizeof(uint)*8
-  let base = f.sparse.len
+  let base = f.toSparse.len
 
   for c in 0..<masks.len:
     let m = masks[c]
@@ -351,9 +321,12 @@ proc newSparseBlocks[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], masks:openAr
       f.sparse.setLen(f.sparse.len+1)
     
     let id = f.toSparse[i]-1
-    var blk = addr f.sparse[id]
+    let offset = i*S
+    var msk = m
     
-    blk.mask = blk.mask or m
+    while msk != 0:
+      f.sparseMask.set(offset+c*S + countTrailingZeroBits(msk))
+      msk = msk and (msk-1)
 
 proc freeSparseBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int) =
   ## Free a sparse block (currently a no-op placeholder).
@@ -363,40 +336,7 @@ proc newBlockAt[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int) =
   ## Allocate a new dense block at a specific index.
   var blk:ref SoAFragment[N,P,T,B]
   new(blk)
-  blk.offset = N*i
-  blk.valMask.setLen(((N-1) shr 6) + 1)
   f.blocks[i] = blk
-
-proc newBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int):bool =
-  ## Insert a new dense block at the given offset.
-  ##
-  ## Returns true if the block was inserted, false if it overlaps
-  ## an existing block.
-  var blk: ref SoAFragment[N,P,T,B]
-  new(blk)
-  blk.offset = offset
-  blk.valMask.setLen(((N-1) shr 6) + 1)
-  
-  if f.blocks.len == 0 or offset >= N+f.blocks[^1].offset:
-    f.blocks.add(blk)
-    return true
-
-  var right = f.blocks.len-1
-  var left = 0
-
-  while left < right:
-    let center = (left + right) div 2
-    if f.blocks[center].offset > offset:
-      right = center - 1
-    elif f.blocks[center].offset < offset:
-      left = center + 1
-    else: return false
-
-  if offset - f.blocks[left].offset < N and offset - f.blocks[left].offset >= 0:
-    return false
-
-  f.blocks.insert(blk, left)
-  return true
 
 proc getBlockIdx[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:int):int =
   ## Compute the block index for a linear index.
@@ -438,7 +378,6 @@ template `[]=`[N,P,T,B](blk:var SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B],
   else:
     check(i.int < N, "Invalid access. " & $i & "is out of bound for block of size " & $N)
     when P:
-      setChanged(blk, i)
       setComponent(addr blk, i, v)
     else:
       toObjectMod(B, blk.data, i, v)
@@ -507,9 +446,10 @@ iterator iter[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B]):B =
 
 iterator pairs[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B]):(int,B) =
   ## Iterate over (global index, value) pairs.
+  var j = 0
   for blk in f.blocks:
     for i in 0..<N:
-      yield (i+blk.offset,blk[i])
+      yield (i+j*N,blk[i])
   
 proc resize[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], n:int) =
   ## Resize the number of dense blocks.
@@ -518,12 +458,8 @@ proc resize[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], n:int) =
   
 proc clearDenseChanges[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B]) =
   ## Clear all dense change tracking state.
-  for i in 0..<f.blkChangeMask.len:
-    f.blkChangeMask[i] = 0'u
-    if not f.blocks[i].isNil:
-      for j in 0..<f.blocks[i].valMask.len:
-        f.blocks[i].valMask[j] = 0'u
+  f.changeFilter.dLayer.clear()
 
 proc clearSparseChanges[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B]) =
   ## Clear all sparse change tracking state.
-  f.sparseChanges.clear()
+  f.changeFilter.sLayer.clear()

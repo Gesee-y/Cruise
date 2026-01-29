@@ -79,6 +79,7 @@ proc allocateSparseEntities(table: var ECSWorld, count:int, components:openArray
 
   ## Allocate new sparse blocks if free slots are exhausted
   var masks: seq[uint]
+  let baseOffset = table.max_index
 
   while n > 0:
     let toAdd = min(n, S)
@@ -105,7 +106,7 @@ proc allocateSparseEntities(table: var ECSWorld, count:int, components:openArray
   ## Notify each component to materialize new sparse blocks
   for id in components:
     let entry = table.registry.entries[id]
-    entry.newSparseBlocksOp(entry.rawPointer, masks)
+    entry.newSparseBlocksOp(entry.rawPointer, baseOffset, masks)
 
   table.sparse_gens.setLen(table.max_index)
   return res
@@ -115,15 +116,15 @@ proc allocateSparseEntities(table: var ECSWorld, count:int, components:openArray
 proc allocateSparseEntity(table: var ECSWorld, components:openArray[int]):uint = 
   if table.free_list.len > 0:
     let id = table.free_list.pop()
-    #activateComponentsSparse(table, id, components)
+    activateComponentsSparse(table, id, components)
     return id
 
   let S = sizeof(uint) * 8
 
   ## Allocate a new sparse block for each component
-  #for id in components:
-  #  let entry = table.registry.entries[id]
-  #  entry.newSparseBlockOp(entry.rawPointer, table.max_index, 1.uint)
+  for id in components:
+    let entry = table.registry.entries[id]
+    entry.newSparseBlockOp(entry.rawPointer, table.max_index, 1.uint)
 
   ## Push remaining slots of the block into the free list
   let diff = (table.max_index + S) - table.max_index

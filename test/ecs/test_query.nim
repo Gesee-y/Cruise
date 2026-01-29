@@ -56,10 +56,10 @@ suite "QueryFilter":
 
   test "logic ops":
     var a,b: QueryFilter
-    a.dLayer = newSparseHiBitSet()
-    b.dLayer = newSparseHiBitSet()
-    a.sLayer = newSparseHiBitSet()
-    b.sLayer = newSparseHiBitSet()
+    a.dLayer = newHiBitSet()
+    b.dLayer = newHiBitSet()
+    a.sLayer = newHiBitSet()
+    b.sLayer = newHiBitSet()
 
     a.dSet(1); b.dSet(2)
     a.sSet(1); b.sSet(2)

@@ -22,6 +22,17 @@ template onDanger(code) =
     code
 
 include "hibitset.nim"
+
+type
+  ## Represent an independent filter that can be used narrow queries
+  QueryFilter* = object
+
+    # Dense Query
+    dLayer:HibitsetType
+
+    # Sparse Query
+    sLayer:HibitsetType
+
 include "fragment.nim"
 include "entity.nim"
 include "commands.nim"
