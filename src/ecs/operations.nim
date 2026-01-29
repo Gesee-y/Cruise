@@ -45,10 +45,13 @@ proc createEntity*(world:var ECSWorld, arch:ArchetypeMask):DenseHandle =
   # Initialize entity metadata.
   e.id = (bid shl BLK_SHIFT) or id.uint 
   e.archetypeId = archId                
-  e.widx = pid                          
+  e.widx = pid
+
+  let d = DenseHandle(obj:e, gen:world.generations[pid])
+  world.events.emitDenseEntityCreated(d)
   
   # Return a public handle containing the pointer and the current generation (for safety checks).
-  return DenseHandle(obj:e, gen:world.generations[pid])
+  return d
 
 ## Overload of `createEntity` that accepts a list of Component IDs.
 ##
@@ -129,6 +132,7 @@ template deleteEntity*(world:var ECSWorld, d:DenseHandle) =
   # Remove the entity's data row from its archetype block.
   # Returns the index of the last row that was swapped into the deleted position ('l').
   let l = deleteRow(world, e.id, e.archetypeId)
+  world.events.emitDenseEntityDestroyed(d, l)
   
   # Update the handle lookup table.
   # The handle at the deleted entity's position now points to the entity that was moved.
@@ -154,7 +158,7 @@ template deleteEntity*(world:var ECSWorld, d:DenseHandle) =
 ## @param buffer_id: The ID of the command buffer to use.
 template deleteEntityDefer*(world:var ECSWorld, d:DenseHandle, buffer_id:int) =
   # Add a DeleteOp command with the source archetype ID and the entity's world index (widx).
-  world.cb[buffer_id].addComponent(DeleteOp.int, d.obj.archetypeId, 0'u32, PayLoad(eid:d.obj.widx.uint, obj:d))
+  world.cb[buffer_id].addCommmand(DeleteOp.int, d.obj.archetypeId, 0'u32, PayLoad(eid:d.obj.widx.uint, obj:d))
 
 ## Immediately migrates an entity to a new archetype (Dense storage).
 ##
@@ -173,6 +177,8 @@ proc migrateEntity*(world: var ECSWorld, d:DenseHandle, archNode:ArchetypeNode) 
   
   # Only perform migration if the target archetype is different from the current one.
   if archNode.id != e.archetypeId:
+    let oldId = e.id # Keep this for events
+
     # Move the data. 
     # changePartition moves component data from old archetype to new archetype.
     # Returns: index of the swapped-in last element (lst), new ID, new Block ID.
@@ -193,8 +199,11 @@ proc migrateEntity*(world: var ECSWorld, d:DenseHandle, archNode:ArchetypeNode) 
     world.handles[lst].id = e.id
 
     # Update the migrating entity's ID to its new physical position.
-    e.id = (bid shl BLK_SHIFT) or id
+    let oldArchId = e.archetypeId
+    let newId = (bid shl BLK_SHIFT) or id
+    e.id = newId
     e.archetypeId = archNode.id
+    world.events.emitDenseEntityMigrated(d, oldId, lst.uint, oldArchId, archNode.id)
     
 ## Batch migration for multiple entities (Dense storage).
 ##
@@ -207,10 +216,16 @@ template migrateEntity*(world: var ECSWorld, ents:var openArray, archNode:Archet
   if ents.len != 0:
     # Assume all entities in the batch are currently in the same archetype (based on the first one).
     let e = ents[0].obj
+    let oldArchId = e.archetypeId
 
-    if archNode.id != e.archetypeId:
+    if archNode.id != oldArchId:
+      var ids = newSeq[uint](ents.len)
+      for i in 0..<ents.len:
+        ids[i] = ents[i].obj.id
+
       # Perform batch partition change.
-      changePartition(world, ents, e.archetypeId, archNode)
+      let (toSwap, toAdd) = changePartition(world, ents, oldArchId, archNode)
+      world.events.emitDenseEntityMigratedBatch(ids, toSwap, toAdd, oldArchId, archNode.id)
 
 ## Defers the migration of an entity.
 ##
@@ -222,7 +237,7 @@ template migrateEntity*(world: var ECSWorld, ents:var openArray, archNode:Archet
 ## @param buffer_id: The ID of the command buffer.
 template migrateEntityDefer*(world:var ECSWorld, d:DenseHandle, archNode:ArchetypeNode, buffer_id:int) =
   # Add a MigrateOp command: Destination Archetype ID, Source Archetype ID, Payload.
-  world.cb[buffer_id].addComponent(MigrateOp.int, archNode.id, d.obj.archetypeId.uint32, PayLoad(eid:d.obj.widx.uint, obj:d))
+  world.cb[buffer_id].addCommmand(MigrateOp.int, archNode.id, d.obj.archetypeId.uint32, PayLoad(eid:d.obj.widx.uint, obj:d))
 
 ## Adds components to an existing entity (Dense storage).
 ##
@@ -242,6 +257,7 @@ proc addComponent*(world:var EcsWorld, d:DenseHandle, components:varargs[int]) =
 
   # Perform the migration to the new archetype.
   migrateEntity(world, d, archNode)
+  world.events.emitDenseComponentAdded(d, components)
 
 ## Removes components from an existing entity (Dense storage).
 ##
@@ -261,6 +277,7 @@ proc removeComponent*(world:var EcsWorld, d:DenseHandle, components:varargs[int]
 
   # Perform the migration to the new archetype.
   migrateEntity(world, d, archNode)
+  world.events.emitDenseComponentRemoved(d, components)
 
 ###################################################################################################################################################
 ########################################################## SPARSE OPERATIONS ######################################################################
@@ -277,8 +294,12 @@ proc removeComponent*(world:var EcsWorld, d:DenseHandle, components:varargs[int]
 proc createSparseEntity*(w:var ECSWorld, components:varargs[int]):SparseHandle =
   # Allocate space in the sparse set.
   let id = w.allocateSparseEntity(components)
+  let mask = maskOf(components)
+  result.id = id
+  result.gen = w.sparse_gens[id]
+  result.mask = mask
   # Return the handle containing the bitmask of components.
-  return SparseHandle(id:id, gen:w.sparse_gens[id], mask:maskOf(components))
+  w.events.emitSparseEntityCreated(result)
 
 ## Creates multiple entities in the sparse ECS storage.
 ##
@@ -304,6 +325,7 @@ proc createSparseEntities*(w:var ECSWorld, n:int, components:varargs[int]):seq[S
 ## @param w: The mutable `ECSWorld` instance.
 ## @param s: The `SparseHandle` of the entity to delete.
 proc deleteEntity*(w:var ECSWorld, s:var SparseHandle) =
+  w.events.emitSparseEntityDestroyed(s)
   w.deleteSparseRow(s.id, s.mask)
   # Increment generation to invalidate handles.
   w.sparse_gens[s.id] += 1
@@ -319,6 +341,7 @@ proc deleteEntity*(w:var ECSWorld, s:var SparseHandle) =
 proc addComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
   s.mask.setBit(components)
   w.activateComponentsSparse(s.id, components)
+  #w.events.emitSparseComponentAdded(s, components.toSeq)
 
 ## Removes components from a sparse entity.
 ##
@@ -330,6 +353,7 @@ proc addComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) 
 proc removeComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
   s.mask.unSetBit(components)
   w.deactivateComponentsSparse(s.id, components)
+  #w.events.emitSparseComponentRemoved(s, components.toSeq)
 
 ###################################################################################################################################################
 #################################################### SPARSE/DENSE OPERATIONS ######################################################################
@@ -358,6 +382,7 @@ proc makeDense*(world:var ECSWorld, s:var SparseHandle):DenseHandle =
       mask = mask and (mask - 1)
 
   # Cleanup the original Sparse entity.
+  world.events.emitDensified(s, d) 
   world.deleteEntity(s)
 
   return d
@@ -368,21 +393,18 @@ proc makeDense*(world:var ECSWorld, s:var SparseHandle):DenseHandle =
 ## @param d: The `DenseHandle` to convert.
 ## @return: A new `SparseHandle` representing the entity in sparse storage.
 proc makeSparse*(world:var ECSWorld, d:DenseHandle):SparseHandle =
-  var s = world.createSparseEntity(world.archGraph.nodes[d.obj.archetypeId].partition.components)
-  
+  var comps = world.archGraph.nodes[d.obj.archetypeId].partition.components
+  var s = world.createSparseEntity(comps)
+
   # Iterate through the component mask.
-  for m in s.mask:
-    var mask = m
-    while mask != 0:
-      let id = countTrailingZeroBits(mask)
-      var entry = world.registry.entries[id]
-      
-      # Invoke the specific copy operation (Dense to Sparse).
-      entry.overrideSDOp(entry.rawPointer, s, d)
-      
-      mask = mask and (mask - 1)
+  for id in comps:
+    var entry = world.registry.entries[id]
+    
+    # Invoke the specific copy operation (Dense to Sparse).
+    entry.overrideSDOp(entry.rawPointer, s, d)
 
   # Cleanup the original Dense entity.
+  world.events.emitSparsified(d, s)
   world.deleteEntity(d)
-
+  
   return s

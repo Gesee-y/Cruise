@@ -21,6 +21,18 @@ template onDanger(code) =
   when not defined(danger):
     code
 
+include "hibitset.nim"
+
+type
+  ## Represent an independent filter that can be used narrow queries
+  QueryFilter* = object
+
+    # Dense Query
+    dLayer:HibitsetType
+
+    # Sparse Query
+    sLayer:HibitsetType
+
 include "fragment.nim"
 include "entity.nim"
 include "commands.nim"
@@ -28,10 +40,6 @@ include "registry.nim"
 include "mask.nim"
 
 type
-  TableColumn[N:static int,T,S,B] = ref object
-    components:SoAFragmentArray[N,T,S,B]
-    mask:seq[uint]
-
   TableRange* = object
     r:Range
     block_idx:int
@@ -42,12 +50,14 @@ type
     fill_index:int
 
 include "archetypes.nim"
+include "events.nim"
 
 type
   ECSWorld* = ref object
     registry:ComponentRegistry
     entities:seq[Entity]
-    commandBufs:seq[CommandBuffer]
+    commandBufs*:seq[CommandBuffer]
+    events*: EventManager
     handles:seq[ptr Entity]
     generations:seq[uint32]
     sparse_gens:seq[uint32]
@@ -60,28 +70,14 @@ type
     max_index:int
     block_count:int
 
-template newTableColumn[N,T,S,B](f:SoAFragmentArray[N,T,S,B]):untyped =
-  var m = newSeq[uint]()
-
-  for i in 0..<f.blocks.len:
-    let idx = i div sizeof(uint)
-    let bitpos = i mod sizeof(uint)
-    if idx >= m.len:
-      m.add(0.uint)
-
-    if not f.blocks[i].isNil:
-      m[idx] = m[idx] or (1 shl bitpos)
-  
-  var res = TableColumn[N,T,B](components:f, mask:m)
-  res
-
 proc newECSWorld*(max_entities:int=1000000):ECSWorld =
   var w:ECSWorld
   new(w)
-  new(w.registry)
+  #new(w.registry)
   w.archGraph = initArchetypeGraph()
   w.entities = newSeqofCap[Entity](max_entities)
   w.free_list = newSeqofCap[uint](max_entities div 2)
+  w.events = initEventManager()
 
   return w
 
@@ -158,21 +154,23 @@ proc getStableEntities(world:ECSWorld, n:int):seq[int] =
     world.entities.setLen(L+(n-free_len))
     world.generations.setLen(L+(n-free_len))
     
+    var c = 0
     for i in L..<world.entities.len:
-      entity_idx[free_len] = i
+      entity_idx[free_len+c] = i
+      inc c
 
   return entity_idx
 
-proc registerComponent*[T](world:var ECSWorld, t:typedesc[T]):int =
-  registerComponent(world.registry, T)
+template registerComponent*(world:var ECSWorld, t:typed, P:static bool=false):int =
+  registerComponent(world.registry, t, P)
 
-template get*[T](world:ECSWorld,t:typedesc[T]):untyped =
+template get*[T](world:ECSWorld,t:typedesc[T], P:static bool= false):untyped =
   let id = world.getComponentId(t)
-  getValue[T](world.registry.entries[id])
+  getValue[T](world.registry.entries[id], P)
 
-template get*[T](world:ECSWorld, t:typedesc[T], i:untyped):untyped =
+template get*[T](world:ECSWorld, t:typedesc[T], i:untyped, P:static bool= false):untyped =
   let id = world.getComponentId(t)
-  getValue[T](world.registry.entries[id])[i]
+  getValue[T](world.registry.entries[id], P)[i]
 
 proc resize(world: var ECSWorld, n:int) =
   for entry in world.registry.entries:
@@ -250,4 +248,15 @@ proc flush*(w:var ECSWorld) =
   for i in 0..<w.commandBufs.len:
     var cb = w.commandBufs[i]
     w.process(cb)
-  
+
+proc clearDenseChanges*(w: var ECSWorld) =
+  for entry in w.registry.entries:
+    entry.clearDenseChangeOp(entry.rawPointer)
+
+proc clearSparseChanges*(w: var ECSWorld) =
+  for entry in w.registry.entries:
+    entry.clearSparseChangeOp(entry.rawPointer)
+
+proc clearChanges*(w: var ECSWorld) =
+  w.clearDenseChanges()
+  w.clearSparseChanges()

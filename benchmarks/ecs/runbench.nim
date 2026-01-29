@@ -5,7 +5,7 @@ include "../../src/ecs/table.nim"
 # =========================
 include "../../src/profile/benchmarks.nim"
 
-const SAMPLE = 10_00
+const SAMPLE = 1000
 
 # =========================
 # Components
@@ -22,14 +22,18 @@ type
     x, y: float32
 
   Tag = object
-    b:bool
 
   Health = object
     hp:int
 
-  Timer = object
-    remaining:float
+  Timer[T] = object
+    remaining:T
 
+proc newTimer[T](r:T):Timer[T] = Timer[T]() 
+proc newPosition(x,y:float32):Position = Position() 
+proc setComponent[T](blk: ptr T, i:uint, v:Position) =
+  blk.data.x[i] = v.x*2
+  blk.data.y[i] = v.y/2
 
 # =========================
 # World setup
@@ -42,7 +46,7 @@ proc setupWorld(entityCount: int): (ECSWorld, ref seq[DenseHandle], int, int, in
   let velID = world.registerComponent(Velocity)
   let accID = world.registerComponent(Acceleration)
   let tagID = world.registerComponent(Tag)
-  let timerID = world.registerComponent(Timer)
+  let timerID = world.registry.registerComponent(Timer[int])
   let hpID = world.registerComponent(Health)
 
   # Dense archetype: Position + Velocity
@@ -54,7 +58,6 @@ proc setupWorld(entityCount: int): (ECSWorld, ref seq[DenseHandle], int, int, in
     entities[].add(e)
 
   return (world, entities, posID, velID, accID, tagID, timerID, hpID)
-
 
 # =========================
 # Benchmarks

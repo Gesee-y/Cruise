@@ -8,6 +8,7 @@ import threadpool
 import asyncdispatch
 import os
 import algorithm
+import sequtils
 
 const CHANNEL_SIZE = 64
 
@@ -132,7 +133,16 @@ type
     buffer:seq[EmissionCallback[T,L]]
     state*:StateData[T,L]
 
+  Observer[T] = proc(val: T) {.closure.}
+
+  CRSubject*[T] = ref object
+    value*: T
+    observers: seq[Observer[T]]
+
 ############################################################### ACCESSORS ###############################################################
+
+proc newCRSubject*[T](value: T): CRSubject[T] =
+  CRSubject[T](value: value, observers: @[])
 
 proc callback[L](l:Listener[L]) = l.callback
 proc getstate*(n:Notifier) = 

@@ -48,15 +48,15 @@ type
 ####################################################################################################################################################
 
 ## Retrieves component data from a `SoAFragmentArray` using a raw `Entity`.
-template `[]`[N,T,S,B](f: SoAFragmentArray[N,T,S,B], e:SomeEntity):untyped = f[e.id]
+template `[]`[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B], e:SomeEntity):untyped = f[e.id]
 
 ## Retrieves component data from a `SoAFragmentArray` using a `DenseHandle`.
-template `[]`*[N,T,S,B](f: SoAFragmentArray[N,T,S,B], d:DenseHandle):untyped = f[d.obj.id]
+template `[]`*[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B], d:DenseHandle):untyped = f[d.obj.id]
 
 ## Retrieves component data from a `SoAFragmentArray` using a `SparseHandle`.
 ##
 ## Sparse storage typically maps an Entity ID to a component value.
-template `[]`*[N,T,S,B](f: SoAFragmentArray[N,T,S,B], d:SparseHandle):untyped = 
+template `[]`*[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B], d:SparseHandle):untyped = 
   let S = sizeof(uint)*8 # Size of the bucket range (e.g., 64 bits).
   
   # Calculate the bucket index: `id shr 6` divides the ID by 64 to find the page.
@@ -64,17 +64,18 @@ template `[]`*[N,T,S,B](f: SoAFragmentArray[N,T,S,B], d:SparseHandle):untyped =
   f.sparse[d.id shr 6][d.id and (S-1).uint]
 
 ## Sets component data in a `SoAFragmentArray` for a raw `Entity`.
-template `[]=`[N,T,S,B](f:var SoAFragmentArray[N,T,S,B], e:SomeEntity, v:B) = 
+proc `[]=`[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], e:SomeEntity, v:B) = 
   f[e.id] = v
 
 ## Sets component data in a `SoAFragmentArray` for a `DenseHandle`.
-template `[]=`*[N,T,S,B](f:var SoAFragmentArray[N,T,S,B], d:DenseHandle, v:B) = 
+proc `[]=`*[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], d:DenseHandle, v:B) = 
   f[d.obj.id] = v
 
 ## Sets component data in a `SoAFragmentArray` for a `SparseHandle`.
-template `[]=`*[N,T,S,B](f: SoAFragmentArray[N,T,S,B], d:SparseHandle, v:B) = 
+proc `[]=`*[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], d:SparseHandle, v:B) = 
   let S = sizeof(uint)*8
-  f.sparse[d.id shr 6][d.id and (S-1).uint] = v
+  when P: setChangedSparse(f, d.id)
+  f.sparse[f.toSparse[d.id shr 6]-1][d.id and (S-1).uint] = v
 
 ####################################################################################################################################################
 ################################################################# OPERATORS #######################################################################

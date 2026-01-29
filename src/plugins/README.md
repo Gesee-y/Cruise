@@ -109,7 +109,7 @@ method update(lay: var SceneTreeLayout) =
   for deleted in changes.deleted:
     # Delete stuffs
 
-## Can maerge multiple layout
+## Can merge multiple layout
 
 method update(lay: var PhysicLayout) =
   let world = lay.getDependency[ECSLayout]().world
