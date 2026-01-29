@@ -38,7 +38,7 @@ type
     layer1DenseIdx: seq[int]
     layer1Count: int
 
-  HiBitSetType = SparseHiBitSet
+  HiBitSetType = HiBitSet
 
 # ============================================================================
 # Dense HiBitSet Implementation

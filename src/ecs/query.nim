@@ -64,8 +64,8 @@ type
 
 proc newQueryFilter(): QueryFilter =
   var q: QueryFilter
-  q.dLayer = newSparseHiBitSet()
-  q.sLayer = newSparseHiBitSet()
+  q.dLayer = newHiBitSet()
+  q.sLayer = newHiBitSet()
 
   return q
 

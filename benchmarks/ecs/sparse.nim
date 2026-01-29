@@ -65,10 +65,18 @@ proc runSparseBenchmarks() =
     "sparse_create_entity",
     Samples,
     Warmup,
-    (var w = setupWorld()),
+    (
+      var w = setupWorld()
+      var ents:seq[SparseHandle]
+      for i in 0..<ENTITY_COUNT:
+        ents.add w.createSparseEntity([Pos, Vel])
+      for e in ents.mitems:
+        w.deleteEntity(e)
+    ),
     (
       for i in 0..<ENTITY_COUNT:
-        discard w.createSparseEntity([Pos, Vel]))
+        discard w.createSparseEntity([Pos, Vel])
+    )
   )
   showDetailed(suite.benchmarks[0])
 
@@ -79,7 +87,14 @@ proc runSparseBenchmarks() =
     "sparse_create_entities_batch_1k",
     Samples,
     Warmup,
-    (var w = setupWorld()),
+    (
+      var w = setupWorld()
+      var ents:seq[SparseHandle]
+      for i in 0..<ENTITY_COUNT:
+        ents.add w.createSparseEntity([Pos, Vel])
+      for e in ents.mitems:
+        w.deleteEntity(e)
+    ),
     (discard w.createSparseEntities(ENTITY_COUNT, [Pos, Vel]))
   )
   showDetailed(suite.benchmarks[1])
@@ -93,7 +108,8 @@ proc runSparseBenchmarks() =
     Warmup,
     (
       var w = setupWorld()
-      var e = w.createSparseEntity([Pos, Vel]))
+      var e = w.createSparseEntity([Pos, Vel])
+    )
     ,
     for i in 0..<ENTITY_COUNT:
       w.deleteEntity(e)

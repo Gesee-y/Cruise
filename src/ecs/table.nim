@@ -62,7 +62,7 @@ type
 proc newECSWorld*(max_entities:int=1000000):ECSWorld =
   var w:ECSWorld
   new(w)
-  new(w.registry)
+  #new(w.registry)
   w.archGraph = initArchetypeGraph()
   w.entities = newSeqofCap[Entity](max_entities)
   w.free_list = newSeqofCap[uint](max_entities div 2)

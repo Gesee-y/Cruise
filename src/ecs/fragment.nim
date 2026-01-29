@@ -412,7 +412,8 @@ template getBlock[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:uint):ref SoAFragm
 
 proc activateSparseBit[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int|uint) =
   ## Mark a sparse index as active.
-  if i.int > f.toSparse.len or f.toSparse[i] == 0:
+  let bid = i shr 6
+  if bid.int >= f.toSparse.len or f.toSparse[bid] == 0:
     f.newSparseBlock(i.int, 0'u)
   f.sparseMask.set(i.int)
 

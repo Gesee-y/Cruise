@@ -114,18 +114,23 @@ proc allocateSparseEntities(table: var ECSWorld, count:int, components:openArray
 ## Grows sparse storage if no free IDs are available.
 proc allocateSparseEntity(table: var ECSWorld, components:openArray[int]):uint = 
   if table.free_list.len > 0:
-    return table.free_list.pop()
+    let id = table.free_list.pop()
+    #activateComponentsSparse(table, id, components)
+    return id
 
   let S = sizeof(uint) * 8
 
   ## Allocate a new sparse block for each component
-  for id in components:
-    let entry = table.registry.entries[id]
-    entry.newSparseBlockOp(entry.rawPointer, table.max_index, 1.uint)
+  #for id in components:
+  #  let entry = table.registry.entries[id]
+  #  entry.newSparseBlockOp(entry.rawPointer, table.max_index, 1.uint)
 
   ## Push remaining slots of the block into the free list
-  for i in table.max_index ..< table.max_index + S:
-    table.free_list.add(i.uint)
+  let diff = (table.max_index + S) - table.max_index
+  let base = table.free_list.len
+  table.free_list.setLen(base+diff)
+  for i in table.max_index+1..<table.max_index + S:
+    table.free_list[base+i] = i.uint
 
   let id = table.max_index
   table.max_index += S

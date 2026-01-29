@@ -82,10 +82,12 @@ type
     ## Deactivate multiple sparse bits.
     deactivateSparseBitBatchOp: proc (p:pointer, i:seq[uint]) {.noSideEffect, nimcall, inline.}
 
+    freeEntry: proc (p:pointer) {.raises: [].}
+
   ## Global registry holding all component types.
   ##
   ## Components are indexed by an integer ID and also mapped by name.
-  ComponentRegistry = ref object
+  ComponentRegistry = object
     entries:seq[ComponentEntry]
     cmap:Table[string, int]
 
@@ -226,6 +228,9 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
     entry.activateSparseBitOp = actSparseBit
     entry.activateSparseBitBatchOp = actBitB
     entry.deactivateSparseBitBatchOp = deactBitB
+    entry.freeEntry = proc (p:pointer) {.raises: [].} =
+      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+      GC_unref(fr)
 
     # Register entry and return its component ID
     let id = `registry`.entries.len
@@ -242,3 +247,9 @@ template getvalue[B](entry:ComponentEntry, P:static bool=false):untyped =
   ## Cast the raw pointer of a component entry back to its typed
   ## `SoAFragmentArray`.
   castTo(entry.rawPointer, B, DEFAULT_BLK_SIZE,P)
+
+proc `=destroy`(rg:var ComponentRegistry) {.raises: [].} = 
+  for entry in rg.entries:
+    entry.freeEntry(entry.rawPointer)
+
+  rg.entries = @[]

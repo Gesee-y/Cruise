@@ -295,11 +295,11 @@ proc createSparseEntity*(w:var ECSWorld, components:varargs[int]):SparseHandle =
   # Allocate space in the sparse set.
   let id = w.allocateSparseEntity(components)
   let mask = maskOf(components)
-  activateComponentsSparse(w, id, components)
-  let s = SparseHandle(id:id, gen:w.sparse_gens[id], mask:mask)
+  result.id = id
+  result.gen = w.sparse_gens[id]
+  result.mask = mask
   # Return the handle containing the bitmask of components.
-  w.events.emitSparseEntityCreated(s)
-  return s
+  w.events.emitSparseEntityCreated(result)
 
 ## Creates multiple entities in the sparse ECS storage.
 ##
@@ -339,10 +339,9 @@ proc deleteEntity*(w:var ECSWorld, s:var SparseHandle) =
 ## @param s: The `SparseHandle` of the entity.
 ## @param components: Variadic list of Component IDs to add.
 proc addComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
-  let oldMask = s.mask
   s.mask.setBit(components)
   w.activateComponentsSparse(s.id, components)
-  w.events.emitSparseComponentAdded(s, components.toSeq)
+  #w.events.emitSparseComponentAdded(s, components.toSeq)
 
 ## Removes components from a sparse entity.
 ##
@@ -352,10 +351,9 @@ proc addComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) 
 ## @param s: The `SparseHandle` of the entity.
 ## @param components: Variadic list of Component IDs to remove.
 proc removeComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
-  let oldMask = s.mask
   s.mask.unSetBit(components)
   w.deactivateComponentsSparse(s.id, components)
-  w.events.emitSparseComponentRemoved(s, components.toSeq)
+  #w.events.emitSparseComponentRemoved(s, components.toSeq)
 
 ###################################################################################################################################################
 #################################################### SPARSE/DENSE OPERATIONS ######################################################################
