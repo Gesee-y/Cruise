@@ -9,7 +9,7 @@ So here is **Cruise**, not a game engine in the regular sense (you can't have a 
 So, why bother using Cruise ? What does it offer the plethora of game engines out there doesn't offer ? It's simple.
 A flexible, extensible, performant, and simple core architecture.
 All that through a **DAG** (Direct Acyclic Graph) architecture.
-A DAG architecture is a model where the game systems are modelled as vertex in the DAG and and edges are dependencies between them.
+A DAG architecture is a model where the game systems are modelled as vertex in the DAG and and edges are dependencies between them or the data.
 DAG:
   - **Direct**: Ensure data and dependencies flows in one direction.
   - **Acyclic**: Ensure there are no circular dependencies and impossible execution order.
