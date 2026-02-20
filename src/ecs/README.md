@@ -71,6 +71,8 @@ Querying consists of intersecting the hibitsets of the requested components. Ite
 
 * **Really fast**: Performance is one of the main aspects of any ECS, and Cruise takes this seriously. Using an SoA + Fragment Vector layout, it enables extremely fast dense iterations and efficient sparse iterations.
 
+* **Cross-languages**: Compile the ECS to C, C++ or even JS to integrate it in your project (even if it's a web engine)
+
 * **Choose your layout**: Cruise ECS allows you to use dense or sparse entities as you wish, or even transition entities between them:
 
 ```nim
