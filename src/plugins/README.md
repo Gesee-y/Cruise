@@ -71,9 +71,46 @@ Since no one probably want to write to much boilerplate just for a logic so we p
 
 ```nim
 gameLogic MyLogic:
-  deps = getDependency[SomeDepsType](self)
+  var deps = getDependency[SomeDepsType](self)
 
   ## Some code
 
 var logic:MyLogic
 ```
+
+## World data
+
+Now that we have talked about plugin's logic and dependencies between them the concern now would be about data races.
+What if 2 plugin access some data at the same time ?
+If we just use this we would have to use costly locks.
+
+so in order to solve that Cruise plugin system introduce **Resources** and a **Resources DAG**.
+
+So a resource is some global data that a system may request in order to use it.
+It can be anything that is typed.
+
+```nim
+myPlugin.addResource(myResource)
+```
+
+So now for a given plugin node `MySys` we now have:
+
+```nim
+myPlugin.addWriteRequest(MySys, MyResource)
+
+gameLogic myLogic Read[Res1, Res2], Write[Res3]:
+  var res = getResource[Res1](self)
+  # My logics
+```
+
+Once it's done a resource DAG is etablished to make safe resources access.
+
+An example that may help grasping this is assuming resource are components in an ECS.
+we will then have
+
+```nim
+myPlugin.addReadRequest(MySys, Transform, Velocity)
+```
+
+Except that you're not limited to components, you can for example use it for safe access to a SceneTree. 
+Then the dependency DAG and resource DAG are used to compute the final execution order of the systems.
