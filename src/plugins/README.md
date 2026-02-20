@@ -113,4 +113,6 @@ myPlugin.addReadRequest(MySys, Transform, Velocity)
 ```
 
 Except that you're not limited to components, you can for example use it for safe access to a SceneTree. 
+
 Then the dependency DAG and resource DAG are used to compute the final execution order of the systems.
+Both graphs are dynamic. You can change dependencies between systems at runtime and the data they access but it's recommended to do it in one phase then at the next call to `update` the graph will detect the changes and recompute the correct order.
