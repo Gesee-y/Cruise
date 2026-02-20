@@ -9,7 +9,7 @@ So here is **Cruise**, not a game engine in the regular sense (you can't have a 
 So, why bother using Cruise ? What does it offer the plethora of game engines out there doesn't offer ? It's simple.
 A flexible, extensible, performant, and simple core architecture.
 All that through a **DAG** (Direct Acyclic Graph) architecture.
-A DAG architecture is a model where the game systems are modelled as vertex in the DAG and and edges are dependencies between them.
+A DAG architecture is a model where the game systems are modelled as vertex in the DAG and and edges are dependencies between them or the data.
 DAG:
   - **Direct**: Ensure data and dependencies flows in one direction.
   - **Acyclic**: Ensure there are no circular dependencies and impossible execution order.
@@ -43,15 +43,6 @@ This architecture offers several advantages:
 - **Make your own structure**: Cruise doesn't enforce any architecture, build your game as you feel
 
 - **Build your own engine**: Since Cruise is just a minimal core, you can just choose the set of plugins (or build your own) that perfectly match your use case.
-
-## Donations
-
-If you want to support the dev behind this project you can make donations. But because of geographic restrictions, donations can't be made through regular platforms like "buy me a coffee" since Stripe and PayPal aren't supported. So the alternatives are:
-
-- [Binance](
-https://s.binance.com/KvfmIsbC): Use the link or this [QR code](https://github.com/Gesee-y/Cruise/blob/main/assets/qr-image-1767409833813.png)
-
-- Payoneer: You can write at gesee37@gmail.com for this process
 
 ## License
 

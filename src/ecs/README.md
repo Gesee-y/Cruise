@@ -22,7 +22,7 @@ var posID = w.registerComponent(Pos)
 var velID = w.registerComponent(Vel)
 var accID = w.registerComponent(Acc)
 
-var poscolumn = w.get(Position)
+var poscolumn = w.get(Pos)
 
 var e = w.createEntity(posID)
 poscolumn[e] = Pos()
