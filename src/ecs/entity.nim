@@ -35,7 +35,7 @@ type
   SparseHandle* = object
     id   : uint       ## The unique identifier of the entity in sparse storage.
     gen  : uint32     ## The generation counter for validity checks.
-    mask : ArchetypeMask ## A bitmask representing the set of components currently owned by this entity.
+    archID : uint16 ## A bitmask representing the set of components currently owned by this entity.
 
   ## A type class (concept-like alias) encompassing various raw Entity forms.
   ##

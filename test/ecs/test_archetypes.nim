@@ -29,8 +29,8 @@ test "adding same component twice does not create new node":
 test "component order does not create duplicate archetypes":
   var g = initArchetypeGraph()
 
-  let a = g.findArchetype([ComponentID(1), ComponentID(2)])
-  let b = g.findArchetype([ComponentID(2), ComponentID(1)])
+  let a = g.findArchetype([1, 2])
+  let b = g.findArchetype([2, 1])
 
   check a == b
   check a.componentCount == 2
@@ -39,7 +39,7 @@ test "component order does not create duplicate archetypes":
 test "remove component returns to previous archetype":
   var g = initArchetypeGraph()
 
-  let a = g.findArchetype([ComponentID(1), ComponentID(2)])
+  let a = g.findArchetype([1, 2])
   let b = g.removeComponent(a, 2)
 
   check b.componentCount == 1
@@ -48,7 +48,7 @@ test "remove component returns to previous archetype":
 test "add then remove returns same node":
   var g = initArchetypeGraph()
 
-  let base = g.findArchetype([ComponentID(1)])
+  let base = g.findArchetype([1])
   let plus = g.addComponent(base, 2)
   let back = g.removeComponent(plus, 2)
 
@@ -56,7 +56,7 @@ test "add then remove returns same node":
 
 test "edges and removeEdges are consistent":
   var g = initArchetypeGraph()
-  let a = g.findArchetype([ComponentID(1)])
+  let a = g.findArchetype([1])
   let b = g.addComponent(a, 2)
 
   check a.hasEdge(2)
@@ -77,9 +77,9 @@ test "findArchetypeFast cache works":
 test "remove does not create duplicate nodes":
   var g = initArchetypeGraph()
 
-  let a = g.findArchetype([ComponentID(1), ComponentID(2)])
+  let a = g.findArchetype([1, 2])
   let b = g.removeComponent(a, 2)
-  let c = g.findArchetype([ComponentID(1)])
+  let c = g.findArchetype([1])
 
   check b == c
   check g.nodeCount == 3
@@ -87,15 +87,15 @@ test "remove does not create duplicate nodes":
 test "warmupTransitions creates all edges":
   var g = initArchetypeGraph()
 
-  g.warmupTransitions([ComponentID(1)], [ComponentID(2), ComponentID(3), ComponentID(4)])
-  let base = g.findArchetype([ComponentID(1)])
+  g.warmupTransitions([1], [2, 3, 4])
+  let base = g.findArchetype([1])
 
   for c in [2,3,4]:
     check base.hasEdge(c)
 
 test "graph contains all subsets":
   var g = initArchetypeGraph()
-  let comps = [ComponentID(1),ComponentID(2),ComponentID(3)]
+  let comps = [1,2,3]
 
   discard g.findArchetype(comps)
 

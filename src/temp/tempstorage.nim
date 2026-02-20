@@ -318,20 +318,16 @@ proc autoCleanupLoop(ts:var TempStorage, interval: Duration) {.async.} =
 proc startAutoCleanup*(ts:var TempStorage, interval: Duration = initDuration(seconds = 60)) =
   ## Démarre le nettoyage automatique
   if ts.cleanupActive:
-    echo "Auto-cleanup déjà actif"
     return
   
   ts.cleanupActive = true
   ts.cleanupTask = autoCleanupLoop(ts, interval)
-  echo "Auto-cleanup démarré (interval: ", interval, ")"
 
 proc stopAutoCleanup*(ts:var TempStorage) =
   if not ts.cleanupActive:
-    echo "Auto-cleanup n'est pas actif"
     return
   
   ts.cleanupActive = false
-  echo "Auto-cleanup arrêté"
 
 proc toJson*(ts:var TempStorage): JsonNode =
   result = newJObject()
@@ -356,7 +352,6 @@ proc saveToFile*(ts:var TempStorage, filepath: string) =
   ## Sauvegarde dans un fichier JSON
   let jsonData = ts.toJson()
   writeFile(filepath, jsonData.pretty)
-  echo "Storage sauvegardé dans ", filepath
 
 # ============================================================================
 # Destructeur

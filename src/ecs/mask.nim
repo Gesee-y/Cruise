@@ -123,9 +123,9 @@ proc componentCount*(mask: ArchetypeMask): int =
 proc hash*(mask: ArchetypeMask): Hash =
   result = !$(hash(mask[0]) !& hash(mask[1]) !& hash(mask[2]) !& hash(mask[3]))
 
-proc getComponents*(mask: ArchetypeMask): seq[ComponentId] =
+proc getComponents*(mask: ArchetypeMask): seq[int] =
   let count = mask.componentCount()
-  result = newSeqOfCap[ComponentId](count)
+  result = newSeqOfCap[int](count)
   
   for layer in 0..<MAX_COMPONENT_LAYER:
     var bits = mask[layer]
@@ -135,5 +135,5 @@ proc getComponents*(mask: ArchetypeMask): seq[ComponentId] =
     
     while bits != 0:
       let tz = countTrailingZeroBits(bits)
-      result.add(ComponentId(baseId + tz))
+      result.add(baseId + tz)
       bits = bits and (bits - 1)

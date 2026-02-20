@@ -116,10 +116,8 @@ proc allocateEntities(
 ## (block index, offset inside block, archetype id)
 proc allocateEntity(
   table: var ECSWorld,
-  arch: ArchetypeMask
+  archNode: var ArchetypeNode
 ): (uint, int, uint16) =
-  let archNode = table.archGraph.findArchetypeFast(arch)
-  check(not archNode.isNil, "ArchetypeNode not found")
 
   if archNode.partition.isNil:
     var partition: TablePartition
@@ -154,6 +152,17 @@ proc allocateEntity(
     partition.fill_index += 1
 
   return (id.uint, e, archNode.id)
+
+## Allocates a single dense entity and returns:
+## (block index, offset inside block, archetype id)
+proc allocateEntity(
+  table: var ECSWorld,
+  arch: ArchetypeMask
+): (uint, int, uint16) =
+  var archNode = table.archGraph.findArchetypeFast(arch)
+  check(not archNode.isNil, "ArchetypeNode not found")
+
+  return allocateEntity(table, archNode)
 
 ## Deletes a dense entity row.
 ## Performs swap-remove within the archetype partition.

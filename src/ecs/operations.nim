@@ -20,10 +20,10 @@ type
 ## in blocks/chunks defined by their Archetype (set of components).
 ##
 ## @param world: The mutable `ECSWorld` instance.
-## @param arch: The `ArchetypeMask` defining which components this entity initially has.
+## @param arch: The `ArchetypeNode` which is the initial archetype of the entity.
 ## @return: A `DenseHandle` used to safely refer to the entity. Includes a pointer to the
 ##          entity data and a generation ID for stale reference checks.
-proc createEntity*(world:var ECSWorld, arch:ArchetypeMask):DenseHandle =
+proc createEntity*(world:var ECSWorld, arch:var ArchetypeNode):DenseHandle =
   # Acquire a stable internal ID (widx) for the entity record.
   let pid = getStableEntity(world)
   
@@ -53,6 +53,12 @@ proc createEntity*(world:var ECSWorld, arch:ArchetypeMask):DenseHandle =
   # Return a public handle containing the pointer and the current generation (for safety checks).
   return d
 
+proc createEntity*(world:var ECSWorld, arch:ArchetypeMask):DenseHandle =
+  var archNode = world.archGraph.findArchetypeFast(arch)
+  check(not archNode.isNil, "ArchetypeNode not found")
+
+  return world.createEntity(archNode)
+
 ## Overload of `createEntity` that accepts a list of Component IDs.
 ##
 ## @param world: The mutable `ECSWorld` instance.
@@ -70,14 +76,11 @@ proc createEntity*(world:var ECSWorld, cids:varargs[int]):DenseHandle =
 ## @param n: The number of entities to create.
 ## @param arch: The `ArchetypeMask` for the new entities.
 ## @return: A sequence of `DenseHandle` objects, one for each created entity.
-proc createEntities*(world:var ECSWorld, n:int, arch:ArchetypeMask):seq[DenseHandle] =
+proc createEntities*(world:var ECSWorld, n:int, archNode:var ArchetypeNode):seq[DenseHandle] =
   result = newSeqOfCap[DenseHandle](n)
   
   # Acquire 'n' stable internal IDs.
   let pids = getStableEntities(world, n)
-  
-  # Find or create the archetype node responsible for this mask.
-  var archNode = world.archGraph.findArchetypeFast(arch)
   let archId = archNode.id
   
   # Allocate the block space for 'n' entities. 
@@ -106,6 +109,10 @@ proc createEntities*(world:var ECSWorld, n:int, arch:ArchetypeMask):seq[DenseHan
       result.add(DenseHandle(obj:e, gen:world.generations[pid]))
   
   return result
+
+proc createEntities*(world:var ECSWorld, n:int, arch:ArchetypeMask):seq[DenseHandle] =
+  var archNode = world.archGraph.findArchetypeFast(arch)
+  return world.createEntities(n, archNode)
 
 ## Overload of `createEntities` that accepts a list of Component IDs.
 ##
@@ -291,15 +298,19 @@ proc removeComponent*(world:var EcsWorld, d:DenseHandle, components:varargs[int]
 ## @param w: The mutable `ECSWorld` instance.
 ## @param components: A variadic list of Component IDs the entity starts with.
 ## @return: A `SparseHandle` containing the entity ID, generation, and component mask.
-proc createSparseEntity*(w:var ECSWorld, components:varargs[int]):SparseHandle =
+proc createSparseEntity*(w:var ECSWorld, archNode:ArchetypeNode):SparseHandle =
   # Allocate space in the sparse set.
-  let id = w.allocateSparseEntity(components)
-  let mask = maskOf(components)
+  let id = w.allocateSparseEntity(archNode.componentIds)
   result.id = id
   result.gen = w.sparse_gens[id]
-  result.mask = mask
+  result.archID = archNode.id
   # Return the handle containing the bitmask of components.
   w.events.emitSparseEntityCreated(result)
+
+proc createSparseEntity*(w:var ECSWorld, components:varargs[int]):SparseHandle =
+  # Allocate space in the sparse set.
+  let archNode = w.archGraph.findArchetype(components)
+  return w.createSparseEntity(archNode)
 
 ## Creates multiple entities in the sparse ECS storage.
 ##
@@ -307,18 +318,22 @@ proc createSparseEntity*(w:var ECSWorld, components:varargs[int]):SparseHandle =
 ## @param n: The number of entities to create.
 ## @param components: A variadic list of Component IDs.
 ## @return: A sequence of `SparseHandle` objects.
-proc createSparseEntities*(w:var ECSWorld, n:int, components:varargs[int]):seq[SparseHandle] =
+proc createSparseEntities*(w:var ECSWorld, n:int, archNode:ArchetypeNode):seq[SparseHandle] =
   var res = newSeqOfCap[SparseHandle](n)
   # Batch allocate sparse IDs.
-  let ids = w.allocateSparseEntities(n, components)
-  let mask = maskOf(components)
+  let ids = w.allocateSparseEntities(n, archNode.componentIds)
+  let archID = archNode.id
 
   # Iterate through the allocated ID ranges.
   for r in ids:
     for i in r.s..<r.e:
-      res.add(SparseHandle(id:i.uint, gen:w.sparse_gens[i], mask:mask))
+      res.add(SparseHandle(id:i.uint, gen:w.sparse_gens[i], archID:archID))
 
   return res
+
+proc createSparseEntities*(w:var ECSWorld, n:int, components:varargs[int]):seq[SparseHandle] =
+  let archNode = w.archGraph.findArchetype(components)
+  return w.createSparseEntities(n, archNode)
 
 ## Deletes an entity from the sparse storage.
 ##
@@ -326,7 +341,7 @@ proc createSparseEntities*(w:var ECSWorld, n:int, components:varargs[int]):seq[S
 ## @param s: The `SparseHandle` of the entity to delete.
 proc deleteEntity*(w:var ECSWorld, s:var SparseHandle) =
   w.events.emitSparseEntityDestroyed(s)
-  w.deleteSparseRow(s.id, s.mask)
+  w.deleteSparseRow(s.id, w.archGraph.nodes[s.archID].mask)
   # Increment generation to invalidate handles.
   w.sparse_gens[s.id] += 1
 
@@ -339,7 +354,12 @@ proc deleteEntity*(w:var ECSWorld, s:var SparseHandle) =
 ## @param s: The `SparseHandle` of the entity.
 ## @param components: Variadic list of Component IDs to add.
 proc addComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
-  s.mask.setBit(components)
+  var current = w.archGraph.nodes[s.archID]
+  current = w.archGraph.addComponent(current, components)
+
+  if current.id == s.archID: return
+
+  s.archID = current.id 
   w.activateComponentsSparse(s.id, components)
   #w.events.emitSparseComponentAdded(s, components.toSeq)
 
@@ -351,7 +371,12 @@ proc addComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) 
 ## @param s: The `SparseHandle` of the entity.
 ## @param components: Variadic list of Component IDs to remove.
 proc removeComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
-  s.mask.unSetBit(components)
+  var current = w.archGraph.nodes[s.archID]
+  current = w.archGraph.removeComponent(current, components)
+
+  if current.id == s.archID: return
+
+  s.archID = current.id
   w.deactivateComponentsSparse(s.id, components)
   #w.events.emitSparseComponentRemoved(s, components.toSeq)
 
@@ -365,22 +390,16 @@ proc removeComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int
 ## @param s: The `SparseHandle` to convert.
 ## @return: A new `DenseHandle` representing the entity in dense storage.
 proc makeDense*(world:var ECSWorld, s:var SparseHandle):DenseHandle =
-  var d = world.createEntity(s.mask)
+  var archNode = world.archGraph.nodes[s.archID]
+  var d = world.createEntity(archNode)
   
   # Iterate through the component mask to find active components.
-  for m in s.mask:
-    var mask = m
-    while mask != 0:
-      # Extract the ID of the active component.
-      let id = countTrailingZeroBits(mask)
-      var entry = world.registry.entries[id]
-      
-      # Invoke the specific copy operation (Sparse to Dense).
-      entry.overrideDSOp(entry.rawPointer, d, s)
-      
-      # Clear the bit to move to the next component.
-      mask = mask and (mask - 1)
-
+  for id in archNode.componentIds:
+    var entry = world.registry.entries[id]
+    
+    # Invoke the specific copy operation (Sparse to Dense).
+    entry.overrideDSOp(entry.rawPointer, d, s)
+    
   # Cleanup the original Sparse entity.
   world.events.emitDensified(s, d) 
   world.deleteEntity(s)
@@ -393,7 +412,7 @@ proc makeDense*(world:var ECSWorld, s:var SparseHandle):DenseHandle =
 ## @param d: The `DenseHandle` to convert.
 ## @return: A new `SparseHandle` representing the entity in sparse storage.
 proc makeSparse*(world:var ECSWorld, d:DenseHandle):SparseHandle =
-  var comps = world.archGraph.nodes[d.obj.archetypeId].partition.components
+  var comps = world.archGraph.nodes[d.obj.archetypeId].componentIds
   var s = world.createSparseEntity(comps)
 
   # Iterate through the component mask.
