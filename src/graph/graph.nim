@@ -272,6 +272,44 @@ template topo_sort(d:var DiGraph):untyped =
 
   d.sort_cache
 
+# ---------- Merge ops ----------
+
+# Merge src into dst in-place.
+# Nodes of src are added as new vertices in dst; edges are reproduced.
+# Returns a mapping: src node index -> dst node index
+proc mergeInto*(dst: var DiGraph, src: DiGraph): seq[int] =
+  let n = src.indegrees.len
+  result = newSeq[int](n)
+
+  # Add a new vertex in dst for each valid vertex in src
+  for i in 0..<n:
+    if src.indegrees[i] >= 0:
+      result[i] = dst.add_vertex()
+    else:
+      result[i] = -1  # invalid / freed vertex in src
+
+  # Reproduce edges
+  for u in 0..<n:
+    if src.indegrees[u] < 0: continue
+    for e in src.outedges[u]:
+      let v = e.idx
+      if src.indegrees[v] < 0: continue
+      discard dst.add_edge(result[u], result[v])
+
+# Non in-place version: returns a brand new DiGraph that is the merge of a and b.
+# Also returns the two mappings (a -> merged, b -> merged) as a tuple.
+proc merge*(a, b: DiGraph): tuple[g: DiGraph, mapA: seq[int], mapB: seq[int]] =
+  # Start from a copy of a
+  var g = a
+  var mapA = newSeq[int](a.indegrees.len)
+  for i in 0..<a.indegrees.len:
+    mapA[i] = i  # identity mapping for a's nodes
+
+  # Merge b into the copy
+  var mapB = g.mergeInto(b)
+
+  return (g: g, mapA: mapA, mapB: mapB)
+
 # ---------- Debug helpers ----------
 
 proc debugPrint(d: DiGraph) =
