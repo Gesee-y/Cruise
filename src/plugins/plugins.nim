@@ -5,7 +5,7 @@
 import tables, typetraits
 include "../graph/graph.nim"
 include "../events/events.nim"
-
+include "../data.nim"
 
 type
 
@@ -28,6 +28,7 @@ type
 
   Plugin = object
     idtonode:seq[PluginNode]
+    res_manager: PResourceManager
     graph:DiGraph
     parallel_cache:seq[array[2, seq[int]]]
     dirty:bool

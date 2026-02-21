@@ -56,6 +56,10 @@ proc findPosChild(d: DiGraph, u, target: int): int =
       result = i
       break
 
+proc has_edge(d: DiGraph, u, v: int):bool =
+  if not d.isValid(u) or not d.isValid(v): return false
+  return findPosChild(d, u, v) >= 0 or findPosChild(d, u, v) >= 0
+
 # find position of neighbor 'target' in outedges[v]; returns -1 if not found
 proc findPosParent(d: DiGraph, v, target: int): int =
   result = -1
@@ -296,6 +300,17 @@ proc mergeInto*(dst: var DiGraph, src: DiGraph): seq[int] =
       if src.indegrees[v] < 0: continue
       discard dst.add_edge(result[u], result[v])
 
+proc mergeEdgeInto*(dst: var DiGraph, src: DiGraph) =
+  # Assume dst and src have matching vertex, we just need to merge edges
+  let n = dst.indegrees.len
+  for u in 0..<n:
+    if src.indegrees[u] < 0: continue
+    for e in src.outedges[u]:
+      let v = e.idx
+      if src.indegrees[v] < 0 or dst.has_edge(u, v): continue
+      if not dst.add_edge(u, v):
+        discard dst.add_edge(v, u)
+
 # Non in-place version: returns a brand new DiGraph that is the merge of a and b.
 # Also returns the two mappings (a -> merged, b -> merged) as a tuple.
 proc merge*(a, b: DiGraph): tuple[g: DiGraph, mapA: seq[int], mapB: seq[int]] =
@@ -309,6 +324,13 @@ proc merge*(a, b: DiGraph): tuple[g: DiGraph, mapA: seq[int], mapB: seq[int]] =
   var mapB = g.mergeInto(b)
 
   return (g: g, mapA: mapA, mapB: mapB)
+
+proc mergeEdge*(a, b: DiGraph): DiGraph =
+  # Start from a copy of a
+  var g = a
+
+  g.mergeEdgeInto(b)
+  return g
 
 # ---------- Debug helpers ----------
 

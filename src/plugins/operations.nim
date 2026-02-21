@@ -135,6 +135,8 @@ template exec_node(f, n) =
 
 proc computeParallelLevel(p:var Plugin) =
   var graph = p.graph
+  graph.mergeEdgeInto(p.res_manager.buildGlobalAccessGraph)
+
   let sorted = graph.topo_sort()
   var levels = newSeq[int](graph.indegrees.len)
   var maximum = 0
