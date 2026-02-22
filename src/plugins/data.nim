@@ -14,6 +14,9 @@ type
     resources: seq[PluginResource]
     toId: Table[string, int]
     maxRequestId: int
+    cachedGraph: DiGraph
+    dirty: bool
+    inited: bool
 
 proc newPluginResource[T](obj: T): PluginResource =
   result.data = cast[pointer](obj)
@@ -21,6 +24,7 @@ proc newPluginResource[T](obj: T): PluginResource =
 proc addResource*[T](manager: var PResourceManager, obj: T): int =
   let id = manager.resources.len
   manager.resources.add(newPluginResource(obj))
+  manager.dirty = true
   manager.toId[$T] = id
   return id
 
@@ -30,7 +34,7 @@ proc getResource*[T](manager: PResourceManager, id: int): T =
 proc getResource*[T](manager: PResourceManager): T =
   getResource[T](manager, manager.toId[$T])
 
-proc addReadRequest*(manager: var PResourceManager, sys, id: int) =
+proc addReadRequest(manager: var PResourceManager, sys, id: int) =
   # A sys cannot read and write the same resource
   assert sys notin manager.resources[id].writeRequests,
     "sys " & $sys & " already has a write request on resource " & $id
@@ -40,9 +44,13 @@ proc addReadRequest*(manager: var PResourceManager, sys, id: int) =
     manager.maxRequestId = sys
 
   manager.resources[id].dirty = true
+  manager.dirty = true
   manager.resources[id].readRequests.add sys
 
-proc addWriteRequest*(manager: var PResourceManager, sys, id: int) =
+proc addReadRequest[T](manager: var PResourceManager, sys: int) =
+  manager.addReadRequest(sys, manager.toId[$T])
+
+proc addWriteRequest(manager: var PResourceManager, sys, id: int) =
   # A sys cannot read and write the same resource
   assert sys notin manager.resources[id].readRequests,
     "sys " & $sys & " already has a read request on resource " & $id
@@ -52,7 +60,11 @@ proc addWriteRequest*(manager: var PResourceManager, sys, id: int) =
     manager.maxRequestId = sys
   
   manager.resources[id].dirty = true
+  manager.dirty = true
   manager.resources[id].writeRequests.add sys
+
+proc addWriteRequest[T](manager: var PResourceManager, sys: int) =
+  manager.addWriteRequest(sys, manager.toId[$T])
 
 # ------------------------------------------------------------
 # Build the access graph for a single resource.
@@ -68,7 +80,8 @@ proc addWriteRequest*(manager: var PResourceManager, sys, id: int) =
 # ordering), add_edge will refuse the second direction; the caller should
 # enforce an explicit ordering via a scheduler pass afterward.
 # ------------------------------------------------------------
-proc buildAccessGraph*(res: var PluginResource) =
+proc buildAccessGraph(res: var PluginResource) =
+  if not res.dirty: return
   # Collect the total number of systems involved to size the graph.
   # We work with sys IDs directly as node indices, so we need a graph
   # large enough to hold the largest sys id.
@@ -94,13 +107,18 @@ proc buildAccessGraph*(res: var PluginResource) =
 
 # Build and merge access graphs for ALL resources into one global graph
 # that encodes which systems can run in parallel across all resources.
-proc buildGlobalAccessGraph*(manager: var PResourceManager): DiGraph =
-  result = newGraph(manager.maxRequestId+1)
+proc buildGlobalAccessGraph(manager: var PResourceManager) =
+  if not manager.dirty and manager.inited: return
+  var result = newGraph(manager.maxRequestId+1)
   for i in 0..<manager.resources.len:
     buildAccessGraph(manager.resources[i])
     result.mergeEdgeInto(manager.resources[i].cachedGraph)
 
-proc getAccessGraph*(res: var PluginResource): DiGraph =
+  manager.inited = true
+  manager.dirty = false
+  manager.cachedGraph = result
+
+proc getAccessGraph(res: var PluginResource): DiGraph =
   if res.dirty:
     res.buildAccessGraph
     res.dirty = false

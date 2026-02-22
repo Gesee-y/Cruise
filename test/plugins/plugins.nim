@@ -181,7 +181,6 @@ suite "Plugin system core":
     let ib = addSystem(p1, b)
 
     let ic = addSystem(p2, c)
-    #discard addDependency(p2, ic, ic) # dumb but legal edge
 
     mergePlugin(p1, p2)
 

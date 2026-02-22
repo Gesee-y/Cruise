@@ -304,10 +304,10 @@ proc mergeEdgeInto*(dst: var DiGraph, src: DiGraph) =
   # Assume dst and src have matching vertex, we just need to merge edges
   let n = dst.indegrees.len
   for u in 0..<n:
-    if src.indegrees[u] < 0: continue
+    if u >= src.indegrees.len or src.indegrees[u] < 0: continue
     for e in src.outedges[u]:
       let v = e.idx
-      if src.indegrees[v] < 0 or dst.has_edge(u, v): continue
+      if v >= src.indegrees.len or src.indegrees[v] < 0 or dst.has_edge(u, v): continue
       if not dst.add_edge(u, v):
         discard dst.add_edge(v, u)
 
