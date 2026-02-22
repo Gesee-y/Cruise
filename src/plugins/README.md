@@ -1,9 +1,7 @@
 # Cruise: Plugins
 
 Plugins are at the heart of Cruise’s architecture. They define how systems are executed, which can run in parallel, and which must run sequentially.
-In Cruise, plugins are modeled as a DAG: each vertex represents a system, and each edge represents a dependency.
-
-Using Kahn's algorithm, Cruise computes **topological levels** (groups of systems whose dependencies have all been satisfied in previous levels). This allows safe parallel execution of systems.
+In Cruise, plugins are modeled as a **Dependency DAG**: each vertex represents a system, and each edge represents a dependency.
 
 ## Systems
 
@@ -18,7 +16,6 @@ Systems are built around the `EffectivePluginNode` concept, which requires imple
 * `awake`: Initialize the system
 * `update`: Run the system every frame
 * `shutdown`: Stop the system and release resources
-* `getObject`: Return the system’s object
 * `getCapability`: Provide an interface for dependent systems
 
 ## Capability
@@ -84,7 +81,7 @@ Now that we have talked about plugin's logic and dependencies between them the c
 What if 2 plugin access some data at the same time ?
 If we just use this we would have to use costly locks.
 
-so in order to solve that Cruise plugin system introduce **Resources** and a **Resources DAG**.
+so in order to solve that Cruise plugin system introduce **Resources** and an **Access DAG** that shows Cruise's dual DAG architecture.
 
 So a resource is some global data that a system may request in order to use it. Resources here are global objects that will be used for the whole runtime of the program so they should not be volatile objects but singletons (preferably).
 It can be anything that is typed.
