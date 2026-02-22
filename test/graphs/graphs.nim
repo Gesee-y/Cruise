@@ -36,7 +36,7 @@ suite "DiGraph basic operations":
     let b = g.add_vertex()
 
     discard g.add_edge(a, b)
-    g.rem_edge(a, b)
+    discard g.rem_edge(a, b)
 
     check g.outedges[a].len == 0
     check g.inedges[b].len == 0

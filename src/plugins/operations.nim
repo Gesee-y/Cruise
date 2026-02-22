@@ -55,14 +55,14 @@ template getNodeid(n:typed, s:string):untyped =
   res 
 
 template addSystem(p:var Plugin, obj):int =
-  var flag = false
-  for n in p.idtonode:
-    if n.asKey == obj.asKey:
-      flag = true
+  var id = -1
+  for i in 0..<p.idtonode.len:
+    if p.idtonode[i].asKey == obj.asKey:
+      id = i
       break
 
-  if not flag:
-    let id = add_vertex(p.graph)
+  if id < 0:
+    id = add_vertex(p.graph)
 
     if id < p.idtonode.len:
       p.idtonode[id] = obj
@@ -72,9 +72,7 @@ template addSystem(p:var Plugin, obj):int =
     obj.id = id
     p.dirty = true
 
-    id
-  else:
-    -1
+  id
 
 proc remSystem(p:var Plugin, id:int) =
   if id >= p.idtonode.len or p.idtonode[id] == nil: return

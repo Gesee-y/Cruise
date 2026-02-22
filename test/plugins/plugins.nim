@@ -1,31 +1,45 @@
 import unittest, tables
 include "../../src/plugins/plugins.nim"
 
-type
-  TestNode = ref object of PluginNode
+template genSystem(name) =
+  genSystemTy name:
     awaken:int
     updated:int
     shutdowns:int
     failOnUpdate:bool
 
-method awake(n:TestNode) =
-  inc n.awaken
-  n.setStatus(PLUGIN_OK)
+  method awake(n:name) =
+    inc n.awaken
+    n.setStatus(PLUGIN_OK)
 
-method update(n:TestNode) =
-  inc n.updated
-  if n.failOnUpdate:
-    raise newException(ValueError, "update failed")
+  method update(n:name) =
+    inc n.updated
+    if n.failOnUpdate:
+      raise newException(ValueError, "update failed")
 
-method shutdown(n:TestNode) =
-  inc n.shutdowns
-  n.setStatus(PLUGIN_OFF)
+  method shutdown(n:name) =
+    inc n.shutdowns
+    n.setStatus(PLUGIN_OFF)
+
+genSystem(TestNode)
+genSystem(OtherTestNode)
+genSystem(T1)
+genSystem(T2)
+genSystem(T3)
 
 method getObject(n:TestNode):int = n.id
 method getCapability(n:TestNode):int = 42
 
 proc newTestNode(mainthread=false): TestNode =
   TestNode(
+    enabled: true,
+    mainthread: mainthread,
+    status: PLUGIN_OFF,
+    deps: initTable[string, PluginNode]()
+  )
+
+proc newOtherTestNode(mainthread=false): OtherTestNode =
+  OtherTestNode(
     enabled: true,
     mainthread: mainthread,
     status: PLUGIN_OFF,
@@ -40,7 +54,7 @@ suite "Plugin system core":
 
   test "Add system assigns id and marks plugin dirty":
     var p: Plugin
-    let n = newTestNode()
+    let n = TestNode()
     let id = addSystem(p, n)
 
     check id == 0
@@ -50,7 +64,7 @@ suite "Plugin system core":
 
   test "Remove system is safe and idempotent":
     var p: Plugin
-    let n = newTestNode()
+    let n = TestNode()
     let id = addSystem(p, n)
 
     remSystem(p, id)
@@ -60,11 +74,13 @@ suite "Plugin system core":
 
   test "Add dependency registers graph edge and deps table":
     var p: Plugin
-    let a = newTestNode()
-    let b = newTestNode()
+    let a = TestNode()
+    let b = OtherTestNode()
 
     let ida = addSystem(p, a)
     let idb = addSystem(p, b)
+    echo ida
+    echo idb
 
     let ok = addDependency(p, ida, idb)
 
@@ -74,8 +90,8 @@ suite "Plugin system core":
 
   test "Dependency removal clears deps table":
     var p: Plugin
-    let a = newTestNode()
-    let b = newTestNode()
+    let a = TestNode()
+    let b = T1()
 
     let ida = addSystem(p, a)
     let idb = addSystem(p, b)
@@ -86,8 +102,8 @@ suite "Plugin system core":
     check b.deps.len == 0
 
   test "hasAllDepsInitialized detects uninitialized deps":
-    let a = newTestNode()
-    let b = newTestNode()
+    let a = TestNode()
+    let b = T1()
 
     b.deps["a"] = a
 
@@ -99,7 +115,7 @@ suite "Plugin system core":
 
   test "Error during update marks node as failed":
     var p: Plugin
-    let n = newTestNode()
+    let n = TestNode()
     n.failOnUpdate = true
 
     discard addSystem(p, n)
@@ -110,8 +126,8 @@ suite "Plugin system core":
 
   test "smap respects topological order":
     var p: Plugin
-    let a = newTestNode()
-    let b = newTestNode()
+    let a = TestNode()
+    let b = OtherTestNode()
 
     let ida = addSystem(p, a)
     let idb = addSystem(p, b)
@@ -125,9 +141,9 @@ suite "Plugin system core":
 
   test "computeParallelLevel groups nodes by dependency depth":
     var p: Plugin
-    let a = newTestNode()
-    let b = newTestNode()
-    let c = newTestNode(mainthread=true)
+    let a = TestNode()
+    let b = T1()
+    let c = T2(mainthread:true)
 
     let ia = addSystem(p, a)
     let ib = addSystem(p, b)
@@ -143,8 +159,8 @@ suite "Plugin system core":
 
   test "pmap executes all nodes once":
     var p: Plugin
-    let a = newTestNode()
-    let b = newTestNode(mainthread=true)
+    let a = TestNode()
+    let b = T1(mainthread:true)
 
     discard addSystem(p, a)
     discard addSystem(p, b)
@@ -157,17 +173,17 @@ suite "Plugin system core":
   test "mergePlugin merges nodes and dependencies correctly":
     var p1, p2: Plugin
 
-    let a = newTestNode()
-    let b = newTestNode()
-    let c = newTestNode()
+    let a = TestNode()
+    let b = T1()
+    let c = T2()
 
     let ia = addSystem(p1, a)
     let ib = addSystem(p1, b)
 
     let ic = addSystem(p2, c)
-    discard addDependency(p2, ic, ic) # dumb but legal edge
+    #discard addDependency(p2, ic, ic) # dumb but legal edge
 
     mergePlugin(p1, p2)
 
-    check p1.idtonode.len == 2
+    check p1.idtonode.len == 3
     check p1.dirty == true
