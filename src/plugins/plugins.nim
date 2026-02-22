@@ -35,8 +35,6 @@ type
 
   NullPluginNode = ref object of PluginNode
 
-include "layout.nim"
-
 template getStatus(s:typed):untyped = s.status
 template setStatus(s:typed, st:PluginStatus) = 
   s.status = st

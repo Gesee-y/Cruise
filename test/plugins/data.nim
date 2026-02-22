@@ -64,7 +64,7 @@ suite "PResourceManager & Access Graph":
   test "no conflict: fully parallel systems":
     var manager = PResourceManager()
     let r1 = manager.addResource(1)
-    let r2 = manager.addResource(2)
+    let r2 = manager.addResource(2.0)
     let sysA = 0
     let sysB = 1
 
@@ -110,7 +110,7 @@ suite "PResourceManager & Access Graph":
   test "topo sort respects ordering constraints":
     var manager = PResourceManager()
     let r1 = manager.addResource(1)
-    let r2 = manager.addResource(2)
+    let r2 = manager.addResource(2.0)
     let sysA = 0
     let sysB = 1
     let sysC = 2
@@ -134,8 +134,8 @@ suite "PResourceManager & Access Graph":
   test "triangle of write conflicts yields a DAG":
     var manager = PResourceManager()
     let r1 = manager.addResource(1)
-    let r2 = manager.addResource(2)
-    let r3 = manager.addResource(3)
+    let r2 = manager.addResource(2.0)
+    let r3 = manager.addResource(true)
     let sysA = 0
     let sysB = 1
     let sysC = 2
