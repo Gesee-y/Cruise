@@ -54,15 +54,26 @@ template getNodeid(n:typed, s:string):untyped =
 
   res 
 
-template addSystem(p:var Plugin, obj):int =
+template swapRem(arr, v):bool =
   var flag = false
-  for n in p.idtonode:
-    if n.asKey == obj.asKey:
+  for i in 0..<arr.len:
+    if arr[i] == v:
+      arr[i] = arr[^1]
       flag = true
+      discard arr.pop
       break
 
-  if not flag:
-    let id = add_vertex(p.graph)
+  flag
+
+template addSystem(p:var Plugin, obj):int =
+  var id = -1
+  for i in 0..<p.idtonode.len:
+    if p.idtonode[i].asKey == obj.asKey:
+      id = i
+      break
+
+  if id < 0:
+    id = add_vertex(p.graph)
 
     if id < p.idtonode.len:
       p.idtonode[id] = obj
@@ -72,9 +83,10 @@ template addSystem(p:var Plugin, obj):int =
     obj.id = id
     p.dirty = true
 
-    id
-  else:
-    -1
+  if id > p.res_manager.maxRequestId:
+    p.res_manager.maxRequestId = id
+
+  id
 
 proc remSystem(p:var Plugin, id:int) =
   if id >= p.idtonode.len or p.idtonode[id] == nil: return
@@ -82,6 +94,9 @@ proc remSystem(p:var Plugin, id:int) =
   rem_vertex(p.graph, id)
   p.idtonode[id] = nil
   p.dirty = true
+
+  for res in p.res_manager.resources.mitems:
+    res.dirty = res.readRequests.swapRem(id) or res.writeRequests.swapRem(id)
 
 proc addDependency(p:var Plugin, start:int, to:int):bool =
   if add_edge(p.graph, start, to):
@@ -135,6 +150,10 @@ template exec_node(f, n) =
 
 proc computeParallelLevel(p:var Plugin) =
   var graph = p.graph
+
+  p.res_manager.buildGlobalAccessGraph
+  graph.mergeEdgeInto(p.res_manager.cachedGraph)
+
   let sorted = graph.topo_sort()
   var levels = newSeq[int](graph.indegrees.len)
   var maximum = 0

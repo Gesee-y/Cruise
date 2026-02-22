@@ -8,14 +8,18 @@ So here is **Cruise**, not a game engine in the regular sense (you can't have a 
 
 So, why bother using Cruise ? What does it offer the plethora of game engines out there doesn't offer ? It's simple.
 A flexible, extensible, performant, and simple core architecture.
-All that through a **DAG** (Direct Acyclic Graph) architecture.
-A DAG architecture is a model where the game systems are modelled as vertex in the DAG and and edges are dependencies between them or the data.
-DAG:
+All that through a **Dual DAG** (Direct Acyclic Graph) architecture.
+First, Dual DAG architecture is a model where game systems are modeled as vertices and bounded by 2 set of contraints:
+  - Dependecies between systems which forms the **Dependency DAG**
+  - Access to data by systems which forms the **Access DAG**
+
+This is inspired by Apache Airflow's task graph and Bevy's scheduler.  
+Also between, DAG:
   - **Direct**: Ensure data and dependencies flows in one direction.
   - **Acyclic**: Ensure there are no circular dependencies and impossible execution order.
   - **Graph**: Ensure we can find an optimal execution order through topological sort.
 
-This allows people to easily build **plugins**. A plugin is simply a subgraph of the DAG. People can create their own plugins and just fuse it with the main graph and automatically, it will be able to run.
+This allows people to easily build **plugins**, which are simply a subgraph of the dependency DAG + set of resources. People can create their own plugins and just fuse it with the main graph and automatically, it will be able to run.
 
 This architecture offers several advantages:
   - **Architectural liberty**: Each plugin encapsulate his own way to work, game developers aren't constricted by any given architecture.
@@ -24,11 +28,11 @@ This architecture offers several advantages:
 
 ## Features
 
-- **Secure and flexible plugin system**: Built around a DAG (Direct Acyclic Graph), it allows you to extend Cruise, share your own plugin and collaborate without too much hassle. Each system of the plugin have his own inteface to safely interact with his dependencies.
+- **Secure and flexible plugin system**: Built around a Dual DAG, it allows you to extend Cruise, share your own plugin and collaborate without too much hassle. Each system of the plugin have his own inteface to safely interact with his dependencies.
 
 - **Optimal system scheduling**: Through topological sort, Cruise ensure your systems are executed in the most efficient way.
 
-- **Game logics as first class citizens**: Your customs systems have as much power as the core ones. They are easy to define, are automatically scheduled.
+- **Game logics as first class citizens**: Your customs systems have as much power as the core ones. They are easy to define and scheduled.
 
 - **CLI tool**: To manage plugins, get them, solve dependencies, etc. ![Cruise CLI overview](https://github.com/Gesee-y/Cruise/blob/main/assets%2Fcruise_cli.PNG)
 
