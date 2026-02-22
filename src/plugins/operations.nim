@@ -54,17 +54,6 @@ template getNodeid(n:typed, s:string):untyped =
 
   res 
 
-template swapRem(arr, v):bool =
-  var flag = false
-  for i in 0..<arr.len:
-    if arr[i] == v:
-      arr[i] = arr[^1]
-      flag = true
-      discard arr.pop
-      break
-
-  flag
-
 template addSystem(p:var Plugin, obj):int =
   var id = -1
   for i in 0..<p.idtonode.len:
@@ -96,7 +85,8 @@ proc remSystem(p:var Plugin, id:int) =
   p.dirty = true
 
   for res in p.res_manager.resources.mitems:
-    res.dirty = res.readRequests.swapRem(id) or res.writeRequests.swapRem(id)
+    res.dirty = res.readRequests.contains(id) or res.writeRequests.contains(id)
+    res.readRequests.excl id
 
 proc addDependency(p:var Plugin, start:int, to:int):bool =
   if add_edge(p.graph, start, to):

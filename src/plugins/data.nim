@@ -5,8 +5,8 @@
 type
   PluginResource* = object
     data: pointer
-    readRequests: seq[int]   # sys ids who read this resource
-    writeRequests: seq[int]  # sys ids who write this resource
+    readRequests: BitSet   # sys ids who read this resource
+    writeRequests: Bitset  # sys ids who write this resource
     dirty: bool
     cachedGraph: DiGraph
 
@@ -36,32 +36,30 @@ proc getResource*[T](manager: PResourceManager): T =
 
 proc addReadRequest(manager: var PResourceManager, sys, id: int) =
   # A sys cannot read and write the same resource
-  assert sys notin manager.resources[id].writeRequests,
+  assert not manager.resources[id].writeRequests.contains(sys),
     "sys " & $sys & " already has a write request on resource " & $id
   
-  if sys in manager.resources[id].readRequests: return
   if sys > manager.maxRequestId:
     manager.maxRequestId = sys
 
   manager.resources[id].dirty = true
   manager.dirty = true
-  manager.resources[id].readRequests.add sys
+  manager.resources[id].readRequests.incl sys
 
 proc addReadRequest[T](manager: var PResourceManager, sys: int) =
   manager.addReadRequest(sys, manager.toId[$T])
 
 proc addWriteRequest(manager: var PResourceManager, sys, id: int) =
   # A sys cannot read and write the same resource
-  assert sys notin manager.resources[id].readRequests,
+  assert not manager.resources[id].readRequests.contains(sys),
     "sys " & $sys & " already has a read request on resource " & $id
   
-  if sys in manager.resources[id].writeRequests: return
   if sys > manager.maxRequestId:
     manager.maxRequestId = sys
   
   manager.resources[id].dirty = true
   manager.dirty = true
-  manager.resources[id].writeRequests.add sys
+  manager.resources[id].writeRequests.incl sys
 
 proc addWriteRequest[T](manager: var PResourceManager, sys: int) =
   manager.addWriteRequest(sys, manager.toId[$T])
@@ -86,11 +84,7 @@ proc buildAccessGraph(res: var PluginResource) =
   # We work with sys IDs directly as node indices, so we need a graph
   # large enough to hold the largest sys id.
   
-  var maxId = 0
-  for s in res.readRequests:
-    if s > maxId: maxId = s
-  for s in res.writeRequests:
-    if s > maxId: maxId = s
+  var maxId = max(res.readRequests.max, res.writeRequests.max)
 
   res.cachedGraph = newGraph(maxId + 1)
 

@@ -5,6 +5,7 @@
 import tables, typetraits
 include "../graph/graph.nim"
 include "../events/events.nim"
+include "bitset.nim"
 include "data.nim"
 
 type
