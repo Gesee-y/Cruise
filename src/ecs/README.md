@@ -123,7 +123,7 @@ sig.addFilter(fil)
 var tree = initSceneTree(rootEntity)
 world.setUp(tree)
 
-tree.addChild(entity)
+tree.addChild(entity1)
 tree.addChild(entity1, entity2)
 
 var sig = world.query(Position and Velocity)
