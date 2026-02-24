@@ -7,6 +7,8 @@ import math
 include "vectors.nim"
 include "matrix.nim"
 include "quaternions.nim"
+include "ray.nim"
+include "random_distributions.nim"
 
 type MyVec3 = object
   x*, y*, z*: float32

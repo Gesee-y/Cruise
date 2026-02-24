@@ -446,7 +446,7 @@ template smoothStep*[T: Vec2](edge0, edge1, v: T): T =
 
 template smoothStep*[T: Vec3](edge0, edge1, v: T): T =
   ## Per-component smoothstep for Vec3.
-  template s(a, b, x: MFloat): MFloat =
+  func s(a, b, x: MFloat): MFloat =
     let t = clamp((x - a) / (b - a), 0.MFloat, 1.MFloat)
     t * t * (3.MFloat - 2.MFloat * t)
   T(x: s(edge0.x, edge1.x, v.x),
