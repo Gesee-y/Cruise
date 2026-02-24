@@ -24,10 +24,6 @@ import math
 # If this file is compiled standalone, define minimal stubs here.
 
 type
-  MFloat* = float32
-
-  # ── Concepts ────────────────────────────────────────────────────────────────
-
   Box2D* = concept b
     ## Any type with two corner points stored as x1,y1 (min) and x2,y2 (max).
     ## Deliberately compatible with SDL_FRect-style structs.
@@ -45,81 +41,6 @@ type
     b.size.x   is MFloat
     b.size.y   is MFloat
     b.size.z   is MFloat
-
-  # ── Concrete types ──────────────────────────────────────────────────────────
-
-  BoxF2* = object
-    ## Concrete 2D AABB.  (x1,y1) = min corner,  (x2,y2) = max corner.
-    x1*, y1*, x2*, y2*: MFloat
-
-  Vc3f* = object          # minimal Vec3 concrete — replace with yours
-    x*, y*, z*: MFloat
-
-  BoxF3* = object
-    ## Concrete 3D AABB.  origin = min corner,  size = positive extent.
-    origin*: Vc3f
-    size*:   Vc3f
-
-
-#############################################################################################################################
-################################################## CONSTRUCTORS #############################################################
-#############################################################################################################################
-
-# ─────────────────────────────────────────────────────────────────── Box2D ───
-
-func box2*(x1, y1, x2, y2: MFloat): BoxF2 {.inline.} =
-  ## Build a BoxF2 from two corner points.
-  ## The min/max relationship is NOT enforced here — use box2Sorted if unsure.
-  BoxF2(x1: x1, y1: y1, x2: x2, y2: y2)
-
-func box2Sorted*(ax, ay, bx, by: MFloat): BoxF2 {.inline.} =
-  ## Build a BoxF2, sorting corners so (x1,y1) is always the min corner.
-  BoxF2(x1: min(ax,bx), y1: min(ay,by), x2: max(ax,bx), y2: max(ay,by))
-
-func box2MinSize*(x, y, w, h: MFloat): BoxF2 {.inline.} =
-  ## Build a BoxF2 from a min corner (x,y) and a size (w,h).
-  BoxF2(x1: x, y1: y, x2: x+w, y2: y+h)
-
-func box2Center*(cx, cy, hw, hh: MFloat): BoxF2 {.inline.} =
-  ## Build a BoxF2 from a center point and half-extents.
-  BoxF2(x1: cx-hw, y1: cy-hh, x2: cx+hw, y2: cy+hh)
-
-func box2Boundary*(points: openArray[(MFloat,MFloat)]): BoxF2 =
-  ## Smallest BoxF2 containing all given (x,y) points.
-  assert points.len > 0, "box2Boundary: points list must not be empty"
-  var mnx = points[0][0]; var mny = points[0][1]
-  var mxx = points[0][0]; var mxy = points[0][1]
-  for i in 1..<points.len:
-    mnx = min(mnx, points[i][0]); mny = min(mny, points[i][1])
-    mxx = max(mxx, points[i][0]); mxy = max(mxy, points[i][1])
-  BoxF2(x1: mnx, y1: mny, x2: mxx, y2: mxy)
-
-# ─────────────────────────────────────────────────────────────────── Box3D ───
-
-func box3*(ox, oy, oz, sx, sy, sz: MFloat): BoxF3 {.inline.} =
-  ## Build a BoxF3 from origin (min corner) and size (extent).
-  BoxF3(origin: Vc3f(x:ox, y:oy, z:oz), size: Vc3f(x:sx, y:sy, z:sz))
-
-func box3MinMax*(mnx,mny,mnz, mxx,mxy,mxz: MFloat): BoxF3 {.inline.} =
-  ## Build a BoxF3 from explicit min and max corners.
-  BoxF3(origin: Vc3f(x:mnx,       y:mny,       z:mnz),
-        size:   Vc3f(x:mxx-mnx,   y:mxy-mny,   z:mxz-mnz))
-
-func box3Center*(cx,cy,cz, hx,hy,hz: MFloat): BoxF3 {.inline.} =
-  ## Build a BoxF3 from a center point and half-extents.
-  BoxF3(origin: Vc3f(x:cx-hx, y:cy-hy, z:cz-hz),
-        size:   Vc3f(x:hx*2f,  y:hy*2f,  z:hz*2f))
-
-func box3Boundary*(points: openArray[(MFloat,MFloat,MFloat)]): BoxF3 =
-  ## Smallest BoxF3 containing all given (x,y,z) points.
-  assert points.len > 0, "box3Boundary: points list must not be empty"
-  var mnx=points[0][0]; var mny=points[0][1]; var mnz=points[0][2]
-  var mxx=points[0][0]; var mxy=points[0][1]; var mxz=points[0][2]
-  for i in 1..<points.len:
-    mnx=min(mnx,points[i][0]); mny=min(mny,points[i][1]); mnz=min(mnz,points[i][2])
-    mxx=max(mxx,points[i][0]); mxy=max(mxy,points[i][1]); mxz=max(mxz,points[i][2])
-  box3MinMax(mnx,mny,mnz, mxx,mxy,mxz)
-
 
 #############################################################################################################################
 ################################################## MIN / MAX / SIZE ACCESS ##################################################
@@ -373,23 +294,37 @@ func intersect*[B: Box3D](a, b: B): B =
   ## Intersection of two Box3D values.
   ## Result may be empty — check with isEmpty().
   let
-    ax2 = a.origin.x+a.size.x; ay2 = a.origin.y+a.size.y; az2 = a.origin.z+a.size.z
-    bx2 = b.origin.x+b.size.x; by2 = b.origin.y+b.size.y; bz2 = b.origin.z+b.size.z
+    ax2 = a.origin.x+a.size.x
+    ay2 = a.origin.y+a.size.y
+    az2 = a.origin.z+a.size.z
+    bx2 = b.origin.x+b.size.x
+    by2 = b.origin.y+b.size.y
+    bz2 = b.origin.z+b.size.z
     rx1 = max(a.origin.x, b.origin.x)
     ry1 = max(a.origin.y, b.origin.y)
     rz1 = max(a.origin.z, b.origin.z)
-    rx2 = min(ax2, bx2); ry2 = min(ay2, by2); rz2 = min(az2, bz2)
-  type V = typeof(a.origin)
+    rx2 = min(ax2, bx2)
+    ry2 = min(ay2, by2)
+    rz2 = min(az2, bz2)
+  let V = typeof(a.origin)
   B(origin: V(x:rx1, y:ry1, z:rz1),
     size:   V(x:max(0f,rx2-rx1), y:max(0f,ry2-ry1), z:max(0f,rz2-rz1)))
 
 func merge*[B: Box3D](a, b: B): B =
   ## Smallest box containing both a and b.
   let
-    ax2 = a.origin.x+a.size.x; ay2 = a.origin.y+a.size.y; az2 = a.origin.z+a.size.z
-    bx2 = b.origin.x+b.size.x; by2 = b.origin.y+b.size.y; bz2 = b.origin.z+b.size.z
-    rx1 = min(a.origin.x,b.origin.x); ry1 = min(a.origin.y,b.origin.y); rz1 = min(a.origin.z,b.origin.z)
-    rx2 = max(ax2,bx2);               ry2 = max(ay2,by2);               rz2 = max(az2,bz2)
+    ax2 = a.origin.x+a.size.x
+    ay2 = a.origin.y+a.size.y
+    az2 = a.origin.z+a.size.z
+    bx2 = b.origin.x+b.size.x
+    by2 = b.origin.y+b.size.y
+    bz2 = b.origin.z+b.size.z
+    rx1 = min(a.origin.x,b.origin.x)
+    ry1 = min(a.origin.y,b.origin.y)
+    rz1 = min(a.origin.z,b.origin.z)
+    rx2 = max(ax2,bx2)
+    ry2 = max(ay2,by2)
+    rz2 = max(az2,bz2)
   type V = typeof(a.origin)
   B(origin: V(x:rx1, y:ry1, z:rz1),
     size:   V(x:rx2-rx1, y:ry2-ry1, z:rz2-rz1))
