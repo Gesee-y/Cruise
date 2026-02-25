@@ -36,6 +36,18 @@ This architecture offers several advantages:
 
 - **CLI tool**: To manage plugins, get them, solve dependencies, etc. ![Cruise CLI overview](https://github.com/Gesee-y/Cruise/blob/main/assets%2Fcruise_cli.PNG)
 
+- **Generic math library**: Cruise allows any objects implementing his concept to be fully usable for in the math library. Which for example means that any type with an x,y fields are Vec2, etc. Making Cruise highly compatible almost every existing math library objects:
+```
+type MyVec3 = object
+  x, y, z: float32
+
+let a = MyVec3(x: 1, y: 0, z: 0)
+let b = MyVec3(x: 0, y: 1, z: 0)
+let c = a.cross(b)
+``` 
+
+- **Projective Geometrical Algebra**: Being one of the first Nim's engine to provide this, Cruise allows your to use PGA for your games which allows unified 2D and 3D logics, simple collision detection, and more.
+
 - **Event System**: Cruise provides you 2 event system, a lightweight synchronous one that can be use for simple cases, and a complex one leveraging the full powers of reactive programming such as merging, filtering, delays, throttling,  etc.
 
 - **Optional ECS**: Cruise provides a high performances, optional ECS based on a fragmented storage. Allowing to mimick archetypes and sparse sets in the same structure without losing the best of both.
