@@ -2,10 +2,15 @@
 ################################################## WINDOWING ABSTRACTION ####################################################
 #############################################################################################################################
 
+include "events.nim"
 
 type
   CWindow = ref object of RootObj
     id:int
-    childrens:BitSet
-    
+    childrens:seq[int]
+    inputs:InputState
 
+  CApp = ref object
+    windows: seq[CWindow]
+
+include "evloop.nim"
