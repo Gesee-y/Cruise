@@ -18,8 +18,6 @@
 ##   echo normalize(a)     # MyVec3 with unit length
 ##
 
-import math
-
 type
   MFloat* = float32
   SomeInteger* = int8 | int16 | int32 | int64
