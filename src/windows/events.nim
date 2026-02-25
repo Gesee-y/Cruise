@@ -125,136 +125,7 @@ type
     CMouseAxis_WheelY = 4,
     CMouseAxis_Count  = 5
 
-## ============================================================
-##  Enums
-## ============================================================
-
-type
-  KeyInput* = enum
-    CKey_None     = 0,
-    CKey_A        = 1,
-    CKey_B        = 2,
-    CKey_C        = 3,
-    CKey_D        = 4,
-    CKey_E        = 5,
-    CKey_F        = 6,
-    CKey_G        = 7,
-    CKey_H        = 8,
-    CKey_I        = 9,
-    CKey_J        = 10,
-    CKey_K        = 11,
-    CKey_L        = 12,
-    CKey_M        = 13,
-    CKey_N        = 14,
-    CKey_O        = 15,
-    CKey_P        = 16,
-    CKey_Q        = 17,
-    CKey_R        = 18,
-    CKey_S        = 19,
-    CKey_T        = 20,
-    CKey_U        = 21,
-    CKey_V        = 22,
-    CKey_W        = 23,
-    CKey_X        = 24,
-    CKey_Y        = 25,
-    CKey_Z        = 26,
-    CKey_0        = 27,
-    CKey_1        = 28,
-    CKey_2        = 29,
-    CKey_3        = 30,
-    CKey_4        = 31,
-    CKey_5        = 32,
-    CKey_6        = 33,
-    CKey_7        = 34,
-    CKey_8        = 35,
-    CKey_9        = 36,
-    CKey_Space    = 37,
-    CKey_Enter    = 38,
-    CKey_Escape   = 39,
-    CKey_Tab      = 40,
-    CKey_Backspace = 41,
-    CKey_Delete   = 42,
-    CKey_Insert   = 43,
-    CKey_Home     = 44,
-    CKey_End      = 45,
-    CKey_PageUp   = 46,
-    CKey_PageDown = 47,
-    CKey_Up       = 48,
-    CKey_Down     = 49,
-    CKey_Left     = 50,
-    CKey_Right    = 51,
-    CKey_F1       = 52,
-    CKey_F2       = 53,
-    CKey_F3       = 54,
-    CKey_F4       = 55,
-    CKey_F5       = 56,
-    CKey_F6       = 57,
-    CKey_F7       = 58,
-    CKey_F8       = 59,
-    CKey_F9       = 60,
-    CKey_F10      = 61,
-    CKey_F11      = 62,
-    CKey_F12      = 63,
-    CKey_LShift   = 64,
-    CKey_RShift   = 65,
-    CKey_LCtrl    = 66,
-    CKey_RCtrl    = 67,
-    CKey_LAlt     = 68,
-    CKey_RAlt     = 69,
-    CKey_LSuper   = 70,
-    CKey_RSuper   = 71,
-    CKey_CapsLock = 72,
-    CKey_NumLock  = 73,
-    CKey_ScrollLock = 74,
-    CKey_PrintScreen = 75,
-    CKey_Pause    = 76,
-    CKey_Num0     = 77,
-    CKey_Num1     = 78,
-    CKey_Num2     = 79,
-    CKey_Num3     = 80,
-    CKey_Num4     = 81,
-    CKey_Num5     = 82,
-    CKey_Num6     = 83,
-    CKey_Num7     = 84,
-    CKey_Num8     = 85,
-    CKey_Num9     = 86,
-    CKey_NumAdd   = 87,
-    CKey_NumSub   = 88,
-    CKey_NumMul   = 89,
-    CKey_NumDiv   = 90,
-    CKey_NumEnter = 91,
-    CKey_NumDecimal = 92,
-    CKey_Comma    = 93,
-    CKey_Period   = 94,
-    CKey_Slash    = 95,
-    CKey_Backslash = 96,
-    CKey_Semicolon = 97,
-    CKey_Apostrophe = 98,
-    CKey_LBracket = 99,
-    CKey_RBracket = 100,
-    CKey_Minus    = 101,
-    CKey_Equal    = 102,
-    CKey_Grave    = 103,
-    CKey_Count    = 104
-
-  MouseButton* = enum
-    CMouseBtn_None    = 0,
-    CMouseBtn_Left    = 1,
-    CMouseBtn_Right   = 2,
-    CMouseBtn_Middle  = 3,
-    CMouseBtn_X1      = 4,
-    CMouseBtn_X2      = 5,
-    CMouseBtn_Count   = 6
-
-  MouseAxis* = enum
-    CMouseAxis_None   = 0,
-    CMouseAxis_X      = 1,
-    CMouseAxis_Y      = 2,
-    CMouseAxis_WheelX = 3,
-    CMouseAxis_WheelY = 4,
-    CMouseAxis_Count  = 5
-
-  WindowEvent* = enum
+  WindowEventKind* = enum
     WINDOW_RESIZED
     WINDOW_MOVED
     WINDOW_MAXIMIZED
@@ -313,6 +184,24 @@ proc len*[E: enum, T](s: SparseSet[E, T]): int = s.dense.len
 ## ============================================================
 
 type
+  WindowEvent* = object
+    case kind*: WindowEventKind
+    of WINDOW_RESIZED:
+      width*  : int
+      height* : int
+    of WINDOW_MOVED:
+      x_pos* : int
+      y_pos* : int
+    of WINDOW_MAXIMIZED,
+       WINDOW_MINIMIZED,
+       WINDOW_RESTORED,
+       WINDOW_SHOWN,
+       WINDOW_HIDDEN,
+       WINDOW_HAVE_FOCUS,
+       WINDOW_LOSE_FOCUS,
+       WINDOW_CLOSE:
+      discard
+
   KeyboardEvent* = object
     id*          : int
     key*         : KeyInput
@@ -328,7 +217,7 @@ type
     just_pressed* : bool
     pressed*     : bool
     just_released*: bool
-    clicks*      : int        ## nombre de clics (1 = simple, 2 = double…)
+    clicks*      : int
 
   MouseMotionEvent* = object
     x*    : int
@@ -340,7 +229,6 @@ type
     xwheel* : int
     ywheel* : int
 
-  ## Regroupe les axes de la souris dans un seul SparseSet
   AxisEventKind* = enum
     AxisMotion
     AxisWheel
@@ -355,11 +243,8 @@ type
     cnt*     : int
 
   InputData* = object
-    ## Touches clavier : indexées par KeyInput
     keyboard* : SparseSet[KeyInput, KeyboardEvent]
-    ## Boutons souris : indexés par MouseButton
     mouseButtons* : SparseSet[MouseButton, MouseClickEvent]
-    ## Axes souris : indexés par MouseAxis
     axes* : SparseSet[MouseAxis, AxisEvent]
 
   InputState* = object

@@ -7,3 +7,5 @@ type
   CWindow = ref object of RootObj
     id:int
     childrens:BitSet
+    
+
