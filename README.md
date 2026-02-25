@@ -54,7 +54,9 @@ let c = a.cross(b)
 
 - **Temporary storage**: To easily share data among your systems, it also support TTL (Time To Live) for data and provides events and serialization support
 
-- ~~**Multiple clear interfaces**: windowing, inputs, rendering. All clear and set for you to overload with bunch of premade implementations available.~~
+- **API-agnostic windowing**: Using a microkernel architecture, Cruise let you to manage windows and inputs in an unified interface, allowing you to change your windowing API in a breeze.
+
+- ~~**Backend agnostic rendering**: Command buffer based renderer.~~
 
 - **Make your own structure**: Cruise doesn't enforce any architecture, build your game as you feel
 

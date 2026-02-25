@@ -18,8 +18,6 @@
 ##   echo normalize(a)     # MyVec3 with unit length
 ##
 
-import math
-
 type
   MFloat* = float32
   SomeInteger* = int8 | int16 | int32 | int64
@@ -29,6 +27,7 @@ type
     compiles(v.x)
     compiles(v.y)
     not compiles(v.z)
+    not compiles(v.e12)
 
   Vec3* = concept v
     ## Any type with x, y, z : MFloat fields satisfies this concept.
@@ -43,12 +42,14 @@ type
     compiles(v.y)
     compiles(v.z)
     compiles(v.w)
+    not compiles(v.e123)
 
   Vec2f* = concept v
     ## Any type with x, y : MFloat fields satisfies this concept.
     v.x is MFloat
     v.y is MFloat
     not compiles(v.z)
+    not compiles(v.e12)
 
   Vec3f* = concept v
     ## Any type with x, y, z : MFloat fields satisfies this concept.
@@ -63,12 +64,14 @@ type
     v.y is MFloat
     v.z is MFloat
     v.w is MFloat
+    not compiles(v.e123)
 
   Vec2i* = concept v
     ## Any type with x, y : MFloat fields satisfies this concept.
     v.x is SomeInteger
     v.y is SomeInteger
     not compiles(v.z)
+    not compiles(v.e12)
 
   Vec3i* = concept v
     ## Any type with x, y, z : SomeInteger fields satisfies this concept.
@@ -83,6 +86,7 @@ type
     v.y is SomeInteger
     v.z is SomeInteger
     v.w is SomeInteger
+    not compiles(v.e123)
 
 
 #############################################################################################################################
