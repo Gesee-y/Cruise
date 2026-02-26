@@ -99,7 +99,7 @@ notifier NOTIF_INFO(mes: string, info: string, code: int)
 ##  Override these procs for each concrete backend (SDL, GLFW…).
 ## ============================================================
 
-method createWindow*(app: CApp, args: varargs[string]): CWindow {.base.} =
+method initWindow*(app: CApp, win: CWindow, args: varargs[string]): CWindow {.base.} =
   ## Create and register a new window in the app.
   ## Implementations must emit NOTIF_WINDOW_CREATED on success.
   NOTIF_WINDOW_CREATED.emit((result,))
