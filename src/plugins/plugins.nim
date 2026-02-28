@@ -3,8 +3,8 @@
 ####################################################################################################################################################
 
 import tables, typetraits
-include "../graph/graph.nim"
-include "../events/events.nim"
+import ../graph/graph
+import ../events/events
 include "bitset.nim"
 include "data.nim"
 

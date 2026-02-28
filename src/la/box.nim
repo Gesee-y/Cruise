@@ -27,6 +27,14 @@ type
   Box2D* = concept b
     ## Any type with two corner points stored as x1,y1 (min) and x2,y2 (max).
     ## Deliberately compatible with SDL_FRect-style structs.
+    compiles(b.x1)
+    compiles(b.y1)
+    compiles(b.x2)
+    compiles(b.y2)
+
+  Box2Df* = concept b
+    ## Any type with two corner points stored as x1,y1 (min) and x2,y2 (max).
+    ## Deliberately compatible with SDL_FRect-style structs.
     b.x1 is MFloat
     b.y1 is MFloat
     b.x2 is MFloat
