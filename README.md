@@ -37,7 +37,7 @@ This architecture offers several advantages:
 - **CLI tool**: To manage plugins, get them, solve dependencies, etc. ![Cruise CLI overview](https://github.com/Gesee-y/Cruise/blob/main/assets%2Fcruise_cli.PNG)
 
 - **Generic math library**: Cruise allows any objects implementing his concept to be fully usable for in the math library. Which for example means that any type with an x,y fields are Vec2, etc. Making Cruise highly compatible almost every existing math library objects:
-```
+```nim
 type MyVec3 = object
   x, y, z: float32
 
