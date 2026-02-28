@@ -56,7 +56,7 @@ let c = a.cross(b)
 
 - **API-agnostic windowing**: Using a microkernel architecture, Cruise let you to manage windows and inputs in an unified interface, allowing you to change your windowing API in a breeze.
 
-- ~~**Backend agnostic rendering**: Command buffer based renderer.~~
+- **Backend agnostic rendering**: Command buffer based renderer, and an everything as resource philosophy.
 
 - **Make your own structure**: Cruise doesn't enforce any architecture, build your game as you feel
 
