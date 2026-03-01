@@ -28,7 +28,7 @@ var e = w.createEntity(posID)
 poscolumn[e] = Pos()
 
 for (bid, r) in w.denseQuery(query(w, Pos)):
-  var xdata = poscolumn.getField(bid, x)
+  var xdata = poscolumn.getDenseField(bid, x)
   for i in r:
     xdata[i] += 1
 ```
