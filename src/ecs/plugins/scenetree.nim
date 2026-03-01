@@ -275,9 +275,11 @@ proc deleteNode*(tree: var SceneTree, s:SparseHandle) =
   tree.toSFilter[s.getId] = 0
 
 template setUp*(world:var ECSWorld, tree:var SceneTree) =
+  let treePtr = cast[pointer](tree)
 
   discard world.events.onDenseEntityDestroyed(
     proc (ev:DenseEntityDestroyedEvent) =
+      var tree = cast[SceneTree](treePtr)
       let id = ev.entity.obj.id.toIdx
       if tree.isRoot(ev.entity):
         tree.reset()
@@ -289,6 +291,7 @@ template setUp*(world:var ECSWorld, tree:var SceneTree) =
 
   discard world.events.onSparseEntityDestroyed(
     proc (ev:SparseEntityDestroyedEvent) =
+      var tree = cast[SceneTree](treePtr)
       let id = ev.entity.id
       if tree.isRoot(ev.entity):
         tree.reset()
@@ -299,6 +302,7 @@ template setUp*(world:var ECSWorld, tree:var SceneTree) =
 
   discard world.events.onDenseEntityMigrated(
     proc (ev:DenseEntityMigratedEvent) =
+      var tree = cast[SceneTree](treePtr)
       let id = ev.entity.obj.id.toIdx
       let oldId = ev.oldId.toIdx
       if oldId.int < tree.toDFilter.len and tree.toDFilter[oldId] > 0:
@@ -312,6 +316,7 @@ template setUp*(world:var ECSWorld, tree:var SceneTree) =
 
   discard world.events.onDenseEntityMigratedBatch(
     proc (ev:DenseEntityMigratedBatchEvent) =
+      var tree = cast[SceneTree](treePtr)
       for i in 0..<ev.newIds.len:
         let id = ev.newIds[i].toIdx
         let oldId = ev.ids[i].toIdx
@@ -327,6 +332,7 @@ template setUp*(world:var ECSWorld, tree:var SceneTree) =
 
   discard world.events.onDensified(
     proc (ev:DensifiedEvent) =
+      var tree = cast[SceneTree](treePtr)
       let id = ev.oldSparse.id
       let nid = ev.newDense.obj.id.toIdx
       if id.int < tree.toSFilter.len and tree.toSFilter[id] > 0:
@@ -347,6 +353,7 @@ template setUp*(world:var ECSWorld, tree:var SceneTree) =
 
   discard world.events.onSparsified(
     proc (ev:SparsifiedEvent) =
+      var tree = cast[SceneTree](treePtr)
       let id = ev.oldDense.obj.id.toIdx
       let nid = ev.newSparse.id
       if id.int < tree.toDFilter.len and tree.toDFilter[id] > 0:
