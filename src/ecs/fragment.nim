@@ -298,9 +298,12 @@ template setChangedSparse[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint
   f.sparse.ticks[i] = f.tick
   f.changeFilter.sSet(id.int)
 
-template getDenseBlock*(f: SoAFragmentArray, i:int) = f.blocks[i]
-template getSparseBlock*(f: SoAFragmentArray, i:int) = f.sparse[f.toSparse[i]]
-template getBlockTick*(f: var SoAFragmentArray, i:int) = f.blkTicks[i]
+template getDenseBlock*(f: SoAFragmentArray, i:int|uint): untyped = f.blocks[i]
+template getSparseBlock*(f: SoAFragmentArray, i:int|uint): untyped = f.sparse[f.toSparse[i]]
+template getDenseField*(f: SoAFragmentArray, i:int|uint, f0:untyped): untyped = addr f.getDenseBlock(i).data.f0 
+template getSparseField*(f: SoAFragmentArray, i:int|uint, f0:untyped): untyped = addr f.getSparseBlock(i).data.f0 
+template getBlockTick*(f: var SoAFragmentArray, i:int|uint): untyped = f.blkTicks[i]
+template getSparseTick*(f: var SoAFragmentArray, i:int|uint): untyped = f.sparseTicks[i]
 
 proc getDataType[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B]):typedesc[B] =
   ## Return the AoS component type stored in this array.

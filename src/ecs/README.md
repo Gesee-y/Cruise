@@ -28,7 +28,7 @@ var e = w.createEntity(posID)
 poscolumn[e] = Pos()
 
 for (bid, r) in w.denseQuery(query(w, Pos)):
-  var xdata = addr poscolumn.blocks[bid].data.x
+  var xdata = poscolumn.getField(bid, x)
   for i in r:
     xdata[i] += 1
 ```
@@ -165,7 +165,7 @@ world.flush() # Execute all deferred commands
 
 * **Rollback friendly**: Cruise ECS uses hibitsets to track changes. Tracking component changes only requires diffing two hibitsets (essentially an `xor`).
 
-* **Granular concurrency**: Uses a `LockTree` with TRWLocks, allowing fine-grained read/write locking on specific object fields.
+* **Granular concurrency**: Uses a `LockTree` with RWLocks, allowing fine-grained read/write locking on specific object fields.
 
 ```nim
 var positions = world.get(Position)
