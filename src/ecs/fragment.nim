@@ -19,7 +19,7 @@ type
   SoAFragment*[N:static int,P:static bool,T,B] = object
     ## SoA storage for all fields.
     data*:T
-    ticks:array[N, uint64]
+    ticks*:array[N, uint64]
 
   ## A dynamically-sized array of SoA fragments.
   ##
@@ -297,6 +297,8 @@ template setChangedSparse[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint
   f.sparseTicks[bid] = f.tick
   f.sparse.ticks[i] = f.tick
   f.changeFilter.sSet(id.int)
+
+template getBlockTick(f: var SoAFragmentArray, i:int) = f.blkTicks[i]
 
 proc getDataType[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B]):typedesc[B] =
   ## Return the AoS component type stored in this array.
