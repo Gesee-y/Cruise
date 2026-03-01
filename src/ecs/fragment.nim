@@ -19,6 +19,7 @@ type
   SoAFragment*[N:static int,P:static bool,T,B] = object
     ## SoA storage for all fields.
     data*:T
+    ticks:array[N, uint64]
 
   ## A dynamically-sized array of SoA fragments.
   ##
@@ -35,8 +36,10 @@ type
   SoAFragmentArray*[N:static int,P:static bool,T,S,B] = ref object
     ## Dense blocks.
     blocks*:seq[ref SoAFragment[N,P,T,B]]
+    blkTicks: seq[uint64]
     ## Sparse blocks (one block represents sizeof(uint)*8 entities).
     sparse*:seq[SoAFragment[sizeof(uint)*8,P,S,B]]
+    sparseTicks: seq[uint64]
     changeFilter:QueryFilter
     ## Mapping from dense indices to sparse blocks.
     toSparse:seq[int]
@@ -44,6 +47,8 @@ type
     mask:seq[uint]
     ## Active sparse indices.
     sparseMask:HiBitSetType
+    ## Change counter tick
+    tick: uint64
 
 
 const
@@ -275,10 +280,22 @@ template overrideVals(f, archId, ents, ids, toSwap, toAdd:untyped) =
 
 template setChanged[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint) =
   ## Mark a dense block as modified.
+  let bid = id shl BLK_SHIFT
+  let i = id and BLK_MASK
+  
+  f.tick += 1
+  f.blkTicks[bid] = f.tick
+  f.blocks.ticks[i] = f.tick
   f.changeFilter.dSet(id.toIdx.int)
 
 template setChangedSparse[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint) =
   ## Mark a sparse entry as modified.
+  let bid = id shl BLK_SHIFT
+  let i = id and BLK_MASK
+  
+  f.tick += 1
+  f.sparseTicks[bid] = f.tick
+  f.sparse.ticks[i] = f.tick
   f.changeFilter.sSet(id.int)
 
 proc getDataType[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B]):typedesc[B] =
@@ -297,6 +314,7 @@ proc newSparseBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, m
   if f.toSparse[i] == 0:
     f.toSparse[i] = f.sparse.len+1
     f.sparse.setLen(f.sparse.len+1)
+    f.sparseTicks.setLen(f.sparse.len+1)
   
   let id = f.toSparse[i]-1
 
@@ -315,10 +333,11 @@ proc newSparseBlocks[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, 
     let i = base + c
     let j = i div S
 
-    if i >= f.toSparse.len: 
+    if i >= f.toSparse.len:
       f.toSparse.setLen(i+1)
       f.toSparse[i] = f.sparse.len+1
       f.sparse.setLen(f.sparse.len+1)
+      f.sparseTicks.setLen(f.sparse.len+1)
     
     let id = f.toSparse[i]-1
     var msk = m
@@ -454,6 +473,7 @@ proc resize[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], n:int) =
   ## Resize the number of dense blocks.
   check(n >= 0, "Can't resize to negative size. Got " & $n)
   f.blocks.setLen(n)
+  f.blkTicks.setLen(n)
   
 proc clearDenseChanges[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B]) =
   ## Clear all dense change tracking state.
