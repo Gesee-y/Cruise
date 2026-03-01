@@ -132,9 +132,9 @@ for (bid, r) in world.denseQuery(sig):
   # Modify the children
 ```
 
-* **Bitset-based Change tracking**: Cruise ECS allows querying only entities that have changed for a given component using the syntax `Modified[Type]` for a given frame through query filters. You can also query components that have not changed using `not Modified[Type]`.
+* **Bitset-based Change tracking**: Cruise ECS allows querying only entities that have changed for a given component using the syntax `Modified[Type]` for a given frame through query filters. You can also query components that have not changed using `not Modified[Type]`. They are relative to frames, extremely performant and easily serializable/diffable.
 
-* **Tick-based change tracking**: Cruise allows you for a more local change tracking using **Hierarchical ticks** per components, which are like hibitset but the summary of the lower structure is the highest tick in the underlying chunk, which allow fast entity skipping.
+* **Tick-based change tracking**: Cruise allows you for a more local change tracking using **Hierarchical ticks** per components, which are like hibitset but the summary of the lower structure is the highest tick in the underlying chunk, which allow fast entity skipping. They are relative to other ticks, have good performances and add extra information to the bitset change tracking.
 
 * **Integrated event system**: Cruise ECS allows you to listen for events such as entity creation and more:
 
