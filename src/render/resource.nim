@@ -111,7 +111,7 @@ proc `==`*[T](a, b: CResource[T]): bool {.inline.} =
   uint64(a) == uint64(b)
 
 proc `$`*[T](h: CResource[T]): string =
-  "CResource[" & $typeof(T) & "](0x" & $uint64(h) & ")"
+  "CResource[" & $typeof(T) & "](" & $uint64(h) & ")"
 
 # Expose the same field accessors on CResource for convenience.
 proc resourceTypeId*[T](h: CResource[T]): TypeId {.inline.} =
@@ -136,7 +136,7 @@ proc resourceIndex*[T](h: CResource[T]): uint32 {.inline.} =
 ##   freeList       — stack of slot indices available for reuse
 # ---------------------------------------------------------------------------
 
-type ResourceStore[T] = object
+type ResourceStore[T] = ref object
   data:        seq[T]
   generations: seq[uint32]
   freeList:    seq[uint32]
@@ -255,6 +255,8 @@ proc registerType*[T](reg: var ResourceRegistry): TypeId =
   inc reg.nextTypeId
   tid
 
+proc registerType*[T](reg: var ResourceRegistry, ty: typedesc[T]): TypeId = registerType[T](reg)
+
 proc create*[T](reg: var ResourceRegistry, typeId: TypeId, value: T): CResource[T] =
   ## Allocate a new resource slot, write `value` into it, and return a
   ## typed handle.  The returned `CResource[T]` is valid until `destroy` is
@@ -264,7 +266,7 @@ proc create*[T](reg: var ResourceRegistry, typeId: TypeId, value: T): CResource[
 
   let (index, generation) = entry.allocFn()
   var v = value
-  entry.writeFn(index, addr v)
+  entry.writeFn(index, cast[pointer](v))
 
   CResource[T](uint64(buildHandle(typeId, generation, index)))
 
@@ -287,15 +289,10 @@ proc get*[T](reg: var ResourceRegistry, h: CResource[T]): ptr T =
   ## Return a pointer to the resource data.
   ## Asserts that the handle is valid — call `isValid` first if unsure.
   assert reg.isValid(h), "ResourceRegistry.get: invalid or stale handle"
-  let entry = reg.stores[uint32(h.resourceTypeId)]
+  let entry = reg.stores[h.resourceTypeId.uint32]
   cast[ptr T](entry.getPtrFn(h.resourceIndex))
 
-proc get*[T](reg: var ResourceRegistry, h: ResourceHandle): ptr T =
-  ## Opaque-handle overload.  `T` must match the type the handle was created
-  ## with — the registry cannot verify this at runtime.
-  assert reg.isValid(h), "ResourceRegistry.get: invalid or stale handle"
-  let entry = reg.stores[uint32(h.handleTypeId)]
-  cast[ptr T](entry.getPtrFn(h.handleIndex))
+proc get*[T](reg: var ResourceRegistry, h: ResourceHandle): ptr T = get[T](reg, CResource[T](h.uint64))
 
 proc destroy*[T](reg: var ResourceRegistry, h: CResource[T]) =
   ## Release the resource at `h`.  Any existing copies of `h` become stale;

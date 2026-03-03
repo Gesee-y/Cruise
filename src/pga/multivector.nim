@@ -310,10 +310,10 @@ func motorIdentity3*(): Motor3D {.inline.} =
 ##   Plane3D  : a=e1   b=e2    c=e3    d=e0  (plane ax+by+cz+d=0)
 ##   Line3D   : dx=e12 dy=e13  dz=e23  (direction bivector)
 ##              mx=e01 my=e02  mz=e03  (moment bivector)
-##   Rotor2D  : scalar=s  xy=e12
-##   Motor2D  : scalar=s  xy=e12  tx=e20  ty=e01
-##   Rotor3D  : scalar=s  xy=e12  xz=e13  yz=e23
-##   Motor3D  : scalar=s  xy=e12  xz=e13  yz=e23
+##   Rotor2D  : xy=e12
+##   Motor2D  : xy=e12  tx=e20  ty=e01
+##   Rotor3D  : xy=e12  xz=e13  yz=e23
+##   Motor3D  : xy=e12  xz=e13  yz=e23
 ##              tx=e01  ty=e02  tz=e03  pseudo=e0123
 ##
 

@@ -11,21 +11,21 @@ import algorithm
 # - EdgeInfo.back = index in the opposite list
 
 type
-  EdgeInfo = object
-    idx: int    # neighbor node index
-    back: int   # index in the opposite adjacency list
+  EdgeInfo* = object
+    idx*: int    # neighbor node index
+    back*: int   # index in the opposite adjacency list
 
-  DiGraph = object
-    outedges: seq[seq[EdgeInfo]]     # children lists
-    inedges: seq[seq[EdgeInfo]]  # parent lists
-    indegrees: seq[int]
+  DiGraph* = object
+    outedges*: seq[seq[EdgeInfo]]     # children lists
+    inedges*: seq[seq[EdgeInfo]]  # parent lists
+    indegrees*: seq[int]
     free_list: seq[int]
-    sort_cache: seq[int]
-    dirty: bool
+    sort_cache*: seq[int]
+    dirty*: bool
 
 # ---------- Construction ----------
 
-proc newGraph(initialNodes = 0): DiGraph =
+proc newGraph*(initialNodes = 0): DiGraph =
   result.outedges = newSeq[seq[EdgeInfo]](initialNodes)
   result.inedges = newSeq[seq[EdgeInfo]](initialNodes)
   result.indegrees = newSeq[int](initialNodes)
@@ -44,11 +44,11 @@ iterator indexIterator(s:seq[seq[EdgeInfo]], v:int):int =
 
 # ----------- Utilities ----------
 
-proc isValid(d: DiGraph, v: int): bool =
+proc isValid*(d: DiGraph, v: int): bool =
   result = v >= 0 and v < d.indegrees.len and d.indegrees[v] >= 0
 
 # find position of neighbor 'target' in edges[u]; returns -1 if not found
-proc findPosChild(d: DiGraph, u, target: int): int =
+proc findPosChild*(d: DiGraph, u, target: int): int =
   result = -1
   if not isValid(d, u): return
   for i in 0..<d.outedges[u].len:
@@ -56,12 +56,12 @@ proc findPosChild(d: DiGraph, u, target: int): int =
       result = i
       break
 
-proc has_edge(d: DiGraph, u, v: int):bool =
+proc has_edge*(d: DiGraph, u, v: int):bool =
   if not d.isValid(u) or not d.isValid(v): return false
   return findPosChild(d, u, v) >= 0 or findPosChild(d, u, v) >= 0
 
 # find position of neighbor 'target' in outedges[v]; returns -1 if not found
-proc findPosParent(d: DiGraph, v, target: int): int =
+proc findPosParent*(d: DiGraph, v, target: int): int =
   result = -1
   if not isValid(d, v): return
   for i in 0..<d.inedges[v].len:
@@ -92,7 +92,7 @@ proc swapPopParent(d: var DiGraph, v, pos: int) =
     d.outedges[moved.idx][moved.back].back = pos
   d.inedges[v].setLen(last)
 
-proc has_cycle(d:DiGraph):bool =
+proc has_cycle*(d:DiGraph):bool =
   var indegrees = d.indegrees
 
   var queue:seq[int] = newSeq[int]()
@@ -117,13 +117,10 @@ proc has_cycle(d:DiGraph):bool =
 
 # ---------- Vertex ops ----------
 
-proc add_vertex(d: var DiGraph): int =
+proc add_vertex*(d: var DiGraph): int =
   d.dirty = true
   if d.free_list.len > 0:
     let id = d.free_list.pop()
-    d.outedges[id].setLen(0)
-    d.inedges[id].setLen(0)
-    d.indegrees[id] = 0
     return id
   else:
     let id = d.outedges.len
@@ -132,7 +129,7 @@ proc add_vertex(d: var DiGraph): int =
     d.indegrees.add(0)
     return id
 
-proc rem_vertex(d: var DiGraph, v: int) =
+proc rem_vertex*(d: var DiGraph, v: int) =
   if not isValid(d, v): return
   d.dirty = true
 
@@ -169,7 +166,7 @@ proc rem_vertex(d: var DiGraph, v: int) =
 # ---------- Edge ops ----------
 
 # reachable search: does 'start' reach 'target' ? (DFS iterative)
-proc reachable(d: DiGraph, start, target: int): bool =
+proc reachable*(d: DiGraph, start, target: int): bool =
   if not isValid(d, start) or not isValid(d, target): return false
   if start == target: return true
   
@@ -192,7 +189,7 @@ proc reachable(d: DiGraph, start, target: int): bool =
 
 # Add directed edge u -> v if it doesn't create a cycle.
 # Returns true if added, false otherwise.
-proc add_edge(d: var DiGraph, u, v: int): bool =
+proc add_edge*(d: var DiGraph, u, v: int): bool =
   if not isValid(d,u) or not isValid(d,v) or u == v: return false
   # if edge already exists, nothing to do
   if findPosChild(d, u, v) >= 0:
@@ -211,7 +208,7 @@ proc add_edge(d: var DiGraph, u, v: int): bool =
   inc d.indegrees[v]
   return true
 
-proc rem_edge(d: var DiGraph, u, v: int):bool =
+proc rem_edge*(d: var DiGraph, u, v: int):bool =
   if not isValid(d,u) or not isValid(d,v): return false
   
   d.dirty = true
@@ -247,7 +244,7 @@ template DFSTopoSort*(d): untyped =
 
   d.sort_cache
 
-template topo_sort(d:var DiGraph):untyped =
+template topo_sort*(d:var DiGraph):untyped =
   if d.dirty:
     var indegrees = d.indegrees
 
@@ -334,7 +331,7 @@ proc mergeEdge*(a, b: DiGraph): DiGraph =
 
 # ---------- Debug helpers ----------
 
-proc debugPrint(d: DiGraph) =
+proc debugPrint*(d: DiGraph) =
   echo "Graph:"
   for i in 0..<d.outedges.len:
     if d.indegrees[i] < 0: continue
