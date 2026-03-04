@@ -5,13 +5,13 @@
 include "events.nim"
 
 type
-  CWindow = ref object of RootObj
-    id:int
-    childrens:seq[int]
-    inputs:InputState
+  CWindow* = ref object of RootObj
+    id*:int
+    childrens*:seq[int]
+    inputs*:InputState
 
-  CApp = ref object
-    windows: seq[CWindow]
+  CApp* = ref object
+    windows*: seq[CWindow]
 
 include "evloop.nim"
 include "inputmap.nim"
