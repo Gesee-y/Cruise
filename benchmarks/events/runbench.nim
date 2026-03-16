@@ -1,7 +1,7 @@
 import ../../src/events/events 
 import times, os, strutils, math
 
-const SAMPLE = 10000
+const SAMPLE = 100000
 
 template benchmark(benchmarkName: string, sample:int, code: untyped) =
   block:
@@ -65,21 +65,21 @@ run_bench_emission(SAMPLE)
 
 notifier notif2(a:int, b:int)
 benchmark "map", SAMPLE:
-  map(notif2, proc(a,b: int): int = a + b, int)
+  discard map(notif2, proc(a,b: int): int = a + b, int)
 
 notifier notif3(a:int, b:int)
 benchmark "filter", SAMPLE:
-  filter(notif3, proc(a,b: int): bool = a > b)
+  discard filter(notif3, proc(a,b: int): bool = a > b)
 
 notifier notif4(a:int, b:int)
 notifier notif5(a:int, b:int)
 benchmark "merge", SAMPLE:
-  merge(notif4,notif5)
+  discard merge(notif4,notif5)
 
 notifier notif6(a:int, b:int)
 notifier notif7(a:int, b:int)
 benchmark "zip", SAMPLE:
-  zip(notif6,notif7, proc(a,b: tuple[a:int, b:int]): int = a.a + b.b, int)
+  discard zip(notif6,notif7, proc(a,b: tuple[a:int, b:int]): int = a.a + b.b, int)
 
 benchmark "Value mode", SAMPLE:
   enable_value(notif)

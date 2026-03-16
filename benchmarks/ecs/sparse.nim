@@ -7,7 +7,7 @@ include "../../src/ecs/table.nim"
 include "../../src/profile/benchmarks.nim"
 
 const
-  Samples = 100
+  Samples = 1000
   Warmup  = 10
 
 type
