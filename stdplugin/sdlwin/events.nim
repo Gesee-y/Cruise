@@ -20,44 +20,42 @@
 ##    8. eventLoop runs the pump once per CApp, not once per CWindow.
 ## =============================================================
 
-import sdl3_nim
-
 # ---------------------------------------------------------------------------
 # convertKey — SDL_Keycode → KeyInput
 # sdl3_nim renames SDLK_a..z to SDLK_a_const..SDLK_z_const (futhark rule).
 # ---------------------------------------------------------------------------
 
-method convertKey*(win: SDL3Window, rawKey: SDL_Keycode): KeyInput =
+method convertKey*(win: SDL3Window, rawKey: uint): KeyInput =
   ## Translate an SDL3 SDL_Keycode to our KeyInput enum.
   ## Returns CKey_None for any unmapped key.
-  case rawKey
+  case SDL_Keycode(rawKey)
   # Letters (futhark renames SDLK_a → SDLK_a_const, etc.)
-  of SDLK_a_const: CKey_A    
-  of SDLK_b_const: CKey_B
-  of SDLK_c_const: CKey_C    
-  of SDLK_d_const: CKey_D
-  of SDLK_e_const: CKey_E    
-  of SDLK_f_const: CKey_F
-  of SDLK_g_const: CKey_G    
-  of SDLK_h_const: CKey_H
-  of SDLK_i_const: CKey_I    
-  of SDLK_j_const: CKey_J
-  of SDLK_k_const: CKey_K    
-  of SDLK_l_const: CKey_L
-  of SDLK_m_const: CKey_M    
-  of SDLK_n_const: CKey_N
-  of SDLK_o_const: CKey_O    
-  of SDLK_p_const: CKey_P
-  of SDLK_q_const: CKey_Q    
-  of SDLK_r_const: CKey_R
-  of SDLK_s_const: CKey_S    
-  of SDLK_t_const: CKey_T
-  of SDLK_u_const: CKey_U    
-  of SDLK_v_const: CKey_V
-  of SDLK_w_const: CKey_W    
-  of SDLK_x_const: CKey_X
-  of SDLK_y_const: CKey_Y    
-  of SDLK_z_const: CKey_Z
+  of SDLK_a: CKey_A    
+  of SDLK_b: CKey_B
+  of SDLK_c: CKey_C    
+  of SDLK_d: CKey_D
+  of SDLK_e: CKey_E    
+  of SDLK_f: CKey_F
+  of SDLK_g: CKey_G    
+  of SDLK_h: CKey_H
+  of SDLK_i: CKey_I    
+  of SDLK_j: CKey_J
+  of SDLK_k: CKey_K    
+  of SDLK_l: CKey_L
+  of SDLK_m: CKey_M    
+  of SDLK_n: CKey_N
+  of SDLK_o: CKey_O    
+  of SDLK_p: CKey_P
+  of SDLK_q: CKey_Q    
+  of SDLK_r: CKey_R
+  of SDLK_s: CKey_S    
+  of SDLK_t: CKey_T
+  of SDLK_u: CKey_U    
+  of SDLK_v: CKey_V
+  of SDLK_w: CKey_W    
+  of SDLK_x: CKey_X
+  of SDLK_y: CKey_Y    
+  of SDLK_z: CKey_Z
   # Digits
   of SDLK_0: CKey_0   
   of SDLK_1: CKey_1   
@@ -214,7 +212,7 @@ method handleWindowEvent*(win: SDL3Window, ev: SDL_WindowEvent) =
   of WINDOW_SHOWN:     win.visible = true
   else: discard
 
-  NOTIF_WINDOW_EVENT.emit((win, wev))
+  NOTIF_WINDOW_EVENT.emit((CWindow(win), wev))
 
 # ---------------------------------------------------------------------------
 # handleKeyboardInputs
@@ -226,7 +224,7 @@ method handleKeyboardInputs*(win: SDL3Window) =
   let kb = win.inputs.data.keyboard
   for ev in kb.dense:
     if ev.just_pressed or ev.just_released or ev.pressed:
-      NOTIF_KEYBOARD_INPUT.emit((win, ev))
+      NOTIF_KEYBOARD_INPUT.emit((CWindow(win), ev))
 
 # ---------------------------------------------------------------------------
 # handleMouseEvents
@@ -242,20 +240,20 @@ method handleMouseEvents*(win: SDL3Window) =
     let ae = axes[CMouseAxis_X]
     if ae.kind == AxisMotion and
        (ae.motion.xrel != 0 or ae.motion.yrel != 0):
-      NOTIF_MOUSE_MOTION.emit((win, ae.motion))
+      NOTIF_MOUSE_MOTION.emit((CWindow(win), ae.motion))
 
   # Wheel — emit only when the wheel actually moved
   if axes.contains(CMouseAxis_WheelY):
     let ae = axes[CMouseAxis_WheelY]
     if ae.kind == AxisWheel and
        (ae.wheel.xwheel != 0 or ae.wheel.ywheel != 0):
-      NOTIF_MOUSE_WHEEL.emit((win, ae.wheel))
+      NOTIF_MOUSE_WHEEL.emit((CWindow(win), ae.wheel))
 
   # Buttons
   let mb = win.inputs.data.mouseButtons
   for ev in mb.dense:
     if ev.just_pressed or ev.just_released or ev.pressed:
-      NOTIF_MOUSE_BUTTON.emit((win, ev))
+      NOTIF_MOUSE_BUTTON.emit((CWindow(win), ev))
 
 # ---------------------------------------------------------------------------
 # routeEvent — dispatch a single SDL_Event to the right SDL3Window
@@ -272,9 +270,9 @@ proc findWindow(app: CApp, id: SDL_WindowID): SDL3Window =
 proc routeEvent(app: CApp, ev: SDL_Event) =
   ## Translate one raw SDL_Event and update the matching SDL3Window.
   ## sdl3_nim: the union field `type` is renamed `type_field`.
-  let kind = ev.type_field
+  let kind = cast[enum_SDL_EventType](ev.type_field)
 
-  NOTIF_EVENT_RECEIVED.emit((unsafeAddr ev, kind.int))
+  NOTIF_EVENT_RECEIVED.emit((cast[pointer](unsafeAddr ev), kind.int))
 
   # ---- Quit -------------------------------------------------------------
   if kind == SDL_EVENT_QUIT:

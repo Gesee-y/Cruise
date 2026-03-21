@@ -154,7 +154,7 @@ let toRem = @[accID]
 
 let archBase = world.getArchetype(entities[0])
 var graph = world.archGraph
-let archDest = graph.addComponent(archBase, [ComponentId(accID)])#, ComponentId(tagID), ComponentId(timerID), ComponentId(hpID)])
+let archDest = graph.addComponent(archBase, [(accID)])#, ComponentId(tagID), ComponentId(timerID), ComponentId(hpID)])
 
 let res7 = benchmark("Add Component (Acceleration)", SAMPLE):
   migrateEntity(world, entities[], archDest)

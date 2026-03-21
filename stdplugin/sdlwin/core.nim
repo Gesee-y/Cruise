@@ -12,7 +12,7 @@
 ## =============================================================
 
 import strutils
-import sdl3_nim/src/sdl3_nim
+import ../../externalLibs/sdl3_nim/src/sdl3_nim
 import ../../src/windows/windows
 
 # ---------------------------------------------------------------------------
@@ -24,13 +24,6 @@ type
     ## Wraps an SDL_Window handle with cached metadata.
     ## `handle` is exported so sdl3_events.nim can do window-ID routing.
     handle*    : ptr SDL_Window
-    title      : string
-    width      : int
-    height     : int
-    x          : int
-    y          : int
-    fullscreen : bool
-    visible    : bool
     lastError  : string
     ## UTF-8 text accumulated from SDL_EVENT_TEXT_INPUT this frame.
     ## Cleared at the start of every eventLoop iteration.
@@ -77,53 +70,6 @@ proc clearFrameState*(app: CApp) =
   ## Convenience: clear frame state on every window.
   for w in app.windows:
     w.clearFrameState()
-
-# ---------------------------------------------------------------------------
-# Window lifecycle methods
-# All methods take SDL3Window directly — proper OOP, no internal casting.
-# ---------------------------------------------------------------------------
-
-method initWindow*(app: CApp, sw: var SDL3Window,
-                   args: varargs[string]) {.base.} =
-  ## Create a new SDL3 window and register it in *app*.
-  ##
-  ## args (positional, all optional):
-  ##   [0] title   default "Window"
-  ##   [1] width   default 800
-  ##   [2] height  default 600
-  ##   [3] x       default SDL_WINDOWPOS_CENTERED
-  ##   [4] y       default SDL_WINDOWPOS_CENTERED
-  ##
-  ## Emits NOTIF_WINDOW_CREATED on success, NOTIF_ERROR on failure.
-  let title  = if args.len > 0: args[0]            else: "Window"
-  let width  = if args.len > 1: parseInt(args[1])  else: 800
-  let height = if args.len > 2: parseInt(args[2])  else: 600
-  let posX   = if args.len > 3: parseInt(args[3])  else: SDL_WINDOWPOS_CENTERED.int
-  let posY   = if args.len > 4: parseInt(args[4])  else: SDL_WINDOWPOS_CENTERED.int
-
-  let handle = SDL_CreateWindow(title.cstring,
-                                width.cint, height.cint,
-                                SDL_WINDOW_RESIZABLE)
-  if handle == nil:
-    NOTIF_ERROR.emit(("SDL_CreateWindow failed", sdlError()))
-
-  # SDL3 CreateWindow has no position argument → set it separately
-  SDL_SetWindowPosition(handle, posX.cint, posY.cint)
-
-  sw.id         = app.nextWindowID()
-  sw.handle     = handle
-  sw.title      = title
-  sw.width      = width
-  sw.height     = height
-  sw.x          = posX
-  sw.y          = posY
-  sw.fullscreen = false
-  sw.visible    = true
-  sw.inputs     = initInputState()
-
-  app.windows.add(sw)
-  NOTIF_WINDOW_CREATED.emit((CWindow(sw),))
-
 
 method resizeWindow*(win: SDL3Window, width, height: int) =
   SDL_SetWindowSize(win.handle, width.cint, height.cint)
@@ -206,6 +152,53 @@ method setFullscreen*(win: SDL3Window, active: bool,
   NOTIF_WINDOW_FULLSCREEN.emit((CWindow(win), active, desktopResolution))
 
 
+# ---------------------------------------------------------------------------
+# Window lifecycle methods
+# All methods take SDL3Window directly — proper OOP, no internal casting.
+# ---------------------------------------------------------------------------
+
+method initWindow*(app: CApp, sw: var SDL3Window,
+                   args: varargs[string]) {.base.} =
+  ## Create a new SDL3 window and register it in *app*.
+  ##
+  ## args (positional, all optional):
+  ##   [0] title   default "Window"
+  ##   [1] width   default 800
+  ##   [2] height  default 600
+  ##   [3] x       default SDL_WINDOWPOS_CENTERED
+  ##   [4] y       default SDL_WINDOWPOS_CENTERED
+  ##
+  ## Emits NOTIF_WINDOW_CREATED on success, NOTIF_ERROR on failure.
+  let title  = if args.len > 0: args[0]            else: "Window"
+  let width  = if args.len > 1: parseInt(args[1])  else: 800
+  let height = if args.len > 2: parseInt(args[2])  else: 600
+  let posX   = if args.len > 3: parseInt(args[3])  else: SDL_WINDOWPOS_CENTERED.int
+  let posY   = if args.len > 4: parseInt(args[4])  else: SDL_WINDOWPOS_CENTERED.int
+
+  let handle = SDL_CreateWindow(title.cstring,
+                                width.cint, height.cint,
+                                SDL_WINDOW_RESIZABLE)
+  if handle == nil:
+    NOTIF_ERROR.emit(("SDL_CreateWindow failed", sdlError()))
+
+  # SDL3 CreateWindow has no position argument → set it separately
+  SDL_SetWindowPosition(handle, posX.cint, posY.cint)
+
+  sw.id         = app.nextWindowID()
+  sw.tag        = "SDL"
+  sw.handle     = handle
+  sw.title      = title
+  sw.width      = width
+  sw.height     = height
+  sw.x          = posX
+  sw.y          = posY
+  sw.fullscreen = false
+  sw.visible    = true
+  sw.inputs     = initInputState()
+
+  app.windows.add(sw)
+  NOTIF_WINDOW_CREATED.emit((CWindow(sw),))
+
 method updateWindow*(win: SDL3Window) =
   ## Flush the software surface to screen.
   ## Hardware renderers swap buffers themselves; a NOTIF_WARNING is emitted
@@ -227,7 +220,6 @@ method getError*(win: SDL3Window): string =
     NOTIF_WARNING.emit(("SDL error on window", err, 0))
     result = err
 
-
 method quitWindow*(win: SDL3Window) =
   ## Destroy the SDL3 window and release its resources.
   ## Emits NOTIF_WINDOW_EXITTED on success.
@@ -243,3 +235,11 @@ method getMousePosition*(win: SDL3Window): tuple[x, y: int] =
   var fx, fy: cfloat
   discard SDL_GetMouseState(addr fx, addr fy)
   (fx.int, fy.int)
+
+include "events.nim"
+
+var app:CApp
+new(app)
+var win:SDL3Window
+new(win)
+app.initWindow(win)
