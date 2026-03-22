@@ -352,21 +352,3 @@ proc saveToFile*(ts:var TempStorage, filepath: string) =
   ## Sauvegarde dans un fichier JSON
   let jsonData = ts.toJson()
   writeFile(filepath, jsonData.pretty)
-
-# ============================================================================
-# Destructeur
-# ============================================================================
-
-#[proc `=destroy`*(ns: var Namespace) =
-  ## Nettoyage automatique du namespace
-  if ns.data.len > 0:
-    for entry in ns.data.mvalues:
-      destroy(entry)
-  deinitLock(ns.lock)
-
-proc `=destroy`*(ts: var TempStorage) =
-  ## Nettoyage automatique du storage
-  if ts.cleanupActive:
-    ts.cleanupActive = false
-  deinitLock(ts.lock)
-]#
