@@ -234,14 +234,14 @@ proc changePartition(
 
     for id in newPartition.components:
       let entry = table.registry.entries[id]
-      entry.resizeOp(entry.rawPointer, table.blockCount + 1)
+      entry.resizeOp(entry.rawPointer, table.blockCount+1)
       entry.newBlockAtOp(entry.rawPointer, table.blockCount)
 
     table.blockCount += 1
-    table.entities.setLen((table.blockCount + 1) * DEFAULT_BLK_SIZE)
+    table.handles.setLen((table.blockCount) * DEFAULT_BLK_SIZE)
 
   let newZone = addr newPartition.zones[newPartition.fill_index]
-  let new_id = (newZone.r.e mod DEFAULT_BLK_SIZE).uint
+  let new_id = newZone.r.e.uint
   let bid = newZone.block_idx.uint
 
   ## Copy component data (only intersecting components)

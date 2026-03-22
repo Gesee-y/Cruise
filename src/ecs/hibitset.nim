@@ -106,6 +106,7 @@ proc get*(h: HiBitSet, idx: int): bool {.inline.} =
 proc getL0*(h: HiBitSet, idx: int): uint64 =
   ## Returns the raw uint64 block at layer0 index.
   ## Useful for direct block manipulation.
+  if idx >= h.layer0.len: return 0
   h.layer0[idx]
 
 proc `[]`*(h: HiBitSet, idx: int): bool {.inline.} =

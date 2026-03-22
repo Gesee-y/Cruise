@@ -81,10 +81,7 @@ suite.add benchmarkWithSetup(
     var velColumn = w.get(Vel)
     var root = w.createEntity()
     var tree = initSceneTree(root)
-    var ents = newSeq[DenseHandle](ENTITY_COUNT)
-    
-    for i in 0..<ENTITY_COUNT:
-      ents[i] = w.createEntity(0,1)
+    var ents = w.createEntities(ENTITY_COUNT, [0,1])
 
     for e in ents:
       tree.addChild(e)
@@ -118,11 +115,8 @@ suite.add benchmarkWithSetup(
     var velColumn = w.get(Vel)
     var root = w.createEntity()
     var tree = initSceneTree(root)
-    var ents = newSeq[SparseHandle](ENTITY_COUNT)
+    var ents = w.createSparseEntities(ENTITY_COUNT, [0,1])
     
-    for i in 0..<ENTITY_COUNT:
-      ents[i] = w.createSparseEntity([0,1])
-
     for e in ents:
       tree.addChild(e)
 
