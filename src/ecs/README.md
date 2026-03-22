@@ -136,12 +136,24 @@ for (bid, r) in world.denseQuery(sig):
 
 * **Tick-based change tracking**: Cruise allows you for a more local change tracking using **Hierarchical ticks** per components, which are like hibitset but the summary of the lower structure is the highest tick in the underlying chunk, which allow fast entity skipping. They are relative to other ticks, have good performances and add extra information to the bitset change tracking.
 
-* **Integrated event system**: Cruise ECS allows you to listen for events such as entity creation and more:
+* **Seamlessly integrate with Cruise's plugins system allowing systems creation and scheduling for maximum parallelism without race conditions. This alows for systems chaining and data passing like reactive pipelines. 
+
+```nim
+newSystem myPlugin, mySys[Pos, var Vel]:
+  # Some fields
+
+method update(sys::mySys) =
+  # my update
+```
+
+* **Integrated event system**: Cruise ECS allowsq you to listen for events such as entity creation and more:
 
 ```nim
 world.events.onDenseComponentAdded do _:
   echo "New component added!"
 ```
+
+-
 
 * **Powerful query system**: Cruise ECS provides a powerful and expressive query syntax:
 
