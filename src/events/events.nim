@@ -269,7 +269,7 @@ macro notifier*(args:untyped) =
       namedtypes.add(ident)
   
   return quote do:
-    var `nname` = newNotifier[`namedtypes`, `procty`]()
+    var `nname`* = newNotifier[`namedtypes`, `procty`]()
 
 ##[
 Call a function with tuple elements as separate arguments.

@@ -2,7 +2,7 @@
 ######################################################### PLUGIN SYSTEM ############################################################################
 ####################################################################################################################################################
 
-import tables, typetraits
+import tables, typetraits, macros
 import ../graph/graph
 import ../events/events
 include "bitset.nim"
@@ -46,7 +46,8 @@ method shutdown(p:PluginNode) {.base.} = p.setStatus(PLUGIN_OFF)
 method merge(p:PluginNode, p2:PluginNode):PluginNode {.base.} = p
 method getObject(p:PluginNode):int {.base.} = 0
 method getCapability(p:PluginNode):int {.base.} = 0
-method asKey(p:PluginNode):string {.base.} = $(p.typeof)
+template asKey(t:typedesc): string = $t
+method asKey(p:PluginNode):string {.base.} = asKey(p.typeof)
 
 macro makeAsKey(name) =
   return quote do:

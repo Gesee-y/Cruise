@@ -3,6 +3,7 @@
 #############################################################################################################################
 
 import ../events/events
+export events, events.emit
 
 type
   KeyInput* = enum
@@ -257,6 +258,8 @@ type
     mbState* : DeviceState
     mmState* : DeviceState
     mwState* : DeviceState
+
+proc `==`*(w1, w2:WindowEvent): bool = false
 
 proc initDeviceState*(): DeviceState =
   DeviceState(updated: false, cnt: 0)

@@ -203,7 +203,7 @@ template newBatchHandle*[T, R](target, priority, caller: uint32): BatchHandle =
     processFn: proc(data: pointer, ren: RendererPtr) =
       let batch = cast[RenderBatch[T]](data)
       var r     = cast[R](ren)
-      executeCommand(r, batch),
+      if batch.commands.len > 0: executeCommand(r, batch),
 
     clearFn: proc(data: pointer) =
       cast[RenderBatch[T]](data).commands.setLen(0),
@@ -256,7 +256,7 @@ proc addCommand*[T, R](
 
   var ps = addr cb.passes[pass]
   if key notin ps.batches:
-    ps.batches[key] = newBatchHandle[T, R](target, priority, caller)
+    cb.passes[pass].batches[key] = newBatchHandle[T, R](target, priority, caller)
 
   cast[RenderBatch[T]](ps.batches[key].data).commands.add(cmd)
 

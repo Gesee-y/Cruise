@@ -5,13 +5,21 @@
 include "events.nim"
 
 type
-  CWindow = ref object of RootObj
-    id:int
-    childrens:seq[int]
-    inputs:InputState
+  CWindow* = ref object of RootObj
+    id*:int
+    tag*:string
+    title*      : string
+    width*      : int
+    height*     : int
+    x*          : int
+    y*          : int
+    fullscreen* : bool
+    visible*    : bool
+    childrens*:seq[int]
+    inputs*:InputState
 
-  CApp = ref object
-    windows: seq[CWindow]
+  CApp* = ref object
+    windows*: seq[CWindow]
 
 include "evloop.nim"
 include "inputmap.nim"
@@ -173,6 +181,8 @@ method getError*(win: CWindow): string {.base.} =
 proc getWindowID*(win: CWindow): int =
   ## Return the numeric id of the window.
   win.id
+
+method convertKey*(win: CWindow, rawKey: uint): KeyInput {.base.} = CKey_None
 
 method quitWindow*(win: CWindow) {.base.} =
   ## Close the window and release its resources.

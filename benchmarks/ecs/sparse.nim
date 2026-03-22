@@ -66,14 +66,15 @@ proc runSparseBenchmarks() =
     (
       var w = setupWorld()
       var ents:seq[SparseHandle]
+      var node = w.archGraph.findArchetype([Pos, Vel])
       for i in 0..<ENTITY_COUNT:
-        ents.add w.createSparseEntity([Pos, Vel])
+        ents.add w.createSparseEntity(node)
       for e in ents.mitems:
         w.deleteEntity(e)
     ),
     (
       for i in 0..<ENTITY_COUNT:
-        discard w.createSparseEntity([Pos, Vel])
+        discard w.createSparseEntity(node)
     )
   )
   showDetailed(suite.benchmarks[0])
@@ -87,13 +88,13 @@ proc runSparseBenchmarks() =
     Warmup,
     (
       var w = setupWorld()
-      var ents:seq[SparseHandle]
-      for i in 0..<ENTITY_COUNT:
-        ents.add w.createSparseEntity([Pos, Vel])
+      var node = w.archGraph.findArchetype([Pos, Vel])
+      var ents:seq[SparseHandle] = w.createSparseEntities(ENTITY_COUNT, node)
+      
       for e in ents.mitems:
         w.deleteEntity(e)
     ),
-    (discard w.createSparseEntities(ENTITY_COUNT, [Pos, Vel]))
+    (discard w.createSparseEntities(ENTITY_COUNT, node))
   )
   showDetailed(suite.benchmarks[1])
 
@@ -207,7 +208,6 @@ proc runSparseBenchmarks() =
     Warmup,
     (
       var w = setupWorld()
-      var s = 0'f32
       var posc = w.get(Position)
       var ents = w.createSparseEntities(ENTITY_COUNT, [Pos])),
     (
