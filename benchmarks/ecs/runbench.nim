@@ -5,8 +5,7 @@ include "../../src/ecs/table.nim"
 # =========================
 include "../../src/profile/benchmarks.nim"
 
-const SAMPLE = 100
-const WARMUP = 1
+const SAMPLE = 100000
 
 # =========================
 # Components

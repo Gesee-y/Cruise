@@ -119,7 +119,7 @@ numbers.emit((value: 3))   # Prints "Current sum: 8"
 numbers.emit((value: 2))   # Prints "Current sum: 10"
 ```
 ]##
-template fold*[T,L,A](src: Notifier[T,L], init: A, fn) =
+template fold*[T,L,A](src: Notifier[T,L], init: A, fn): untyped =
   notifier fol(acc:A)
   enable_value(fol)
   var acc = init
@@ -128,6 +128,7 @@ template fold*[T,L,A](src: Notifier[T,L], init: A, fn) =
     fol.emit((acc:acc))
   )
   src.connect(f)
+  fol
 
 ##[
 Merge two notifiers into one that emits both values as a pair.
@@ -160,7 +161,7 @@ mouseX.emit((x: 10))  # Prints "Position: (10, 0)"
 mouseY.emit((y: 20))  # Prints "Position: (10, 20)"
 ```
 ]##
-template merge*[TA,LA,TB,LB](a: Notifier[TA,LA], b: Notifier[TB,LB]) =
+template merge*[TA,LA,TB,LB](a: Notifier[TA,LA], b: Notifier[TB,LB]): untyped =
   
   notifier mer(ax:TB, bx:TB)
   enable_value(mer)
@@ -172,6 +173,8 @@ template merge*[TA,LA,TB,LB](a: Notifier[TA,LA], b: Notifier[TB,LB]) =
   )
   a.connect(fa)
   b.connect(fb)
+
+  mer
 
 ##[
 Combine two notifiers using a custom function.
@@ -210,7 +213,7 @@ height.emit((h: 5))   # Prints "Area: 50"
 width.emit((w: 20))   # Prints "Area: 100"
 ```
 ]##
-template zip*[TA,LA,TB,LB](a: Notifier[TA,LA], b: Notifier[TB,LB], fn, R) =
+template zip*[TA,LA,TB,LB](a: Notifier[TA,LA], b: Notifier[TB,LB], fn, R): untyped =
   notifier mer(ret:R)
   enable_value(mer)
   anoFunc(fa, TA, quote do:
@@ -221,3 +224,5 @@ template zip*[TA,LA,TB,LB](a: Notifier[TA,LA], b: Notifier[TB,LB], fn, R) =
   )
   a.connect(fa)
   b.connect(fb)
+
+  mer
