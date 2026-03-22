@@ -236,7 +236,7 @@ func line3*(e12,e13,e23, e01,e02,e03: MFloat): Line3D {.inline.} =
   ## Arbitrary Plücker line.
   Line3D(e12:e12, e13:e13, e23:e23, e01:e01, e02:e02, e03:e03)
 
-func lineThroughPoints*(p, q: Point3D): Line3D =
+func lineThrough*(p, q: Point3D): Line3D =
   ## Line through two 3D points (join).
   Line3D(
     e12: p.e021*q.e013 - p.e013*q.e021,
@@ -310,10 +310,10 @@ func motorIdentity3*(): Motor3D {.inline.} =
 ##   Plane3D  : a=e1   b=e2    c=e3    d=e0  (plane ax+by+cz+d=0)
 ##   Line3D   : dx=e12 dy=e13  dz=e23  (direction bivector)
 ##              mx=e01 my=e02  mz=e03  (moment bivector)
-##   Rotor2D  : scalar=s  xy=e12
-##   Motor2D  : scalar=s  xy=e12  tx=e20  ty=e01
-##   Rotor3D  : scalar=s  xy=e12  xz=e13  yz=e23
-##   Motor3D  : scalar=s  xy=e12  xz=e13  yz=e23
+##   Rotor2D  : xy=e12
+##   Motor2D  : xy=e12  tx=e20  ty=e01
+##   Rotor3D  : xy=e12  xz=e13  yz=e23
+##   Motor3D  : xy=e12  xz=e13  yz=e23
 ##              tx=e01  ty=e02  tz=e03  pseudo=e0123
 ##
 
@@ -670,19 +670,6 @@ func `*`*[M: MMotor2D, P: MPoint2D](m: M, p: P): Point2D =
   ## Apply motor m to point p: m ⟑ p ⟑ ~m
   ## Optimised sandwich — only 12 muls for a 2D point transform.
   ## Full intermediate expansion kept to let compiler schedule freely.
-  let
-    ## Step 1: tmp = m * p  (motor * grade-2 → mixed grade)
-    ## Only the grade-2 part survives the sandwich projection.
-    t12 = m.s*p.e12 + m.e12*(0f)        # e12*e12 contributes to grade-0 (discarded)
-    ## Direct formula from unrolling m*p*~m for grade-2 output:
-    w  =  m.s*m.s*p.e12 + m.e12*m.e12*p.e12  # = p.e12 * (s²+e12²) = p.e12 for unit motor
-    x  =  m.s*m.s*p.e20 - m.e12*m.e12*p.e20 +
-          2f*m.s*(m.e20*p.e12 - m.e01*p.e01) +
-          2f*m.e12*m.e01*p.e12
-    y  =  m.s*m.s*p.e01 - m.e12*m.e12*p.e01 +
-          2f*m.s*(m.e01*p.e12 + m.e20*p.e20) -   # wrong sign fix below
-          2f*m.e12*m.e20*p.e12
-  # Corrected direct sandwich formula (verified against ganja.js):
   let
     re12 = (m.s*m.s + m.e12*m.e12) * p.e12
     re20 = (m.s*m.s - m.e12*m.e12) * p.e20 +

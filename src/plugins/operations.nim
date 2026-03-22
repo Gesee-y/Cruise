@@ -54,7 +54,7 @@ template getNodeid(n:typed, s:string):untyped =
 
   res 
 
-template addSystem(p:var Plugin, obj):int =
+template addSystem*(p:var Plugin, obj):int =
   var id = -1
   for i in 0..<p.idtonode.len:
     if p.idtonode[i].asKey == obj.asKey:

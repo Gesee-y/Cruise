@@ -23,7 +23,7 @@ type
 ## @param arch: The `ArchetypeNode` which is the initial archetype of the entity.
 ## @return: A `DenseHandle` used to safely refer to the entity. Includes a pointer to the
 ##          entity data and a generation ID for stale reference checks.
-proc createEntity*(world:var ECSWorld, arch:var ArchetypeNode):DenseHandle =
+template createEntity*(world:var ECSWorld, arch:var ArchetypeNode):DenseHandle =
   # Acquire a stable internal ID (widx) for the entity record.
   let pid = getStableEntity(world)
   
@@ -51,7 +51,7 @@ proc createEntity*(world:var ECSWorld, arch:var ArchetypeNode):DenseHandle =
   world.events.emitDenseEntityCreated(d)
   
   # Return a public handle containing the pointer and the current generation (for safety checks).
-  return d
+  d
 
 proc createEntity*(world:var ECSWorld, arch:ArchetypeMask):DenseHandle =
   var archNode = world.archGraph.findArchetypeFast(arch)
@@ -197,7 +197,7 @@ proc migrateEntity*(world: var ECSWorld, d:DenseHandle, archNode:ArchetypeNode) 
 
     # Fix the handle pointers. 
     # The handle at the *new* location must point to our entity.
-    world.handles[id+bid*DEFAULT_BLK_SIZE] = world.handles[eid+beid*DEFAULT_BLK_SIZE]
+    world.handles[id+bid*DEFAULT_BLK_SIZE] = world.handles[e.id.toIdx]
     
     # The handle at the *old* location (now occupied by the swapped entity) must point to that entity.
     world.handles[eid+beid*DEFAULT_BLK_SIZE] = world.handles[lst]

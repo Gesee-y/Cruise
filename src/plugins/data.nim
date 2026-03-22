@@ -12,7 +12,6 @@ type
 
   PResourceManager* = object
     resources: seq[PluginResource]
-    toId: Table[string, int]
     maxRequestId: int
     cachedGraph: DiGraph
     dirty: bool
@@ -25,14 +24,11 @@ proc addResource*[T](manager: var PResourceManager, obj: T): int =
   let id = manager.resources.len
   manager.resources.add(newPluginResource(obj))
   manager.dirty = true
-  manager.toId[$T] = id
+
   return id
 
 proc getResource*[T](manager: PResourceManager, id: int): T =
   return cast[T](manager.resources[id].data)
-
-proc getResource*[T](manager: PResourceManager): T =
-  getResource[T](manager, manager.toId[$T])
 
 proc addReadRequest(manager: var PResourceManager, sys, id: int) =
   # A sys cannot read and write the same resource

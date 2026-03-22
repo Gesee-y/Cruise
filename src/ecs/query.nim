@@ -35,7 +35,7 @@ type
 
   ## Iterator for dense queries.
   DenseIterator* = object
-    r:HSlice[int, int]
+    r*:HSlice[int, int]
     m:ptr seq[uint]
     masked:bool
 
@@ -267,10 +267,10 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator)
 
         for qf in sig.filters:
           masked = true
-          for i in 0..<res.len:
+          for i in 0..<maskCount:
             res[i] = res[i] and qf.dLayer.getL0(zone.block_idx*sizeof(uint)*8 + i)
         
-        yield (zone.block_idx, DenseIterator(r:zone.r.s..<zone.r.e, m:addr res, masked:masked))
+        yield (zone.block_idx, DenseIterator(r:zone.r.s..<zone.r.e, m: addr res, masked:masked))
 
 proc denseQueryCache*(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
   ## Computes and caches the result of a Dense query.
