@@ -421,7 +421,7 @@ proc routeEvent(app: CApp, ev: SDL_Event) =
 # eventLoop — one complete frame of event processing
 # ---------------------------------------------------------------------------
 
-proc eventLoop*(app: CApp) =
+proc SDLEventRouter*(app: CApp) =
   ## SDL3-aware eventLoop.  Call once per game-loop iteration.
   ##
   ## Order of operations:
@@ -437,11 +437,6 @@ proc eventLoop*(app: CApp) =
   ##     app.eventLoop()
   ##     if app.isKeyJustPressed(CKey_Escape): running = false
 
-  # Step 1 — reset per-frame state
-  for win in app.windows:
-    let sw = SDL3Window(win)
-    sw.clearFrameState()
-    sw.inputs.resetCounts()
 
   # Step 2 — drain the SDL3 event queue
   var ev: SDL_Event
@@ -453,7 +448,3 @@ proc eventLoop*(app: CApp) =
     let sw = SDL3Window(win)
     sw.handleKeyboardInputs()
     sw.handleMouseEvents()
-
-  # Step 4 — advance state machine (clear just_pressed / just_released)
-  for win in app.windows:
-    SDL3Window(win).inputs.updateInputState()
