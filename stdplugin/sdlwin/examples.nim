@@ -1,37 +1,37 @@
 ## =============================================================
-##  SDL3 Windowing Framework — Exemples complets
+##  SDL3 Windowing Framework — Full Examples
 ##
-##  Couvre :
-##    1. Fenêtre simple avec boucle de jeu
-##    2. Entrées clavier (just_pressed / pressed / just_released)
-##    3. Entrées souris (mouvement, roue, boutons)
-##    4. Texte saisi (SDL_EVENT_TEXT_INPUT)
-##    5. Multi-fenêtres
-##    6. Plein écran (borderless et exclusif)
-##    7. Notifications (NOTIF_*)
-##    8. Combinaisons de touches (modificateurs)
-##    9. Redimensionnement / repositionnement dynamique
-##   10. Gestion propre de la fermeture
+##  Covers:
+##     1. Simple window with game loop
+##     2. Keyboard inputs (just_pressed / pressed / just_released)
+##     3. Mouse inputs (movement, wheel, buttons)
+##     4. Text input (SDL_EVENT_TEXT_INPUT)
+##     5. Multi-windowing
+##     6. Fullscreen (borderless and exclusive)
+##     7. Notifications (NOTIF_*)
+##     8. Key combinations (modifiers)
+##     9. Dynamic resizing / repositioning
+##    10. Clean shutdown management
 ## =============================================================
 
 import ../../src/windows/windows
 import core
 
 # ═══════════════════════════════════════════════════════════════════
-# EXEMPLE 1 — Fenêtre minimale avec boucle de jeu
+# EXAMPLE 1 — Minimal window with game loop
 # ═══════════════════════════════════════════════════════════════════
 
-proc exemple1_fenetre_simple() =
-  ## Ouvre une fenêtre 800×600, tourne jusqu'à ce que l'utilisateur
-  ## appuie sur Échap ou ferme la fenêtre.
+proc example1_fenetre_simple() =
+  ## Opens an 800×600 window, runs until the user
+  ## presses Escape or closes the window.
 
   let app = initSDL3App()
 
   var win: SDL3Window
   new(win)
-  app.initWindow(win, "Exemple 1 — Fenêtre simple", "800", "600")
+  app.initWindow(win, "Example 1 — Simple Window", "800", "600")
 
-  # Connexion au notifier de fermeture : quand la croix est cliquée
+  # Connection to the close notifier: when the close button is clicked
   var running = true
   NOTIF_WINDOW_EVENT.connect do(win: CWindow, ev: WindowEvent):
     if ev.kind == WINDOW_CLOSE:
@@ -40,7 +40,7 @@ proc exemple1_fenetre_simple() =
   while running:
     app.eventLoop(SDLEventRouter)
 
-    # Quitter sur Échap
+    # Quit on Escape
     if app.isKeyJustPressed(CKey_Escape):
       running = false
 
@@ -51,52 +51,52 @@ proc exemple1_fenetre_simple() =
 
 
 # ═══════════════════════════════════════════════════════════════════
-# EXEMPLE 2 — Clavier : just_pressed / pressed / just_released
+# EXAMPLE 2 — Keyboard: just_pressed / pressed / just_released
 # ═══════════════════════════════════════════════════════════════════
 
-proc exemple2_clavier() =
-  ## Démontre les trois états d'une touche.
+proc example2_clavier() =
+  ## Demonstrates the three states of a key.
   ##
-  ## just_pressed  → se déclenche UNE SEULE FOIS le premier frame où la
-  ##                 touche passe de relâchée à enfoncée.
-  ## pressed       → vrai tant que la touche est maintenue (y compris
-  ##                 le frame just_pressed).
-  ## just_released → se déclenche UNE SEULE FOIS le frame où la touche
-  ##                 est relâchée.
+  ## just_pressed  → triggers ONCE the first frame where the
+  ##                  key goes from released to pressed.
+  ## pressed       → true as long as the key is held (including
+  ##                  the just_pressed frame).
+  ## just_released → triggers ONCE the frame where the key
+  ##                  is released.
 
   let app = initSDL3App()
 
   var win: SDL3Window
   new(win)
-  app.initWindow(win, "Exemple 2 — Clavier")
+  app.initWindow(win, "Example 2 — Keyboard")
 
   var running = true
 
   while running:
     app.eventLoop(SDLEventRouter)
 
-    # ── Détection du bord montant (une seule frame) ──────────────────
+    # ── Rising edge detection (single frame) ──────────────────────────
     if win.isKeyJustPressed(CKey_Space):
-      echo "[ ESPACE ] venait d'être ENFONCÉE"
+      echo "[ SPACE ] was just PRESSED"
 
-    # ── Maintien continu ─────────────────────────────────────────────
+    # ── Continuous hold ─────────────────────────────────────────────
     if win.isKeyPressed(CKey_W):
-      echo "[ W ] maintenue — déplace vers le haut"
+      echo "[ W ] held — moving up"
 
     if win.isKeyPressed(CKey_S):
-      echo "[ S ] maintenue — déplace vers le bas"
+      echo "[ S ] held — moving down"
 
     if win.isKeyPressed(CKey_A):
-      echo "[ A ] maintenue — déplace vers la gauche"
+      echo "[ A ] held — moving left"
 
     if win.isKeyPressed(CKey_D):
-      echo "[ D ] maintenue — déplace vers la droite"
+      echo "[ D ] held — moving right"
 
-    # ── Bord descendant (une seule frame) ────────────────────────────
+    # ── Falling edge (single frame) ────────────────────────────
     if win.isKeyJustReleased(CKey_Space):
-      echo "[ ESPACE ] vient d'être RELÂCHÉE"
+      echo "[ SPACE ] was just RELEASED"
 
-    # ── Quitter ──────────────────────────────────────────────────────
+    # ── Quit ──────────────────────────────────────────────────────
     if win.isKeyJustPressed(CKey_Escape):
       running = false
 
@@ -107,48 +107,48 @@ proc exemple2_clavier() =
 
 
 # ═══════════════════════════════════════════════════════════════════
-# EXEMPLE 3 — Souris : mouvement, roue, boutons
+# EXAMPLE 3 — Mouse: movement, wheel, buttons
 # ═══════════════════════════════════════════════════════════════════
 
-proc exemple3_souris() =
-  ## Affiche en console les événements souris en temps réel.
+proc example3_souris() =
+  ## Displays mouse events in the console in real-time.
 
   let app = initSDL3App()
 
   var win: SDL3Window
   new(win)
-  app.initWindow(win, "Exemple 3 — Souris")
+  app.initWindow(win, "Example 3 — Mouse")
 
-  # ── Connexions aux notifiers souris ──────────────────────────────
+  # ── Connections to mouse notifiers ──────────────────────────────
 
   NOTIF_MOUSE_MOTION.connect do(w: CWindow, ev: MouseMotionEvent):
-    echo "Mouvement  pos=(", ev.x, ",", ev.y, ")  rel=(", ev.xrel, ",", ev.yrel, ")"
+    echo "Motion  pos=(", ev.x, ",", ev.y, ")  rel=(", ev.xrel, ",", ev.yrel, ")"
 
   NOTIF_MOUSE_WHEEL.connect do(w: CWindow, ev: MouseWheelEvent):
-    echo "Roue  x=", ev.xwheel, "  y=", ev.ywheel
+    echo "Wheel  x=", ev.xwheel, "  y=", ev.ywheel
 
   NOTIF_MOUSE_BUTTON.connect do(w: CWindow, ev: MouseClickEvent):
-    let etat = if ev.just_pressed: "ENFONCÉ" elif ev.just_released: "RELÂCHÉ" else: "maintenu"
-    echo "Bouton ", ev.button, " → ", etat, "  (clics multiples : ", ev.clicks, ")"
+    let state = if ev.just_pressed: "PRESSED" elif ev.just_released: "RELEASED" else: "held"
+    echo "Button ", ev.button, " → ", state, "  (multiple clicks: ", ev.clicks, ")"
 
   var running = true
 
   while running:
     app.eventLoop(SDLEventRouter)
 
-    # ── Lecture directe des axes ──────────────────────────────────
+    # ── Direct axis reading ──────────────────────────────────
     let axX = win.getAxis(CMouseAxis_X)
     if axX.kind == AxisMotion and (axX.motion.xrel != 0 or axX.motion.yrel != 0):
-      # Déjà affiché par le notifier ci-dessus, mais montre l'accès direct.
+      # Already displayed by the notifier above, but shows direct access.
       discard
 
-    # ── Lecture directe des boutons ───────────────────────────────
+    # ── Direct button reading ───────────────────────────────
     if win.isMouseButtonJustPressed(CMouseBtn_Left):
       let (mx, my) = win.getMousePosition()
-      echo "Clic gauche à (", mx, ",", my, ")"
+      echo "Left click at (", mx, ",", my, ")"
 
     if win.isMouseButtonPressed(CMouseBtn_Right):
-      echo "Bouton droit maintenu"
+      echo "Right button held"
 
     if win.isKeyJustPressed(CKey_Escape):
       running = false
@@ -160,19 +160,19 @@ proc exemple3_souris() =
 
 
 # ═══════════════════════════════════════════════════════════════════
-# EXEMPLE 4 — Saisie de texte (SDL_EVENT_TEXT_INPUT)
+# EXAMPLE 4 — Text input (SDL_EVENT_TEXT_INPUT)
 # ═══════════════════════════════════════════════════════════════════
 
-proc exemple4_texte() =
-  ## Accumule la saisie UTF-8 de l'utilisateur.
-  ## win.textInput est réinitialisé à chaque frame par clearFrameState()
-  ## (appelé dans eventLoop), donc on concatène soi-même dans `buffer`.
+proc example4_texte() =
+  ## Accumulates UTF-8 input from the user.
+  ## win.textInput is reset every frame by clearFrameState()
+  ## (called in eventLoop), so we concatenate into `buffer` ourselves.
 
   let app = initSDL3App()
 
   var win: SDL3Window
   new(win)
-  app.initWindow(win, "Exemple 4 — Saisie texte (écris puis Entre)")
+  app.initWindow(win, "Example 4 — Text Input (type then Enter)")
 
   var buffer = ""
   var running = true
@@ -180,19 +180,19 @@ proc exemple4_texte() =
   while running:
     app.eventLoop(SDLEventRouter)
 
-    # win.textInput contient les caractères tapés CE frame
+    # win.textInput contains characters typed THIS frame
     if win.textInput.len > 0:
       buffer.add(win.textInput)
       echo "Buffer : [", buffer, "]"
 
-    # Valider avec Entrée
+    # Validate with Enter
     if win.isKeyJustPressed(CKey_Enter):
-      echo "==> Validé : «", buffer, "»"
+      echo "==> Validated: \"", buffer, "\""
       buffer = ""
 
-    # Backspace : effacer le dernier caractère UTF-8
+    # Backspace: erase last UTF-8 character
     if win.isKeyJustPressed(CKey_Backspace) and buffer.len > 0:
-      # Reculer d'un point de code UTF-8 (safe grâce à Nim's string)
+      # Step back one UTF-8 code point (safe thanks to Nim's string)
       var i = buffer.len - 1
       while i > 0 and (buffer[i].ord and 0xC0) == 0x80:
         dec i
@@ -209,46 +209,46 @@ proc exemple4_texte() =
 
 
 # ═══════════════════════════════════════════════════════════════════
-# EXEMPLE 5 — Modificateurs de touches (Shift, Ctrl, Alt)
+# EXAMPLE 5 — Key Modifiers (Shift, Ctrl, Alt)
 # ═══════════════════════════════════════════════════════════════════
 
-proc exemple5_modificateurs() =
-  ## Montre comment lire les modificateurs attachés à chaque KeyboardEvent.
-  ## Les champs mkey / pkey sont remplis par detectModifiers() dans
-  ## sdl3_events.nim juste après l'insertion dans le sparse-set.
+proc example5_modificateurs() =
+  ## Shows how to read modifiers attached to each KeyboardEvent.
+  ## mkey / pkey fields are filled by detectModifiers() in
+  ## sdl3_events.nim right after insertion into the sparse-set.
 
   let app = initSDL3App()
 
   var win: SDL3Window
   new(win)
-  app.initWindow(win, "Exemple 5 — Modificateurs")
+  app.initWindow(win, "Example 5 — Modifiers")
 
   NOTIF_KEYBOARD_INPUT.connect do(w: CWindow, ev: KeyboardEvent):
     if not ev.just_pressed: return
     let mod1 = if ev.mkey != CKey_None: $ev.mkey else: "—"
     let mod2 = if ev.pkey != CKey_None: $ev.pkey else: "—"
-    echo "Touche=", ev.key, "  mod1=", mod1, "  mod2=", mod2
+    echo "Key=", ev.key, "  mod1=", mod1, "  mod2=", mod2
 
-  # Raccourcis classiques construits manuellement
+  # Classic shortcuts built manually
   var running = true
 
   while running:
     app.eventLoop(SDLEventRouter)
 
-    # Ctrl+S → sauvegarder
+    # Ctrl+S → save
     if win.isKeyPressed(CKey_LCtrl) and win.isKeyJustPressed(CKey_S):
-      echo "Ctrl+S — Sauvegarde !"
+      echo "Ctrl+S — Saving!"
 
-    # Ctrl+Z → annuler
+    # Ctrl+Z → undo
     if win.isKeyPressed(CKey_LCtrl) and win.isKeyJustPressed(CKey_Z):
-      echo "Ctrl+Z — Annulation !"
+      echo "Ctrl+Z — Undoing!"
 
-    # Shift+F5 → rechargement
+    # Shift+F5 → reload
     if (win.isKeyPressed(CKey_LShift) or win.isKeyPressed(CKey_RShift)) and
        win.isKeyJustPressed(CKey_F5):
-      echo "Shift+F5 — Rechargement forcé !"
+      echo "Shift+F5 — Forced Reload!"
 
-    # Alt+F4 → quitter
+    # Alt+F4 → quit
     if win.isKeyPressed(CKey_LAlt) and win.isKeyJustPressed(CKey_F4):
       running = false
 
@@ -262,25 +262,25 @@ proc exemple5_modificateurs() =
 
 
 # ═══════════════════════════════════════════════════════════════════
-# EXEMPLE 6 — Plein écran (borderless et exclusif)
+# EXAMPLE 6 — Fullscreen (borderless and exclusive)
 # ═══════════════════════════════════════════════════════════════════
 
-proc exemple6_fullscreen() =
-  ## F11 → basculer en plein écran desktop (borderless)
-  ## F10 → basculer en plein écran exclusif
-  ## Échap → retour fenêtré ou quitter
+proc example6_fullscreen() =
+  ## F11 → toggle desktop fullscreen (borderless)
+  ## F10 → toggle exclusive fullscreen
+  ## Escape → return to windowed or quit
 
   let app = initSDL3App()
 
   var win: SDL3Window
   new(win)
-  app.initWindow(win, "Exemple 6 — Plein écran  (F11 desktop | F10 exclusif)")
+  app.initWindow(win, "Example 6 — Fullscreen (F11 desktop | F10 exclusive)")
 
   NOTIF_ERROR.connect do(mes, error: string):
-    echo "[ERREUR] ", mes, " — ", error
+    echo "[ERROR] ", mes, " — ", error
 
   NOTIF_WINDOW_FULLSCREEN.connect do(w: CWindow, active: bool, desktop: bool):
-    echo "Plein écran → active=", active, "  desktop=", desktop
+    echo "Fullscreen → active=", active, "  desktop=", desktop
 
   var running  = true
   var isFullsc = false
@@ -288,17 +288,17 @@ proc exemple6_fullscreen() =
   while running:
     app.eventLoop(SDLEventRouter)
 
-    # ── F11 : plein écran borderless ─────────────────────────────
+    # ── F11 : borderless fullscreen ─────────────────────────────
     if win.isKeyJustPressed(CKey_F11):
       isFullsc = not isFullsc
       win.setFullscreen(isFullsc, desktopResolution = true)
 
-    # ── F10 : plein écran exclusif ───────────────────────────────
+    # ── F10 : exclusive fullscreen ───────────────────────────────
     if win.isKeyJustPressed(CKey_F10):
       isFullsc = not isFullsc
       win.setFullscreen(isFullsc, desktopResolution = false)
 
-    # ── Échap : quitter le plein écran ou l'application ──────────
+    # ── Escape : quit fullscreen or application ──────────
     if win.isKeyJustPressed(CKey_Escape):
       if isFullsc:
         win.setFullscreen(false)
@@ -313,43 +313,43 @@ proc exemple6_fullscreen() =
 
 
 # ═══════════════════════════════════════════════════════════════════
-# EXEMPLE 7 — Redimensionnement et repositionnement dynamiques
+# EXAMPLE 7 — Dynamic Resizing and Repositioning
 # ═══════════════════════════════════════════════════════════════════
 
-proc exemple7_resize_reposition() =
-  ## Touches de contrôle en temps réel de la taille et de la position.
+proc example7_resize_reposition() =
+  ## Real-time control keys for size and position.
   ##
-  ##  +/- (numpad)  → agrandir / rétrécir
-  ##  Flèches       → déplacer la fenêtre
-  ##  M             → maximiser
-  ##  N             → minimiser
-  ##  R             → restaurer
-  ##  H             → cacher   (réapparaît après 2 s)
-  ##  T             → changer le titre
+  ##  +/- (numpad)  → grow / shrink
+  ##  Arrows        → move window
+  ##  M             → maximize
+  ##  N             → minimize
+  ##  R             → restore
+  ##  H             → hide   (reappears after 2s)
+  ##  T             → change title
 
   let app = initSDL3App()
 
   var win: SDL3Window
   new(win)
-  app.initWindow(win, "Exemple 7 — Resize/Reposition", "640", "480",
+  app.initWindow(win, "Example 7 — Resize/Reposition", "640", "480",
                  "400", "200")
 
   NOTIF_WINDOW_RESIZED.connect do(w: CWindow, width, height: int):
-    echo "Redimensionné → ", width, "×", height
+    echo "Resized → ", width, "×", height
 
   NOTIF_WINDOW_REPOSITIONED.connect do(w: CWindow, x, y: int):
-    echo "Repositionné → (", x, ",", y, ")"
+    echo "Repositioned → (", x, ",", y, ")"
 
   const STEP_PX  = 20
   const STEP_SZ  = 50
   var titleIdx   = 0
-  let titles     = ["Exemple 7", "Hello SDL3 !", "Nim ♥ SDL", "Bonjour !"]
+  let titles     = ["Example 7", "Hello SDL3!", "Nim ♥ SDL", "Greetings!"]
   var running    = true
 
   while running:
     app.eventLoop(SDLEventRouter)
 
-    # ── Redimensionnement ─────────────────────────────────────────
+    # ── Resizing ─────────────────────────────────────────
     if win.isKeyJustPressed(CKey_NumAdd):
       win.resizeWindow(win.width + STEP_SZ, win.height + STEP_SZ)
 
@@ -358,7 +358,7 @@ proc exemple7_resize_reposition() =
       let h = max(150, win.height - STEP_SZ)
       win.resizeWindow(w, h)
 
-    # ── Déplacement ───────────────────────────────────────────────
+    # ── Movement ───────────────────────────────────────────────
     if win.isKeyPressed(CKey_Left):
       win.repositionWindow(win.x - STEP_PX, win.y)
 
@@ -371,17 +371,17 @@ proc exemple7_resize_reposition() =
     if win.isKeyPressed(CKey_Down):
       win.repositionWindow(win.x, win.y + STEP_PX)
 
-    # ── États de la fenêtre ───────────────────────────────────────
+    # ── Window States ───────────────────────────────────────
     if win.isKeyJustPressed(CKey_M): win.maximizeWindow()
     if win.isKeyJustPressed(CKey_N): win.minimizeWindow()
     if win.isKeyJustPressed(CKey_R): win.restoreWindow()
 
     if win.isKeyJustPressed(CKey_H):
       win.hideWindow()
-      SDL_Delay(2000)   # attend 2 secondes (SDL3 delay)
+      SDL_Delay(2000)   # waits 2 seconds (SDL3 delay)
       win.showWindow()
 
-    # ── Titre ─────────────────────────────────────────────────────
+    # ── Title ─────────────────────────────────────────────────────
     if win.isKeyJustPressed(CKey_T):
       titleIdx = (titleIdx + 1) mod titles.len
       win.setWindowTitle(titles[titleIdx])
@@ -396,32 +396,32 @@ proc exemple7_resize_reposition() =
 
 
 # ═══════════════════════════════════════════════════════════════════
-# EXEMPLE 8 — Multi-fenêtres
+# EXAMPLE 8 — Multi-windowing
 # ═══════════════════════════════════════════════════════════════════
 
-proc exemple8_multi_fenetres() =
-  ## Deux fenêtres indépendantes gérées par le même CApp.
-  ## Chaque fenêtre reçoit ses propres événements via le routage par
-  ## SDL_WindowID dans routeEvent().
+proc example8_multi_fenetres() =
+  ## Two independent windows managed by the same CApp.
+  ## Each window receives its own events via routing by
+  ## SDL_WindowID in routeEvent().
   ##
-  ## W1 : fenêtre principale  (rouge symbolique)
-  ## W2 : fenêtre secondaire  (bleue symbolique)
+  ## W1: main window (symbolic red)
+  ## W2: secondary window (symbolic blue)
   ##
-  ## Fermer W2 ou appuyer sur F2 : détruit uniquement W2.
-  ## Échap ou fermer W1 : quitte l'application.
+  ## Closing W2 or pressing F2: destroys only W2.
+  ## Escape or closing W1: quits application.
 
   let app = initSDL3App()
 
   var w1, w2: SDL3Window
   new(w1); new(w2)
 
-  app.initWindow(w1, "Fenêtre Principale",  "800", "600", "100", "100")
-  app.initWindow(w2, "Fenêtre Secondaire",  "400", "300", "950", "100")
+  app.initWindow(w1, "Main Window",  "800", "600", "100", "100")
+  app.initWindow(w2, "Secondary Window",  "400", "300", "950", "100")
 
   var w2Alive = true
   var running  = true
 
-  # Notifier générique — le `win` permet de savoir d'où vient l'event
+  # Generic notifier — the `win` parameter identifies the event source
   NOTIF_WINDOW_EVENT.connect do(win: CWindow, ev: WindowEvent):
     if ev.kind == WINDOW_CLOSE:
       if win.id == w1.id:
@@ -433,26 +433,26 @@ proc exemple8_multi_fenetres() =
   while running:
     app.eventLoop(SDLEventRouter)
 
-    # ── Contrôles sur W1 ─────────────────────────────────────────
+    # ── Controls on W1 ─────────────────────────────────────────
     if w1.isKeyJustPressed(CKey_Escape):
       running = false
 
-    # ── Créer/détruire W2 avec F2 ────────────────────────────────
+    # ── Create/destroy W2 with F2 ────────────────────────────────
     if w1.isKeyJustPressed(CKey_F2):
       if w2Alive:
         w2.quitWindow()
         w2Alive = false
-        echo "W2 détruite"
+        echo "W2 destroyed"
       else:
         new(w2)
-        app.initWindow(w2, "Fenêtre Secondaire (recréée)", "400", "300",
+        app.initWindow(w2, "Secondary Window (recreated)", "400", "300",
                        "950", "100")
         w2Alive = true
-        echo "W2 recréée, id=", w2.id
+        echo "W2 recreated, id=", w2.id
 
-    # ── Interactions propres à W2 ─────────────────────────────────
+    # ── W2 specific interactions ─────────────────────────────────
     if w2Alive and w2.isKeyJustPressed(CKey_Space):
-      echo "[ ESPACE ] dans W2 !"
+      echo "[ SPACE ] in W2!"
 
     w1.updateWindow()
     if w2Alive: w2.updateWindow()
@@ -463,36 +463,36 @@ proc exemple8_multi_fenetres() =
 
 
 # ═══════════════════════════════════════════════════════════════════
-# EXEMPLE 9 — Connecter/déconnecter des notifiers
+# EXAMPLE 9 — Connecting/Disconnecting Notifiers
 # ═══════════════════════════════════════════════════════════════════
 
-proc exemple9_notifiers() =
-  ## Montre comment connecter et déconnecter dynamiquement des handlers.
-  ## P  → met en pause la réception des events clavier (déconnecte le handler)
-  ## P  (de nouveau) → reprend
+proc example9_notifiers() =
+  ## Demonstrates how to dynamically connect and disconnect handlers.
+  ## P → pauses keyboard event reception (disconnects the handler)
+  ## P (again) → resumes
 
   let app = initSDL3App()
 
   var win: SDL3Window
   new(win)
-  app.initWindow(win, "Exemple 9 — Notifiers dynamiques")
+  app.initWindow(win, "Example 9 — Dynamic Notifiers")
 
   var paused = false
 
-  # Stocke l'id de connexion pour pouvoir déconnecter
+  # Store connection ID to allow disconnection
   var kbHandlerID: int
 
   proc kbHandler(w: CWindow, ev: KeyboardEvent) =
     if ev.just_pressed:
-      echo "Touche : ", ev.key
+      echo "Key: ", ev.key
 
   NOTIF_KEYBOARD_INPUT.connect(kbHandler)
 
   NOTIF_ERROR.connect do(mes, error: string):
-    echo "[ERREUR] ", mes, " | ", error
+    echo "[ERROR] ", mes, " | ", error
 
-  NOTIF_WARNING.connect do(mes, warning: string, code: int):
-    echo "[WARN] ", mes, " | ", warning, " (code=", code, ")"
+  #NOTIF_WARNING.connect do(mes, warning: string, code: int):
+    #echo "[WARN] ", mes, " | ", warning, " (code=", code, ")"
 
   NOTIF_INFO.connect do(mes, info: string, code: int):
     echo "[INFO] ", mes, " | ", info
@@ -506,17 +506,17 @@ proc exemple9_notifiers() =
       if paused:
         NOTIF_KEYBOARD_INPUT.connect(kbHandler)
         paused = false
-        echo "Reprise des events clavier"
+        echo "Resuming keyboard events"
       else:
         NOTIF_KEYBOARD_INPUT.disconnect(kbHandler)
         paused = true
-        echo "Events clavier mis en PAUSE"
+        echo "Keyboard events PAUSED"
 
-    # Lire l'erreur SDL courante (si non vide → NOTIF_WARNING émis)
+    # Read current SDL error (if not empty → NOTIF_WARNING emitted)
     if win.isKeyJustPressed(CKey_E):
       let err = win.getError()
       if err.len > 0:
-        echo "Erreur SDL : ", err
+        echo "SDL Error: ", err
 
     if win.isKeyJustPressed(CKey_Escape):
       running = false
@@ -528,29 +528,29 @@ proc exemple9_notifiers() =
 
 
 # ═══════════════════════════════════════════════════════════════════
-# EXEMPLE 10 — Application complète : mini éditeur de texte
+# EXAMPLE 10 — Full Application: Mini Text Editor
 # ═══════════════════════════════════════════════════════════════════
 
-proc exemple10_mini_editeur() =
-  ## Réunit tout en un mini éditeur de texte en console :
-  ##   - Saisie UTF-8 via SDL_EVENT_TEXT_INPUT
-  ##   - Backspace, Entrée, Échap
-  ##   - Ctrl+C → copier (affiche le contenu)
-  ##   - Ctrl+A → tout sélectionner (efface)
-  ##   - F11    → plein écran borderless
-  ##   - F1     → aide
+proc example10_mini_editeur() =
+  ## Combines everything into a console-based mini text editor:
+  ##   - UTF-8 input via SDL_EVENT_TEXT_INPUT
+  ##   - Backspace, Enter, Escape
+  ##   - Ctrl+C → copy (displays content)
+  ##   - Ctrl+A → select all (clears)
+  ##   - F11    → borderless fullscreen
+  ##   - F1     → help
 
   let app = initSDL3App()
 
   var win: SDL3Window
   new(win)
-  app.initWindow(win, "Mini Éditeur — F1 aide", "900", "600")
+  app.initWindow(win, "Mini Editor — F1 for help", "900", "600")
 
   NOTIF_ERROR.connect do(mes, error: string):
-    echo "[ERREUR] ", mes, " | ", error
+    echo "[ERROR] ", mes, " | ", error
 
-  var lines  = @[""]          # lignes de texte
-  var curLine = 0             # indice de ligne courante
+  var lines  = @[""]          # text lines
+  var curLine = 0              # current line index
   var isFullscreen = false
   var running = true
 
@@ -563,14 +563,14 @@ proc exemple10_mini_editeur() =
 
   proc printHelp() =
     echo """
-    ┌─ AIDE ──────────────────────────────┐
-    │  Taper          → insérer du texte  │
-    │  Entrée         → nouvelle ligne    │
-    │  Backspace      → effacer           │
-    │  Ctrl+C         → afficher doc      │
-    │  Ctrl+A         → tout effacer      │
-    │  F11            → plein écran       │
-    │  Échap          → quitter           │
+    ┌─ HELP ──────────────────────────────┐
+    │  Type          → insert text        │
+    │  Enter         → new line           │
+    │  Backspace     → erase              │
+    │  Ctrl+C        → show doc           │
+    │  Ctrl+A        → clear all          │
+    │  F11           → fullscreen         │
+    │  Escape        → quit               │
     └──────────────────────────────────────┘"""
 
   printHelp()
@@ -578,7 +578,7 @@ proc exemple10_mini_editeur() =
   while running:
     app.eventLoop(SDLEventRouter)
 
-    # ── Saisie caractères ─────────────────────────────────────────
+    # ── Character Input ─────────────────────────────────────────
     if win.textInput.len > 0:
       lines[curLine].add(win.textInput)
 
@@ -590,37 +590,37 @@ proc exemple10_mini_editeur() =
           dec i
         lines[curLine] = lines[curLine][0 ..< i]
       elif curLine > 0:
-        # Fusionner avec la ligne précédente
+        # Merge with previous line
         let tail = lines[curLine]
         lines.delete(curLine)
         dec curLine
         lines[curLine].add(tail)
 
-    # ── Entrée → nouvelle ligne ───────────────────────────────────
+    # ── Enter → new line ───────────────────────────────────
     if win.isKeyJustPressed(CKey_Enter):
       inc curLine
       lines.insert("", curLine)
 
-    # ── Ctrl+C → afficher le document ────────────────────────────
+    # ── Ctrl+C → show document ────────────────────────────
     if win.isKeyPressed(CKey_LCtrl) and win.isKeyJustPressed(CKey_C):
       printDoc()
 
-    # ── Ctrl+A → effacer tout ─────────────────────────────────────
+    # ── Ctrl+A → clear all ─────────────────────────────────────
     if win.isKeyPressed(CKey_LCtrl) and win.isKeyJustPressed(CKey_A):
       lines   = @[""]
       curLine = 0
-      echo "(document effacé)"
+      echo "(document cleared)"
 
-    # ── F1 → aide ─────────────────────────────────────────────────
+    # ── F1 → help ─────────────────────────────────────────────────
     if win.isKeyJustPressed(CKey_F1):
       printHelp()
 
-    # ── F11 → plein écran ─────────────────────────────────────────
+    # ── F11 → fullscreen ─────────────────────────────────────────
     if win.isKeyJustPressed(CKey_F11):
       isFullscreen = not isFullscreen
       win.setFullscreen(isFullscreen, desktopResolution = true)
 
-    # ── Échap → quitter ───────────────────────────────────────────
+    # ── Escape → quit ───────────────────────────────────────────
     if win.isKeyJustPressed(CKey_Escape):
       running = false
 
@@ -631,34 +631,34 @@ proc exemple10_mini_editeur() =
 
 
 # ═══════════════════════════════════════════════════════════════════
-# POINT D'ENTRÉE — lance l'exemple désiré
+# ENTRY POINT — launches desired example
 # ═══════════════════════════════════════════════════════════════════
 
 when isMainModule:
   echo """
-  Choisissez un exemple :
-    1  → Fenêtre simple
-    2  → Clavier
-    3  → Souris
-    4  → Saisie de texte
-    5  → Modificateurs
-    6  → Plein écran
+  Choose an example:
+    1  → Simple Window
+    2  → Keyboard
+    3  → Mouse
+    4  → Text Input
+    5  → Modifiers
+    6  → Fullscreen
     7  → Resize / Reposition
-    8  → Multi-fenêtres
-    9  → Notifiers dynamiques
-   10  → Mini éditeur
+    8  → Multi-window
+    9  → Dynamic Notifiers
+   10  → Mini Editor
   """
   let choix = readLine(stdin)
   case choix
-  of "1":  exemple1_fenetre_simple()
-  of "2":  exemple2_clavier()
-  of "3":  exemple3_souris()
-  of "4":  exemple4_texte()
-  of "5":  exemple5_modificateurs()
-  of "6":  exemple6_fullscreen()
-  of "7":  exemple7_resize_reposition()
-  of "8":  exemple8_multi_fenetres()
-  of "9":  exemple9_notifiers()
-  of "10": exemple10_mini_editeur()
+  of "1":  example1_fenetre_simple()
+  of "2":  example2_clavier()
+  of "3":  example3_souris()
+  of "4":  example4_texte()
+  of "5":  example5_modificateurs()
+  of "6":  example6_fullscreen()
+  of "7":  example7_resize_reposition()
+  of "8":  example8_multi_fenetres()
+  of "9":  example9_notifiers()
+  of "10": example10_mini_editeur()
   else:
-    echo "Choix invalide."
+    echo "Invalid choice."
