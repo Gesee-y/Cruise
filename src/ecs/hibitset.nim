@@ -12,28 +12,36 @@ import std/[bitops, times, strformat]
 ## Both use a 2-level hierarchy where layer1 summarizes 64 blocks of layer0,
 ## enabling fast iteration over set bits using trailing zero counts.
 
-const
-  L0_BITS = 64      ## Bits per layer0 block
-  L0_SHIFT = 6      ## log2(64) for fast division
-  L0_MASK = 63      ## Mask to extract bit position within block
+when defined(js):
+  const
+    L0_BITS* = 32      ## Bits per layer0 block (optimized for JS bitwise)
+    L0_SHIFT* = 5      ## log2(32)
+    L0_MASK* = 31      ## Mask for 32 bits
+  type BitBlock* = uint32
+else:
+  const
+    L0_BITS* = 64      ## Bits per layer0 block
+    L0_SHIFT* = 6      ## log2(64)
+    L0_MASK* = 63      ## Mask for 64 bits
+  type BitBlock* = uint64
 
 type
   HiBitSet* = object
     ## Dense hierarchical bitset
     ## Memory usage: O(capacity/8) bytes, allocated upfront
-    layer0: seq[uint64]  ## Bottom level - actual bits
-    layer1: seq[uint64]  ## Top level - summary of layer0 blocks
+    layer0: seq[BitBlock]  ## Bottom level - actual bits
+    layer1: seq[BitBlock]  ## Top level - summary of layer0 blocks
 
   SparseHiBitSet* = object
     ## Sparse hierarchical bitset using sparse sets
     ## Memory usage: O(set_bits * 3 * sizeof(uint64)), only allocates non-zero blocks
     ## Uses sparse set technique for O(1) insert/delete/lookup without hashing
-    layer0Dense: seq[uint64]      ## Dense array: contains only non-zero block values
+    layer0Dense: seq[BitBlock]      ## Dense array: contains only non-zero block values
     layer0Sparse: seq[int]        ## Sparse array: maps block index -> dense position
     layer0DenseIdx: seq[int]      ## Inverse map: dense position -> block index
     layer0Count: int              ## Number of valid entries in dense arrays
     
-    layer1Dense: seq[uint64]      ## Same structure for layer1
+    layer1Dense: seq[BitBlock]      ## Same structure for layer1
     layer1Sparse: seq[int]
     layer1DenseIdx: seq[int]
     layer1Count: int
@@ -52,8 +60,8 @@ proc newHiBitSet*(capacity: int = 4096): HiBitSet =
   ##   var bs = newHiBitSet(10000)
   let l0Size = (capacity + L0_BITS - 1) shr L0_SHIFT
   let l1Size = (l0Size + L0_BITS - 1) shr L0_SHIFT
-  result.layer0 = newSeq[uint64](l0Size)
-  result.layer1 = newSeq[uint64](l1Size)
+  result.layer0 = newSeq[BitBlock](l0Size)
+  result.layer1 = newSeq[BitBlock](l1Size)
 
 proc len*(h: HiBitSet): int {.inline.} =
   ## Returns the total capacity of the bitset in bits
@@ -76,8 +84,24 @@ proc set*(h: var HiBitSet, idx: int) {.inline.} =
   h.ensureCapacity(idx)
   let l0Idx = idx shr L0_SHIFT
   let bitPos = idx and L0_MASK
-  h.layer0[l0Idx] = h.layer0[l0Idx] or (1'u64 shl bitPos)
-  h.layer1[l0Idx shr L0_SHIFT] = h.layer1[l0Idx shr L0_SHIFT] or (1'u64 shl (l0Idx and L0_MASK))
+  h.layer0[l0Idx] = h.layer0[l0Idx] or (BitBlock(1) shl bitPos)
+  h.layer1[l0Idx shr L0_SHIFT] = h.layer1[l0Idx shr L0_SHIFT] or (BitBlock(1) shl (l0Idx and L0_MASK))
+
+proc setL0Block*(h: var HiBitSet, l0Idx: int, value: BitBlock) {.inline.} =
+  ## Sets an entire block at l0Idx.
+  ## Updates layer1 correctly. O(1).
+  let neededL0 = l0Idx + 1
+  if neededL0 > h.layer0.len:
+    h.ensureCapacity(l0Idx shl L0_SHIFT)
+  
+  h.layer0[l0Idx] = value
+  let l1Idx = l0Idx shr L0_SHIFT
+  let l1Bit = l0Idx and L0_MASK
+  if value != 0:
+    h.layer1[l1Idx] = h.layer1[l1Idx] or (BitBlock(1) shl l1Bit)
+  else:
+    h.layer1[l1Idx] = h.layer1[l1Idx] and not (BitBlock(1) shl l1Bit)
+
 
 proc unset*(h: var HiBitSet, idx: int) {.inline.} =
   ## Sets the bit at the specified index to 0.
@@ -87,12 +111,12 @@ proc unset*(h: var HiBitSet, idx: int) {.inline.} =
   if idx >= h.len: return
   let l0Idx = idx shr L0_SHIFT
   let bitPos = idx and L0_MASK
-  h.layer0[l0Idx] = h.layer0[l0Idx] and not (1'u64 shl bitPos)
+  h.layer0[l0Idx] = h.layer0[l0Idx] and not (BitBlock(1) shl bitPos)
   
   if h.layer0[l0Idx] == 0:
     let l1Idx = l0Idx shr L0_SHIFT
     let l1Bit = l0Idx and L0_MASK
-    h.layer1[l1Idx] = h.layer1[l1Idx] and not (1'u64 shl l1Bit)
+    h.layer1[l1Idx] = h.layer1[l1Idx] and not (BitBlock(1) shl l1Bit)
 
 proc get*(h: HiBitSet, idx: int): bool {.inline.} =
   ## Returns true if the bit at index is set, false otherwise.
@@ -101,9 +125,9 @@ proc get*(h: HiBitSet, idx: int): bool {.inline.} =
   if idx >= h.len: return false
   let l0Idx = idx shr L0_SHIFT
   let bitPos = idx and L0_MASK
-  (h.layer0[l0Idx] and (1'u64 shl bitPos)) != 0
+  (h.layer0[l0Idx] and (BitBlock(1) shl bitPos)) != 0
 
-proc getL0*(h: HiBitSet, idx: int): uint64 =
+proc getL0*(h: HiBitSet, idx: int): BitBlock =
   ## Returns the raw uint64 block at layer0 index.
   ## Useful for direct block manipulation.
   if idx >= h.layer0.len: return 0
@@ -138,7 +162,7 @@ proc `and`*(a, b: HiBitSet): HiBitSet =
     result.layer0[i] = a.layer0[i] and b.layer0[i]
     if result.layer0[i] != 0:
       let l1Idx = i shr L0_SHIFT
-      result.layer1[l1Idx] = result.layer1[l1Idx] or (1'u64 shl (i and L0_MASK))
+      result.layer1[l1Idx] = result.layer1[l1Idx] or (BitBlock(1) shl (i and L0_MASK))
 
 proc `or`*(a, b: HiBitSet): HiBitSet =
   ## Bitwise OR operation: returns bits set in a OR b or both.
@@ -149,12 +173,12 @@ proc `or`*(a, b: HiBitSet): HiBitSet =
   result.layer1.setLen((maxL0 + L0_BITS - 1) shr L0_SHIFT)
   
   for i in 0..<maxL0:
-    let aVal = if i < a.layer0.len: a.layer0[i] else: 0'u64
-    let bVal = if i < b.layer0.len: b.layer0[i] else: 0'u64
+    let aVal = if i < a.layer0.len: a.layer0[i] else: BitBlock(0)
+    let bVal = if i < b.layer0.len: b.layer0[i] else: BitBlock(0)
     result.layer0[i] = aVal or bVal
     if result.layer0[i] != 0:
       let l1Idx = i shr L0_SHIFT
-      result.layer1[l1Idx] = result.layer1[l1Idx] or (1'u64 shl (i and L0_MASK))
+      result.layer1[l1Idx] = result.layer1[l1Idx] or (BitBlock(1) shl (i and L0_MASK))
 
 proc `xor`*(a, b: HiBitSet): HiBitSet =
   ## Bitwise XOR operation: returns bits set in a OR b but not both.
@@ -165,12 +189,12 @@ proc `xor`*(a, b: HiBitSet): HiBitSet =
   result.layer1.setLen((maxL0 + L0_BITS - 1) shr L0_SHIFT)
   
   for i in 0..<maxL0:
-    let aVal = if i < a.layer0.len: a.layer0[i] else: 0'u64
-    let bVal = if i < b.layer0.len: b.layer0[i] else: 0'u64
+    let aVal = if i < a.layer0.len: a.layer0[i] else: BitBlock(0)
+    let bVal = if i < b.layer0.len: b.layer0[i] else: BitBlock(0)
     result.layer0[i] = aVal xor bVal
     if result.layer0[i] != 0:
       let l1Idx = i shr L0_SHIFT
-      result.layer1[l1Idx] = result.layer1[l1Idx] or (1'u64 shl (i and L0_MASK))
+      result.layer1[l1Idx] = result.layer1[l1Idx] or (BitBlock(1) shl (i and L0_MASK))
 
 proc andNot*(a, b: HiBitSet): HiBitSet =
   ## Bitwise AND NOT operation: returns bits set in `a` but cleared in `b`.
@@ -180,11 +204,11 @@ proc andNot*(a, b: HiBitSet): HiBitSet =
   result.layer1.setLen(a.layer1.len)
   
   for i in 0..<a.layer0.len:
-    let bVal = if i < b.layer0.len: b.layer0[i] else: 0'u64
+    let bVal = if i < b.layer0.len: b.layer0[i] else: BitBlock(0)
     result.layer0[i] = a.layer0[i] and not bVal
     if result.layer0[i] != 0:
       let l1Idx = i shr L0_SHIFT
-      result.layer1[l1Idx] = result.layer1[l1Idx] or (1'u64 shl (i and L0_MASK))
+      result.layer1[l1Idx] = result.layer1[l1Idx] or (BitBlock(1) shl (i and L0_MASK))
 
 proc `not`*(a: HiBitSet): HiBitSet =
   ## Bitwise NOT operation: inverts all bits.
@@ -197,7 +221,7 @@ proc `not`*(a: HiBitSet): HiBitSet =
     result.layer0[i] = not a.layer0[i]
     if result.layer0[i] != 0:
       let l1Idx = i shr L0_SHIFT
-      result.layer1[l1Idx] = result.layer1[l1Idx] or (1'u64 shl (i and L0_MASK))
+      result.layer1[l1Idx] = result.layer1[l1Idx] or (BitBlock(1) shl (i and L0_MASK))
 
 iterator items*(h: HiBitSet): int =
   ## Iterates over all indices where the bit is set.
@@ -271,13 +295,13 @@ proc newSparseHiBitSet*(initialCapacity: int = 64): SparseHiBitSet =
   ## Example:
   ##   var bs = newSparseHiBitSet()
   ##   bs.set(1_000_000)  # Only allocates ~3 uint64s, not 1M bits
-  result.layer0Dense = newSeq[uint64](initialCapacity)
+  result.layer0Dense = newSeq[BitBlock](initialCapacity)
   result.layer0Sparse = newSeq[int](initialCapacity)
   result.layer0DenseIdx = newSeq[int](initialCapacity)
   result.layer0Count = 0
   
   let l1Cap = max(8, initialCapacity shr L0_SHIFT)
-  result.layer1Dense = newSeq[uint64](l1Cap)
+  result.layer1Dense = newSeq[BitBlock](l1Cap)
   result.layer1Sparse = newSeq[int](l1Cap)
   result.layer1DenseIdx = newSeq[int](l1Cap)
   result.layer1Count = 0
@@ -305,13 +329,13 @@ proc hasL0*(h: SparseHiBitSet, l0Idx: int): bool {.inline.} =
   let denseIdx = h.layer0Sparse[l0Idx]
   denseIdx < h.layer0Count and h.layer0DenseIdx[denseIdx] == l0Idx
 
-proc getL0*(h: SparseHiBitSet, l0Idx: int): uint64 {.inline.} =
+proc getL0*(h: SparseHiBitSet, l0Idx: int): BitBlock {.inline.} =
   ## Gets a layer0 block value, returns 0 if block doesn't exist.
   ## O(1) lookup.
   if not h.hasL0(l0Idx): return 0
   h.layer0Dense[h.layer0Sparse[l0Idx]]
 
-proc setL0*(h: var SparseHiBitSet, l0Idx: int, value: uint64) {.inline.} =
+proc setL0*(h: var SparseHiBitSet, l0Idx: int, value: BitBlock) {.inline.} =
   ## Sets a layer0 block to the given value.
   ## If value is 0, removes the block using swap-and-pop.
   ## If value is non-zero and block exists, updates it.
@@ -350,12 +374,12 @@ proc hasL1*(h: SparseHiBitSet, l1Idx: int): bool {.inline.} =
   let denseIdx = h.layer1Sparse[l1Idx]
   denseIdx < h.layer1Count and h.layer1DenseIdx[denseIdx] == l1Idx
 
-proc getL1*(h: SparseHiBitSet, l1Idx: int): uint64 {.inline.} =
+proc getL1*(h: SparseHiBitSet, l1Idx: int): BitBlock {.inline.} =
   ## Gets a layer1 block value
   if not h.hasL1(l1Idx): return 0
   h.layer1Dense[h.layer1Sparse[l1Idx]]
 
-proc setL1*(h: var SparseHiBitSet, l1Idx: int, value: uint64) {.inline.} =
+proc setL1*(h: var SparseHiBitSet, l1Idx: int, value: BitBlock) {.inline.} =
   ## Sets a layer1 block value using same sparse set technique as layer0
   h.ensureCapacityL1(l1Idx)
   
@@ -379,6 +403,24 @@ proc setL1*(h: var SparseHiBitSet, l1Idx: int, value: uint64) {.inline.} =
       h.layer1DenseIdx[h.layer1Count] = l1Idx
       h.layer1Count += 1
 
+proc setL0Block*(h: var SparseHiBitSet, l0Idx: int, value: BitBlock) {.inline.} =
+  ## Efficiently sets an entire block in the sparse bitset.
+  ## Updates O(1) summary in layer1.
+  h.setL0(l0Idx, value)
+  
+  # Update layer1
+  let l1Idx = l0Idx shr L0_SHIFT
+  let l1Bit = l0Idx and L0_MASK
+  if value != 0:
+    let l1Old = h.getL1(l1Idx)
+    h.setL1(l1Idx, l1Old or (BitBlock(1) shl l1Bit))
+  else:
+    # If the block was cleared, we must ensure layer1 reflects this.
+    # Note: h.setL0 already handles removal of the block entry if value is 0.
+    let l1Old = h.getL1(l1Idx)
+    h.setL1(l1Idx, l1Old and not (BitBlock(1) shl l1Bit))
+
+
 proc set*(h: var SparseHiBitSet, idx: int) {.inline.} =
   ## Sets the bit at the specified index to 1.
   ## Only allocates memory if the containing block doesn't exist.
@@ -388,14 +430,14 @@ proc set*(h: var SparseHiBitSet, idx: int) {.inline.} =
   let bitPos = idx and L0_MASK
   
   let oldValue = h.getL0(l0Idx)
-  let newValue = oldValue or (1'u64 shl bitPos)
+  let newValue = oldValue or (BitBlock(1) shl bitPos)
   h.setL0(l0Idx, newValue)
   
   # Update layer1
   let l1Idx = l0Idx shr L0_SHIFT
   let l1Bit = l0Idx and L0_MASK
   let l1Old = h.getL1(l1Idx)
-  h.setL1(l1Idx, l1Old or (1'u64 shl l1Bit))
+  h.setL1(l1Idx, l1Old or (BitBlock(1) shl l1Bit))
 
 proc unset*(h: var SparseHiBitSet, idx: int) {.inline.} =
   ## Sets the bit at the specified index to 0.
@@ -408,7 +450,7 @@ proc unset*(h: var SparseHiBitSet, idx: int) {.inline.} =
   if not h.hasL0(l0Idx): return
   
   let oldValue = h.getL0(l0Idx)
-  let newValue = oldValue and not (1'u64 shl bitPos)
+  let newValue = oldValue and not (BitBlock(1) shl bitPos)
   h.setL0(l0Idx, newValue)
   
   # Update layer1 if block becomes empty
@@ -416,7 +458,7 @@ proc unset*(h: var SparseHiBitSet, idx: int) {.inline.} =
     let l1Idx = l0Idx shr L0_SHIFT
     let l1Bit = l0Idx and L0_MASK
     let l1Old = h.getL1(l1Idx)
-    h.setL1(l1Idx, l1Old and not (1'u64 shl l1Bit))
+    h.setL1(l1Idx, l1Old and not (BitBlock(1) shl l1Bit))
 
 proc get*(h: SparseHiBitSet, idx: int): bool {.inline.} =
   ## Returns true if the bit at index is set.
@@ -425,7 +467,7 @@ proc get*(h: SparseHiBitSet, idx: int): bool {.inline.} =
   let l0Idx = idx shr L0_SHIFT
   let bitPos = idx and L0_MASK
   if not h.hasL0(l0Idx): return false
-  (h.getL0(l0Idx) and (1'u64 shl bitPos)) != 0
+  (h.getL0(l0Idx) and (BitBlock(1) shl bitPos)) != 0
 
 proc `[]`*(h: SparseHiBitSet, idx: int): bool {.inline.} =
   ## Array access syntax
@@ -465,7 +507,7 @@ proc `and`*(a, b: SparseHiBitSet): SparseHiBitSet =
         let l1Idx = l0Idx shr L0_SHIFT
         let l1Bit = l0Idx and L0_MASK
         let l1Old = result.getL1(l1Idx)
-        result.setL1(l1Idx, l1Old or (1'u64 shl l1Bit))
+        result.setL1(l1Idx, l1Old or (BitBlock(1) shl l1Bit))
 
 proc `or`*(a, b: SparseHiBitSet): SparseHiBitSet =
   ## Bitwise OR operation.
@@ -481,7 +523,7 @@ proc `or`*(a, b: SparseHiBitSet): SparseHiBitSet =
     let l1Idx = l0Idx shr L0_SHIFT
     let l1Bit = l0Idx and L0_MASK
     let l1Old = result.getL1(l1Idx)
-    result.setL1(l1Idx, l1Old or (1'u64 shl l1Bit))
+    result.setL1(l1Idx, l1Old or (BitBlock(1) shl l1Bit))
   
   # Add blocks from b that aren't in a
   for i in 0..<b.layer0Count:
@@ -492,7 +534,7 @@ proc `or`*(a, b: SparseHiBitSet): SparseHiBitSet =
       let l1Idx = l0Idx shr L0_SHIFT
       let l1Bit = l0Idx and L0_MASK
       let l1Old = result.getL1(l1Idx)
-      result.setL1(l1Idx, l1Old or (1'u64 shl l1Bit))
+      result.setL1(l1Idx, l1Old or (BitBlock(1) shl l1Bit))
 
 proc `xor`*(a, b: SparseHiBitSet): SparseHiBitSet =
   ## Bitwise XOR operation.
@@ -508,7 +550,7 @@ proc `xor`*(a, b: SparseHiBitSet): SparseHiBitSet =
       let l1Idx = l0Idx shr L0_SHIFT
       let l1Bit = l0Idx and L0_MASK
       let l1Old = result.getL1(l1Idx)
-      result.setL1(l1Idx, l1Old or (1'u64 shl l1Bit))
+      result.setL1(l1Idx, l1Old or (BitBlock(1) shl l1Bit))
   
   # Process blocks from b that aren't in a
   for i in 0..<b.layer0Count:
@@ -518,7 +560,7 @@ proc `xor`*(a, b: SparseHiBitSet): SparseHiBitSet =
       let l1Idx = l0Idx shr L0_SHIFT
       let l1Bit = l0Idx and L0_MASK
       let l1Old = result.getL1(l1Idx)
-      result.setL1(l1Idx, l1Old or (1'u64 shl l1Bit))
+      result.setL1(l1Idx, l1Old or (BitBlock(1) shl l1Bit))
 
 proc `not`*(a: SparseHiBitSet): SparseHiBitSet =
   ## Bitwise NOT operation: inverts all bits.
@@ -548,7 +590,7 @@ proc `not`*(a: SparseHiBitSet): SparseHiBitSet =
       let l1Idx = l0Idx shr L0_SHIFT
       let l1Bit = l0Idx and L0_MASK
       let l1Old = result.getL1(l1Idx)
-      result.setL1(l1Idx, l1Old or (1'u64 shl l1Bit))
+      result.setL1(l1Idx, l1Old or (BitBlock(1) shl l1Bit))
 
 proc maxLen(h: SparseHiBitSet): int =
   return h.layer1Count
@@ -602,8 +644,8 @@ proc card*(h: SparseHiBitSet): int =
 proc memoryUsage*(h: SparseHiBitSet): int =
   ## Returns approximate memory usage in bytes.
   ## Useful for comparing sparse vs dense implementations.
-  result = h.layer0Count * sizeof(uint64) * 3  # dense + sparse + denseIdx
-  result += h.layer1Count * sizeof(uint64) * 3
+  result = h.layer0Count * sizeof(BitBlock) * 3  # dense + sparse + denseIdx
+  result += h.layer1Count * sizeof(BitBlock) * 3
 
 proc `$`*(h: SparseHiBitSet): string =
   ## String representation showing all set bit indices

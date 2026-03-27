@@ -31,7 +31,6 @@ proc allocateNewBlocks(
   let pl = partition.zones.len
   
   partition.zones.setLen(pl + s + 1)
-  upsize(table, s + 1)
 
   for i in 0..s:
     var trange: TableRange
@@ -122,7 +121,6 @@ proc allocateEntity(
   ## Allocate a new block if required
   if fill_index >= partition.zones.len:
     partition.zones.setLen(fill_index + 1)
-    upsize(table, 1)
 
     for id in partition.components:
       check(id < table.registry.entries.len, "Invalid component ID")
@@ -224,7 +222,6 @@ proc changePartition(
 
     for id in newPartition.components:
       let entry = table.registry.entries[id]
-      entry.resizeOp(entry.rawPointer, table.blockCount+1)
       entry.newBlockAtOp(entry.rawPointer, table.blockCount)
 
     table.blockCount += 1
@@ -306,7 +303,6 @@ proc changePartition(
 
       for id in newPartition.components:
         let entry = table.registry.entries[id]
-        entry.resizeOp(entry.rawPointer, table.blockCount + 1)
         entry.newBlockAtOp(entry.rawPointer, table.blockCount)
 
       table.blockCount += 1

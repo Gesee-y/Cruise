@@ -219,8 +219,8 @@ macro toObjectMod(T:typedesc, c:untyped, idx:untyped, v:untyped) =
   return quote("@") do:
     `@res`
 
-macro toObjectOverride(T:typedesc, c:untyped, idx:untyped, v:untyped) =
-  ## Override SoA values using another SoA-backed value.
+macro toObjectCopy(T:typedesc, cDst:untyped, idxDst:untyped, cSrc:untyped, idxSrc:untyped) =
+  ## Override SoA values using another SoA-backed value directly field-by-field.
   var res = newNimNode(nnkStmtList)
   let ty = T.getType()[1].getType()[2]
 
@@ -231,16 +231,16 @@ macro toObjectOverride(T:typedesc, c:untyped, idx:untyped, v:untyped) =
     var dot1 = newNimNode(nnkDotExpr)
     var dot2 = newNimNode(nnkDotExpr)
 
-    dot1.add(c)
+    dot1.add(cDst)
     dot1.add(ident(f.strVal))
     brack.add(dot1)
-    brack.add(idx)
+    brack.add(idxDst)
     asg.add(brack)
 
-    dot2.add(v)
+    dot2.add(cSrc)
     dot2.add(ident(f.strVal))
     brack2.add(dot2)
-    brack2.add(idx)
+    brack2.add(idxSrc)
     asg.add(brack2)
     res.add(asg)
 
@@ -260,22 +260,52 @@ template swapVals(b: untyped, i, j:int|uint) =
   b[j] = tmp
 
 template overrideVals[N,P,T,S,B](b: SoAFragmentArray[N,P,T,S,B], i, j:int|uint) =
-  ## Override one value with another inside a fragment array.
-  b[i] = b[j]
+  ## Override one value with another inside a fragment array by field-copying.
+  when T is tuple[]:
+    discard
+  else:
+    let bidi = (i.uint shr BLK_SHIFT) and BLK_MASK
+    let idxi = i.uint and BLK_MASK
+    let bidj = (j.uint shr BLK_SHIFT) and BLK_MASK
+    let idxj = j.uint and BLK_MASK
+    toObjectCopy(B, b.blocks[bidi].data, idxi, b.blocks[bidj].data, idxj)
 
 template overrideVals[N,P,T,B](b: SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B], i, j:int|uint) =
   ## Override one value with another inside a fragment.
-  b[i] = b[j]
+  when T is tuple[]:
+    discard
+  else:
+    toObjectCopy(B, b.data, i, b.data, j)
 
-template overrideVals(f, archId, ents, ids, toSwap, toAdd:untyped) =
-  ## Specialized override logic used during archetype transitions.
-  for i in 0..<ids.len:
-    var e = ids[i].obj
-    let s = toSwap[i]
-    let a = toAdd[i]
-    
-    f[a] = f[e]
-    f[e] = f[s]
+macro overrideValsBatch[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], ids: untyped, sw: seq[uint], ad: seq[uint]) =
+  ## Component-Outside, Entity-Inside batch migration.
+  var res = newNimNode(nnkStmtList)
+  let types = T.getTypeImpl() # T is the tuple-of-arrays type
+  
+  for i in 0..<types.len:
+    let fName = types[i][0] # The name is in the first child of the IdentDefs
+    var loop = quote do:
+      for k in 0..<ids.len:
+        let e = ids[k].obj
+        let s = sw[k]
+        let a = ad[k]
+        
+        let bid_a = (a shr BLK_SHIFT) and BLK_MASK
+        let idx_a = a and BLK_MASK
+        let bid_e = (e.id shr BLK_SHIFT) and BLK_MASK
+        let idx_e = e.id and BLK_MASK
+        let bid_s = (s shr BLK_SHIFT) and BLK_MASK
+        let idx_s = s and BLK_MASK
+
+        f.blocks[bid_a].data.`fName`[idx_a] = f.blocks[bid_e].data.`fName`[idx_e]
+        f.blocks[bid_e].data.`fName`[idx_e] = f.blocks[bid_s].data.`fName`[idx_s]
+    res.add(loop)
+  return res
+
+
+template overrideVals(f, archId, ents, ids, toSwap, toAdd: untyped) =
+  ## Redirect to the aggressive batch macro.
+  f.overrideValsBatch(ids, toSwap, toAdd)
 
 
 template setChanged[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint) =
@@ -323,10 +353,7 @@ proc newSparseBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, m
     f.sparse.setLen(f.sparse.len+1)
     f.sparseTicks.setLen(f.sparse.len+1)
 
-  var msk = m
-  while msk != 0:
-    f.sparseMask.set(offset + countTrailingZeroBits(msk))
-    msk = msk and (msk-1)
+  f.sparseMask.setL0Block(i.int, m.BitBlock)
 
 proc newSparseBlocks[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, masks:openArray[uint]) =
   ## Allocate multiple sparse blocks at once.
@@ -345,18 +372,19 @@ proc newSparseBlocks[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, 
       f.sparseTicks.setLen(f.sparse.len+1)
     
     let id = f.toSparse[i]-1
-    var msk = m
-    
-    while msk != 0:
-      f.sparseMask.set(offset+c*S + countTrailingZeroBits(msk))
-      msk = msk and (msk-1)
+    f.sparseMask.setL0Block(i.int, m.BitBlock)
+
 
 proc freeSparseBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int) =
   ## Free a sparse block (currently a no-op placeholder).
   discard
 
 proc newBlockAt[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], i:int) =
-  ## Allocate a new dense block at a specific index.
+  ## Allocate a new dense block at a specific index with exponential growth.
+  if i >= f.blocks.len:
+    let newCap = max(i + 1, f.blocks.len * 2)
+    f.blocks.setLen(newCap)
+    f.blkTicks.setLen(newCap)
   var blk:ref SoAFragment[N,P,T,B]
   new(blk)
   f.blocks[i] = blk

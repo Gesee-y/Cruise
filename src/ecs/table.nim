@@ -53,6 +53,11 @@ include "archetypes.nim"
 include "events.nim"
 
 type
+  QueryKey* = tuple[incl: ArchetypeMask, excl: ArchetypeMask]
+  QueryCacheEntry* = object
+    version*: int
+    nodes*: seq[ArchetypeNode]
+
   ECSWorld* = ref object
     registry:ComponentRegistry
     entities:seq[Entity]
@@ -66,6 +71,7 @@ type
     free_list:seq[uint]
     max_index:int
     blockCount:int
+    queryCache*: Table[QueryKey, QueryCacheEntry]
 
 proc newECSWorld*(max_entities:int=1000000):ECSWorld =
   var w:ECSWorld
@@ -144,7 +150,12 @@ proc getStableEntities(world:ECSWorld, n:int):seq[int] =
   let start = max(0, free_len-n)
 
   if free_len > 0:
-    copyMem(addr entity_idx[0], addr world.free_entities[start], (free_len-start)*sizeof(int))
+    let count = free_len - start
+    when defined(js):
+      for i in 0..<count:
+        entity_idx[i] = world.free_entities[start + i]
+    else:
+      copyMem(addr entity_idx[0], addr world.free_entities[start], count * sizeof(int))
     world.free_entities.setLen(start)
 
   if world.free_entities.len == 0:

@@ -7,8 +7,8 @@ type
     id: uint16
     mask: ArchetypeMask
     partition: TablePartition
-    edges: array[MAX_COMPONENTS, ArchetypeNode]
-    removeEdges: array[MAX_COMPONENTS, ArchetypeNode]
+    edges: seq[tuple[comp: int, node: ArchetypeNode]]
+    removeEdges: seq[tuple[comp: int, node: ArchetypeNode]]
     edgeMask: array[4, uint64]
     componentIds: seq[int]
     lastEdge:int
@@ -35,17 +35,30 @@ proc setEdge(node: ArchetypeNode, comp: int) =
   node.edgeMask[idx] = node.edgeMask[idx] or (1'u64 shl bit)
 
 proc getEdge(node: ArchetypeNode, comp: int): ArchetypeNode =
-  return node.edges[comp]
+  for e in node.edges:
+    if e.comp == comp: return e.node
+  return nil
 
 proc setEdgePtr(node: ArchetypeNode, comp: int, target: ArchetypeNode) =
-  node.edges[comp] = target
+  for i in 0..<node.edges.len:
+    if node.edges[i].comp == comp:
+      node.edges[i].node = target
+      node.setEdge(comp)
+      return
+  node.edges.add((comp, target))
   node.setEdge(comp)
 
 proc getRemoveEdge(node: ArchetypeNode, comp: int): ArchetypeNode =
-  return node.removeEdges[comp]
+  for e in node.removeEdges:
+    if e.comp == comp: return e.node
+  return nil
 
 proc setRemoveEdgePtr(node: ArchetypeNode, comp: int, target: ArchetypeNode) =
-  node.removeEdges[comp] = target
+  for i in 0..<node.removeEdges.len:
+    if node.removeEdges[i].comp == comp:
+      node.removeEdges[i].node = target
+      return
+  node.removeEdges.add((comp, target))
 
 {.pop.}
 

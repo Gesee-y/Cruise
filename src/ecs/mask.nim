@@ -137,3 +137,14 @@ proc getComponents*(mask: ArchetypeMask): seq[int] =
       let tz = countTrailingZeroBits(bits)
       result.add(baseId + tz)
       bits = bits and (bits - 1)
+
+proc matches*(arch, incl, excl: ArchetypeMask): bool {.inline.} =
+  ## Aggressive, single-pass archetype matching.
+  ## Checks if (arch and incl) == incl AND (arch and excl) == 0.
+  for i in 0..<MAX_COMPONENT_LAYER:
+    let a = arch[i]
+    let in_m = incl[i]
+    let ex_m = excl[i]
+    if (a and in_m) != in_m: return false
+    if (a and ex_m) != 0: return false
+  return true

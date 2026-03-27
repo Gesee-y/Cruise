@@ -22,9 +22,15 @@ type
     key: CommandKey 
     count: uint32   
     capacity: uint32
-    data: ptr UncheckedArray[Payload]
+    when defined(js):
+      data: seq[Payload]
+    else:
+      data: ptr UncheckedArray[Payload]
   BatchMap = object
-    entries: ptr UncheckedArray[BatchEntry] 
+    when defined(js):
+      entries: seq[BatchEntry]
+    else:
+      entries: ptr UncheckedArray[BatchEntry] 
     currentGeneration: uint8
     activeSignatures: seq[uint32]
 
@@ -40,19 +46,28 @@ func getArchetype(s:uint32):uint32 = (s shr 12) and ((1'u32 shl 12) - 1)
 
 proc resize(entry: ptr BatchEntry) =
   let newCap = INITIAL_CAPACITY*(entry.capacity==0).uint32 + entry.capacity * 2'u32
-  entry.data = cast[ptr UncheckedArray[Payload]](realloc(entry.data, newCap * sizeof(Payload).uint32))
+  when defined(js):
+    entry.data.setLen(newCap.int)
+  else:
+    entry.data = cast[ptr UncheckedArray[Payload]](realloc(entry.data, newCap * sizeof(Payload).uint32))
   entry.capacity = newCap
 
 proc initBatchMap(): BatchMap =
-  result.entries = cast[ptr UncheckedArray[BatchEntry]](alloc0(sizeof(BatchEntry) * MAP_CAPACITY))
+  when defined(js):
+    result.entries = newSeq[BatchEntry](MAP_CAPACITY)
+  else:
+    result.entries = cast[ptr UncheckedArray[BatchEntry]](alloc0(sizeof(BatchEntry) * MAP_CAPACITY))
   result.currentGeneration = 1
   result.activeSignatures = newSeqOfCap[uint32](1024)
 
 proc destroy(map: var BatchMap) =
-  for i in 0..<MAP_CAPACITY:
-    if map.entries[i].data != nil:
-      dealloc(map.entries[i].data)
-  dealloc(map.entries)
+  when not defined(js):
+    for i in 0..<MAP_CAPACITY:
+      if map.entries[i].data != nil:
+        dealloc(map.entries[i].data)
+    dealloc(map.entries)
+  else:
+    map.entries = @[]
 
 proc initCommandBuffer(): CommandBuffer =
   result.map = initBatchMap()
@@ -83,7 +98,8 @@ proc addCommand(cb: var CommandBuffer, op: range[0..15], arch: uint16, flags: ui
       entryPtr.key = targetKey
       entryPtr.count = 0
       entryPtr.capacity = 0
-      entryPtr.data = nil
+      when not defined(js):
+        entryPtr.data = nil
       cb.map.activeSignatures.add(sig)
       
       if entryPtr.count >= entryPtr.capacity: resize(entryPtr)
@@ -105,7 +121,8 @@ proc addCommand(cb: var CommandBuffer, op: range[0..15], arch: uint16, flags: ui
           scanEntry.key = targetKey
           scanEntry.count = 0
           scanEntry.capacity = 0
-          scanEntry.data = nil
+          when not defined(js):
+            scanEntry.data = nil
           cb.map.activeSignatures.add(sig)
           if scanEntry.count >= scanEntry.capacity: resize(scanEntry)
           scanEntry.data[scanEntry.count] = payload
