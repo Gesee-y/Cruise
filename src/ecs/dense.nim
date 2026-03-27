@@ -232,12 +232,28 @@ proc changePartition(
   let bid = newZone.block_idx.uint
 
   ## Copy only components common to both old and new archetypes
-  let oldMask = table.archGraph.nodes[oldArch].mask
-  let commonMask = oldMask and newArch.mask
-  let commonComponents = commonMask.getComponents()
-  for id in commonComponents:
-    let entry = table.registry.entries[id]
-    entry.overrideValsOp(entry.rawPointer, (bid shl BLK_SHIFT) or new_id, i.uint)
+  let oldNode = table.archGraph.nodes[oldArch]
+  let oldMask = oldNode.mask
+  let newMask = newArch.mask
+  let intersection = oldMask and newMask
+  let destBase = (bid shl BLK_SHIFT) or new_id
+
+  if intersection == oldMask:
+    # Fast Path: New archetype contains all old components (e.g. addComponent)
+    for id in oldNode.componentIds:
+      let entry = table.registry.entries[id]
+      entry.overrideValsOp(entry.rawPointer, destBase, i.uint)
+  elif intersection == newMask:
+    # Fast Path: Old archetype contains all new components (e.g. removeComponent)
+    for id in newArch.componentIds:
+      let entry = table.registry.entries[id]
+      entry.overrideValsOp(entry.rawPointer, destBase, i.uint)
+  else:
+    # Slow Path: Partial intersection (unlikely for direct edges)
+    for id in oldNode.componentIds:
+      if newMask.hasComponent(id):
+        let entry = table.registry.entries[id]
+        entry.overrideValsOp(entry.rawPointer, destBase, i.uint)
 
   ## Fix swap-remove in source partition
   if (i and BLK_MASK).int != last:

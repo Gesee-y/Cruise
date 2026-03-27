@@ -102,6 +102,30 @@ proc setL0Block*(h: var HiBitSet, l0Idx: int, value: BitBlock) {.inline.} =
   else:
     h.layer1[l1Idx] = h.layer1[l1Idx] and not (BitBlock(1) shl l1Bit)
 
+proc setBatch*(h: var HiBitSet, idxs: openArray[uint|int]) =
+  ## Sets multiple bits at once. 
+  ## Optimizes layer1 updates by grouping indices into blocks.
+  if idxs.len == 0: return
+  
+  var lastL0Idx = -1
+  
+  for idx in idxs:
+    let i = idx.int
+    h.ensureCapacity(i)
+    let l0Idx = i shr L0_SHIFT
+    let bitPos = i and L0_MASK
+    h.layer0[l0Idx] = h.layer0[l0Idx] or (BitBlock(1) shl bitPos)
+    
+    if l0Idx != lastL0Idx:
+      h.layer1[l0Idx shr L0_SHIFT] = h.layer1[l0Idx shr L0_SHIFT] or (BitBlock(1) shl (l0Idx and L0_MASK))
+      lastL0Idx = l0Idx
+
+proc unsetBatch*(h: var HiBitSet, idxs: openArray[uint|int]) =
+  ## Unsets multiple bits at once.
+  if idxs.len == 0: return
+  for idx in idxs:
+    h.unset(idx.int)
+
 
 proc unset*(h: var HiBitSet, idx: int) {.inline.} =
   ## Sets the bit at the specified index to 0.
@@ -132,6 +156,10 @@ proc getL0*(h: HiBitSet, idx: int): BitBlock =
   ## Useful for direct block manipulation.
   if idx >= h.layer0.len: return 0
   h.layer0[idx]
+
+proc hasL0*(h: HiBitSet, l0Idx: int): bool {.inline.} =
+  ## Returns true if the block index is within the allocated capacity.
+  l0Idx < h.layer0.len
 
 proc `[]`*(h: HiBitSet, idx: int): bool {.inline.} =
   ## Array access syntax: returns true if bit is set.
@@ -438,6 +466,35 @@ proc set*(h: var SparseHiBitSet, idx: int) {.inline.} =
   let l1Bit = l0Idx and L0_MASK
   let l1Old = h.getL1(l1Idx)
   h.setL1(l1Idx, l1Old or (BitBlock(1) shl l1Bit))
+
+proc setBatch*(h: var SparseHiBitSet, idxs: openArray[uint|int]) =
+  ## Sets multiple bits in a sparse bitset. 
+  ## Optimized for sequential or grouped indices.
+  if idxs.len == 0: return
+  
+  var lastL0Idx = -1
+  
+  for idx in idxs:
+    let i = idx.int
+    let l0Idx = i shr L0_SHIFT
+    let bitPos = i and L0_MASK
+    
+    let oldValue = h.getL0(l0Idx)
+    let newValue = oldValue or (BitBlock(1) shl bitPos)
+    h.setL0(l0Idx, newValue)
+    
+    if l0Idx != lastL0Idx:
+      # Update layer1
+      let l1Idx = l0Idx shr L0_SHIFT
+      let l1Bit = l0Idx and L0_MASK
+      let l1Old = h.getL1(l1Idx)
+      h.setL1(l1Idx, l1Old or (BitBlock(1) shl l1Bit))
+      lastL0Idx = l0Idx
+
+proc unsetBatch*(h: var SparseHiBitSet, idxs: openArray[uint|int]) =
+  ## Unsets multiple bits in a sparse bitset.
+  for idx in idxs:
+    h.unset(idx.int)
 
 proc unset*(h: var SparseHiBitSet, idx: int) {.inline.} =
   ## Sets the bit at the specified index to 0.

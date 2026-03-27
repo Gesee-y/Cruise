@@ -72,10 +72,8 @@ proc allocateSparseEntities(table: var ECSWorld, count:int, components:openArray
     free_cursor -= 1
     n -= 1
 
-  activateComponentsSparse(table, toActivate, components)
-  table.free_list.setLen(free_cursor + 1)
-  if free_cursor >= 0:
-    return res
+  ## To be activated after also collecting new IDs
+  # Removed early return and early activation
 
   ## Allocate new sparse blocks if free slots are exhausted
   var masks: seq[uint]
@@ -87,9 +85,9 @@ proc allocateSparseEntities(table: var ECSWorld, count:int, components:openArray
     let r = m ..< m + toAdd
     res.add(Range(s: m, e: m + toAdd))
 
-    ## Activate components for newly created entities
+    ## Add new entity IDs to the activation list
     for i in r:
-      table.activateComponentsSparse(i, components)
+      toActivate.add(i.uint)
 
     n -= S
     var mask = (1.uint shl toAdd) - (1 + (toAdd == S).uint)
@@ -98,10 +96,19 @@ proc allocateSparseEntities(table: var ECSWorld, count:int, components:openArray
 
     ## Remaining slots in the block are pushed to the free list
     if n <= 0:
-      for i in m ..< m + (S - toAdd):
-        table.free_list.add(i.uint)
+      let start = m + toAdd
+      let count = S - toAdd
+      if count > 0:
+        let curLen = table.free_list.len
+        table.free_list.setLen(curLen + count)
+        for i in 0..<count:
+          table.free_list[curLen + i] = (start + i).uint
 
     masks.add(mask)
+
+  ## Update table state
+  table.free_list.setLen(free_cursor + 1)
+  activateComponentsSparse(table, toActivate, components)
 
   ## Notify each component to materialize new sparse blocks
   for id in components:
@@ -127,13 +134,11 @@ proc allocateSparseEntity(table: var ECSWorld, components:openArray[int]):uint =
     entry.newSparseBlockOp(entry.rawPointer, table.max_index, 1.uint)
 
   ## Push remaining slots of the block into the free list
-  let diff = (table.max_index + S) - table.max_index
-  let base = table.free_list.len
-  var c = 0
-  table.free_list.setLen(base+diff)
-  for i in table.max_index+1..<table.max_index + S:
-    table.free_list[base+c] = i.uint
-    c += 1
+  let count = S - 1
+  let curLen = table.free_list.len
+  table.free_list.setLen(curLen + count)
+  for i in 0..<count:
+    table.free_list[curLen + i] = (table.max_index + 1 + i).uint
 
   let id = table.max_index
   table.max_index += S

@@ -62,8 +62,8 @@ proc setupWorldNoEnt(): ECSWorld =
 # ---------------------------------
 
 proc runDenseBenchmarks() =
-  var suite = initSuite("Sparse ECS Operations")
-
+  var suite = initSuite("Dense0 ECS Operations")
+#[
   # ------------------------------
   # Create single sparse entity
   # ------------------------------
@@ -197,7 +197,7 @@ proc runDenseBenchmarks() =
     )
   )
   showDetailed(suite.benchmarks[6])
-
+]#
   suite.add benchmarkWithSetup(
     "migrate_dense_entity",
     SAMPLE,
@@ -218,7 +218,7 @@ proc runDenseBenchmarks() =
         migrateEntity(w, e, archDest)
     )
   )
-  showDetailed(suite.benchmarks[7])
+  showDetailed(suite.benchmarks[0])
   
   suite.add benchmarkWithSetup(
     "migrate_dense_entity_batch",
@@ -237,7 +237,7 @@ proc runDenseBenchmarks() =
       migrateEntity(w, ents, archDest)
     )
   )
-  showDetailed(suite.benchmarks[8])
+  showDetailed(suite.benchmarks[1])
 
 
 runDenseBenchmarks()

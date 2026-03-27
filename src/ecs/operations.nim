@@ -363,6 +363,26 @@ proc addComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) 
   w.activateComponentsSparse(s.id, components)
   #w.events.emitSparseComponentAdded(s, components.toSeq)
 
+## Adds components to multiple sparse entities at once.
+## Optimized to use batch bitset updates and single registry per-component traversal.
+proc addComponentBatch*(w:var ECSWorld, entities:var openArray[SparseHandle], components:varargs[int]) =
+  if entities.len == 0: return
+
+  # Calculate target archetype once (assuming all entities moving to same)
+  # Actually, we should check their current archetypes. 
+  # But for simplicity and common use case (batch adding same comps), 
+  # we calculate the transition per-archetype if they differ.
+  
+  var ids = newSeqOfCap[uint](entities.len)
+  for i in 0..<entities.len:
+    var current = w.archGraph.nodes[entities[i].archID]
+    current = w.archGraph.addComponent(current, components)
+    entities[i].archID = current.id
+    ids.add(entities[i].id)
+
+  w.activateComponentsSparse(ids, components)
+  #w.events.emitSparseComponentAddedBatch(entities, components)
+
 ## Removes components from a sparse entity.
 ##
 ## Updates the bitmask and deactivates memory slots (logic varies by implementation).
@@ -379,6 +399,20 @@ proc removeComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int
   s.archID = current.id
   w.deactivateComponentsSparse(s.id, components)
   #w.events.emitSparseComponentRemoved(s, components.toSeq)
+
+## Removes components from multiple sparse entities at once.
+proc removeComponentBatch*(w:var ECSWorld, entities:var openArray[SparseHandle], components:varargs[int]) =
+  if entities.len == 0: return
+
+  var ids = newSeqOfCap[uint](entities.len)
+  for i in 0..<entities.len:
+    var current = w.archGraph.nodes[entities[i].archID]
+    current = w.archGraph.removeComponent(current, components)
+    entities[i].archID = current.id
+    ids.add(entities[i].id)
+
+  w.deactivateComponentsSparse(ids, components)
+  #w.events.emitSparseComponentRemovedBatch(entities, components)
 
 ###################################################################################################################################################
 #################################################### SPARSE/DENSE OPERATIONS ######################################################################

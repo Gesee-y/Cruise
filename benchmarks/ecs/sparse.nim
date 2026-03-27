@@ -8,7 +8,7 @@ include "../../src/profile/benchmarks.nim"
 
 const
   Samples = 1000
-  Warmup  = 10
+  Warmup  = 1
 
 type
   Position = object
@@ -129,6 +129,20 @@ proc runSparseBenchmarks() =
       w.addComponent(e, Vel)
   )
   showDetailed(suite.benchmarks[3])
+
+  # ------------------------------
+  # Add component batch
+  # ------------------------------
+  suite.add benchmarkWithSetup(
+    "sparse_add_component_batch",
+    Samples,
+    Warmup,
+    (
+      var w = setupWorld()
+      var ents = w.createSparseEntities(ENTITY_COUNT, [Pos])),
+    w.addComponentBatch(ents, Vel)
+  )
+  showDetailed(suite.benchmarks[suite.benchmarks.len-1])
 
   # ------------------------------
   # Remove component
