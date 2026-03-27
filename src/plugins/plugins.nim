@@ -48,8 +48,8 @@ method awake*(p:PluginNode) {.base.} = p.setStatus(PLUGIN_OK)
 method update*(p:PluginNode) {.base.} = discard
 method shutdown*(p:PluginNode) {.base.} = p.setStatus(PLUGIN_OFF)
 method merge*(p:PluginNode, p2:PluginNode):PluginNode {.base.} = p
-method getObject(p:PluginNode):int {.base.} = 0
-method getCapability(p:PluginNode):int {.base.} = 0
+method getObject(p:PluginNode):RootRef {.base.} = nil
+method getCapability(p:PluginNode):RootRef {.base.} = nil
 template asKey*(t:typedesc): string = $t
 method asKey*(p:PluginNode):string {.base.} = asKey(p.typeof)
 

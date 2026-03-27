@@ -245,9 +245,9 @@ proc example5_modificateurs() =
 
     # Shift+F5 → reload
     if (win.isKeyPressed(CKey_LShift) or win.isKeyPressed(CKey_RShift)) and
-       win.isKeyJustPressed(CKey_F5):
       echo "Shift+F5 — Forced Reload!"
 
+       win.isKeyJustPressed(CKey_F5):
     # Alt+F4 → quit
     if win.isKeyPressed(CKey_LAlt) and win.isKeyJustPressed(CKey_F4):
       running = false

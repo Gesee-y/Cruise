@@ -22,7 +22,7 @@ proc allocateNewBlocks(
   count: int,
   res: var seq[(uint, Range)],
   partition: var TablePartition
-): seq[(uint, Range)] =
+) =
   
   check(count >= 0, "Allocation count cannot be negative")
   var n = count
@@ -59,7 +59,6 @@ proc allocateNewBlocks(
     inc bc
 
   table.handles.setLen((table.blockCount + 1) * DEFAULT_BLK_SIZE)
-  return res
 
 ## Allocates `n` entities for a given archetype node.
 ## Reuses partially-filled blocks before allocating new ones.
@@ -73,11 +72,9 @@ proc allocateEntities(
 
   ## First allocation for this archetype
   if archNode.partition.isNil:
-    var partition: TablePartition
-    new(partition)
-    partition.components = cast[seq[int]](archNode.componentIds)
-    archNode.partition = partition
-    return allocateNewBlocks(table, n, res, partition)
+    var partition = createPartition(table, archNode)
+    allocateNewBlocks(table, n, res, partition)
+    return res
 
   var m = n
   var partition = archNode.partition
@@ -98,7 +95,7 @@ proc allocateEntities(
 
   ## Allocate new blocks if necessary
   if m > 0:
-    discard allocateNewBlocks(table, m, res, partition)
+    allocateNewBlocks(table, m, res, partition)
 
   return res
 
@@ -119,13 +116,7 @@ proc allocateEntity(
   archNode: var ArchetypeNode
 ): (uint, int, uint16) =
 
-  if archNode.partition.isNil:
-    var partition: TablePartition
-    new(partition)
-    partition.components = cast[seq[int]](archNode.componentIds)
-    archNode.partition = partition
-  
-  var partition = archNode.partition
+  var partition = createPartition(table, archNode)
   var fill_index = partition.fill_index
 
   ## Allocate a new block if required
@@ -208,7 +199,6 @@ proc changePartition(
   let oldPartition = table.archGraph.nodes[oldArch].partition
   let newPartition = createPartition(table, newArch)
   let oldComponents = oldPartition.components
-  let newComponents = newPartition.components
 
   ## Remove entity from old partition
   if oldPartition.zones.len <= oldPartition.fill_index or
@@ -244,15 +234,13 @@ proc changePartition(
   let new_id = newZone.r.e.uint
   let bid = newZone.block_idx.uint
 
-  ## Copy component data (only intersecting components)
-  if oldComponents.len < newComponents.len:
-    for id in oldComponents:
-      let entry = table.registry.entries[id]
-      entry.overrideValsOp(entry.rawPointer, (bid shl BLK_SHIFT) or new_id, i.uint)
-  else:
-    for id in newComponents:
-      let entry = table.registry.entries[id]
-      entry.overrideValsOp(entry.rawPointer, (bid shl BLK_SHIFT) or new_id, i.uint)
+  ## Copy only components common to both old and new archetypes
+  let oldMask = table.archGraph.nodes[oldArch].mask
+  let commonMask = oldMask and newArch.mask
+  let commonComponents = commonMask.getComponents()
+  for id in commonComponents:
+    let entry = table.registry.entries[id]
+    entry.overrideValsOp(entry.rawPointer, (bid shl BLK_SHIFT) or new_id, i.uint)
 
   ## Fix swap-remove in source partition
   if (i and BLK_MASK).int != last:
@@ -282,8 +270,6 @@ proc changePartition(
 
   let oldPartition = table.archGraph.nodes[oldArch].partition
   let newPartition = createPartition(table, newArch)
-  let oldComponents = oldPartition.components
-  let newComponents = newPartition.components
 
   if oldPartition.zones.len <= oldPartition.fill_index:
     oldPartition.fill_index -= 1
@@ -345,17 +331,14 @@ proc changePartition(
     check(not h.obj.isNil, "DenseHandle contains nil entity pointer.")
     check(h.gen == table.generations[h.obj.widx], "DenseHandle contains stale handle.")
 
-  ## Perform batched component migration
-  if oldComponents.len < newComponents.len:
-    for id in oldComponents:
-      let entry = table.registry.entries[id]
-      let ents = addr table.handles
-      entry.overrideValsBatchOp(entry.rawPointer, newArch.id, ents, ids, toSwap, toAdd)
-  else:
-    for id in newComponents:
-      let entry = table.registry.entries[id]
-      let ents = addr table.handles
-      entry.overrideValsBatchOp(entry.rawPointer, newArch.id, ents, ids, toSwap, toAdd)
+  ## Perform batched component migration (only common components)
+  let oldMask = table.archGraph.nodes[oldArch].mask
+  let commonMask = oldMask and newArch.mask
+  let commonComponents = commonMask.getComponents()
+  for id in commonComponents:
+    let entry = table.registry.entries[id]
+    let ents = addr table.handles
+    entry.overrideValsBatchOp(entry.rawPointer, newArch.id, ents, ids, toSwap, toAdd)
 
   for i in 0..<ids.len:
     var e = ids[i].obj

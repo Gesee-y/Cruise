@@ -62,13 +62,10 @@ type
     generations:seq[uint32]
     sparse_gens:seq[uint32]
     free_entities:seq[int]
-    sparse_entities:seq[Entity]
-    archetypes:Table[ArchetypeMask, TablePartition]
     archGraph:ArchetypeGraph
-    pooltype:Table[string, int]
     free_list:seq[uint]
     max_index:int
-    block_count:int
+    blockCount:int
 
 proc newECSWorld*(max_entities:int=1000000):ECSWorld =
   var w:ECSWorld
@@ -91,6 +88,7 @@ proc isEmpty(t:TableRange):bool = t.r.s == t.r.e
 proc isFull(t:TableRange):bool = t.r.e - t.r.s == DEFAULT_BLK_SIZE
 
 proc getComponentId*(world:ECSWorld, t:typedesc):int =
+  check($t in world.registry.cmap, "Component type '" & $t & "' is not registered. Call registerComponent first.")
   return world.registry.cmap[$t]
 
 proc getArchetype*(w:ECSWorld, e:SomeEntity):ArchetypeNode =
@@ -111,8 +109,8 @@ proc makeId(i:int):uint =
   return (bid shl BLK_SHIFT) or idx
 
 proc makeId(i:uint):uint =
-  let bid = i.uint shr 6
-  let idx = i.uint and 63
+  let bid = i div DEFAULT_BLK_SIZE.uint
+  let idx = i mod DEFAULT_BLK_SIZE.uint
 
   return (bid shl BLK_SHIFT) or idx
 
@@ -246,8 +244,7 @@ proc process(world: var ECSWorld, cb: var CommandBuffer) =
 
 proc flush*(w:var ECSWorld) =
   for i in 0..<w.commandBufs.len:
-    var cb = w.commandBufs[i]
-    w.process(cb)
+    w.process(w.commandBufs[i])
 
 proc clearDenseChanges*(w: var ECSWorld) =
   for entry in w.registry.entries:
@@ -260,3 +257,7 @@ proc clearSparseChanges*(w: var ECSWorld) =
 proc clearChanges*(w: var ECSWorld) =
   w.clearDenseChanges()
   w.clearSparseChanges()
+
+proc destroy*(w: ECSWorld) =
+  for cb in mitems(w.commandBufs):
+    cb.destroy()

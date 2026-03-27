@@ -64,10 +64,10 @@ template addSystem*(p:var Plugin, obj):int =
   if id < 0:
     id = add_vertex(p.graph)
 
-    if id < p.idtonode.len:
-      p.idtonode[id] = obj
-    else:
-      p.idtonode.add(obj)
+    while id >= p.idtonode.len:
+      p.idtonode.add(nil)
+    
+    p.idtonode[id] = obj
 
     obj.id = id
     p.dirty = true
@@ -118,7 +118,7 @@ proc mergePlugin*(p1:var Plugin, p2:var Plugin) =
     if obj_to_id.hasKey(n.asKey):
       idmap[i] = obj_to_id[n.asKey]
     else:
-      let id = add_system(p1, n)
+      let id = addSystem(p1, n)
       idmap[i] = id
 
   for i,vec in p2.graph.outedges:

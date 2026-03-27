@@ -233,6 +233,11 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator)
   ## Iterate through all partitions that match the query signature
   ## Returns block index and range for each matching zone
   
+  let mlen = sig.modified.len
+  let nmlen = sig.notModified.len
+  let maskCount = ((DEFAULT_BLK_SIZE-1) shr 6) + 1
+  var res = newSeq[uint](maskCount)
+
   for archNode in world.archGraph.nodes:
     let arch = archNode.mask
     # Skip archetypes that don't match the query.
@@ -240,28 +245,24 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator)
       continue
     
     if not archNode.partition.isNil:
-      let mlen = sig.modified.len
-      let nmlen = sig.notModified.len
-      let maskCount = ((DEFAULT_BLK_SIZE-1) shr 6) + 1
-      var modDef = newSeq[uint](maskCount)
-      var res = newSeq[uint](maskCount)
-      let nmodDef = newSeq[uint](maskCount)
-      
-      for i in 0..<maskCount:
-        modDef[i] = 0'u-1
-        res[i] = 0'u-1
-
       for zone in archNode.partition.zones:
         var masked = false
+
+        # Reset mask to all-1s for each zone
+        for k in 0..<maskCount:
+          res[k] = 0'u - 1
+
         for i in 0..<max(mlen, nmlen):
           masked = true
           if i < mlen: 
-            let incl = world.registry.entries[sig.modified[i]].getChangeMaskOp(world.registry.entries[sig.modified[i]].rawPointer).dLayer
+            let entry = world.registry.entries[sig.modified[i]]
+            let incl = entry.getChangeMaskOp(entry.rawPointer).dLayer
             for j in 0..<maskCount:
               res[j] = res[j] and incl.getL0(zone.block_idx*sizeof(uint)*8 + j)
 
           if i < nmlen: 
-            let excl = world.registry.entries[sig.notModified[i]].getChangeMaskOp(world.registry.entries[sig.notModified[i]].rawPointer).dLayer
+            let entry = world.registry.entries[sig.notModified[i]]
+            let excl = entry.getChangeMaskOp(entry.rawPointer).dLayer
             for j in 0..<maskCount:
               res[j] = res[j] and not excl.getL0(zone.block_idx*sizeof(uint)*8 + j)
 
@@ -337,7 +338,7 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, SparseIterato
 
     for compId in excludeIds:
       let entry = world.registry.entries[compId]
-      res = res and not entry.getSparseMaskOp(entry.rawPointer)[]
+      res = res.andNot(entry.getSparseMaskOp(entry.rawPointer)[])
 
     for compId in sig.modified:
       let entry = world.registry.entries[compId]
@@ -345,7 +346,7 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, SparseIterato
 
     for compId in sig.notModified:
       let entry = world.registry.entries[compId]
-      res = res and not entry.getChangeMaskOp(entry.rawPointer).sLayer
+      res = res.andNot(entry.getChangeMaskOp(entry.rawPointer).sLayer)
 
     for qf in sig.filters:
       res = res and qf.sLayer

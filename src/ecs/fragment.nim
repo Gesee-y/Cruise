@@ -280,22 +280,23 @@ template overrideVals(f, archId, ents, ids, toSwap, toAdd:untyped) =
 
 template setChanged[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint) =
   ## Mark a dense block as modified.
-  let bid = id shl BLK_SHIFT
+  let bid = (id shr BLK_SHIFT) and BLK_MASK
   let i = id and BLK_MASK
   
   f.tick += 1
   f.blkTicks[bid] = f.tick
-  f.blocks.ticks[i] = f.tick
+  f.blocks[bid].ticks[i] = f.tick
   f.changeFilter.dSet(id.toIdx.int)
 
 template setChangedSparse[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], id:uint) =
   ## Mark a sparse entry as modified.
-  let bid = id shl BLK_SHIFT
-  let i = id and BLK_MASK
+  let sbid = id shr 6
+  let si = id and 63
+  let physIdx = f.toSparse[sbid] - 1
   
   f.tick += 1
-  f.sparseTicks[bid] = f.tick
-  f.sparse.ticks[i] = f.tick
+  f.sparseTicks[physIdx] = f.tick
+  f.sparse[physIdx].ticks[si] = f.tick
   f.changeFilter.sSet(id.int)
 
 template getDenseBlock*(f: SoAFragmentArray, i:int|uint): untyped = f.blocks[i]
@@ -313,7 +314,6 @@ proc newSparseBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, m
   ## Allocate or update a sparse block covering a given offset.
   let S = sizeof(uint)*8
   var i = offset div S
-  var j = i div S
 
   if i >= f.toSparse.len: 
     f.toSparse.setLen(i+1)
@@ -322,8 +322,6 @@ proc newSparseBlock[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], offset:int, m
     f.toSparse[i] = f.sparse.len+1
     f.sparse.setLen(f.sparse.len+1)
     f.sparseTicks.setLen(f.sparse.len+1)
-  
-  let id = f.toSparse[i]-1
 
   var msk = m
   while msk != 0:
@@ -403,9 +401,9 @@ template `[]=`[N,P,T,B](blk:var SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B],
   else:
     check(i.int < N, "Invalid access. " & $i & "is out of bound for block of size " & $N)
     when P:
-      setComponent(addr blk, i, v)
+      setComponent(addr blk, i.uint, v)
     else:
-      toObjectMod(B, blk.data, i, v)
+      toObjectMod(B, blk.data, i.uint, v)
 
 template `[]`[N:static int,P:static bool,T,B](blk:var SoAFragment[N,P,T,B] | ref SoAFragment[N,P,T,B], i:int|uint):untyped =
   ## Read a value from a fragment slot.
@@ -421,14 +419,7 @@ template `[]`[N:static int,P:static bool,T,B](blk:var SoAFragment[N,P,T,B] | ref
 
 proc `[]`[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:int):B =
   ## Read a value from the fragment array using a linear index.
-  let blk = getBlock(f,i)
-  return blk[i-blk.offset]
-
-proc `[]=`[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], i:int, v:B) =
-  ## Write a value into the fragment array using a linear index.
-  var blk = getBlock(f,i)
-  check((i div N) < f.blocks.len, "Invalid access. " & $(i div N) & "is out of bound. The component only has " & $(f.blocks.len) & "blocks")
-  f.blocks[i div N][i.uint mod N.uint] = v
+  return f.blocks[i div N][i mod N]
 
 template `[]`[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:uint):untyped =
   ## Read a value using a packed (block,index) ID.
@@ -440,16 +431,19 @@ template `[]`[N,P,T,S,B](f:SoAFragmentArray[N,P,T,S,B], i:uint):untyped =
 
 template `[]=`[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], i:uint, v:untyped) =
   ## Write a value using a packed (block,index) ID.
-  let blk = (i shr BLK_SHIFT) and BLK_MASK
+  let blk: uint = (i shr BLK_SHIFT) and BLK_MASK
   let idx = i and BLK_MASK
 
-  check(blk < f.blocks.len.uint, "Invalid access. " & $blk & "is out of bound. The component only has " & $(f.blocks.len) & "blocks")
+  check(blk < f.blocks.len.uint, "Invalid access. " & $blk & " is out of bound. The component only has " & $(f.blocks.len) & "blocks")
   check(not f.blocks[blk].isNil, "Invalid access. Trying to access nil block at " & $blk)
   
   when P: setChanged(f, i)
   f.blocks[blk][idx] = v
 
-proc len[N,P,T,B](blk:SoAFragment[N,P,T,B]) =
+template `[]=`[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], i:int, v:untyped) = 
+  f[i.uint] = v
+
+proc len[N,P,T,B](blk:SoAFragment[N,P,T,B]):int =
   ## Return the capacity of a fragment.
   N
 

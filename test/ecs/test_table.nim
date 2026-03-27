@@ -159,7 +159,7 @@ suite "Dense <-> Sparse Conversion Tests":
 
     var s = world.makeSparse(d)
 
-    check s.mask[0] == 3'u
+    check world.archGraph.nodes[s.archID].mask[0] == 3'u
 
 suite "Safety and Regression Tests":
 

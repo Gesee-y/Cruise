@@ -34,7 +34,6 @@ suite "FragmentArray construction":
 
     check arr.blocks.len == 1
     check not arr.blocks[0].isNil
-    check arr.blocks[0].offset == 0
 
 
 #############################################
@@ -73,7 +72,7 @@ suite "Read / Write correctness":
 suite "Block boundaries and offsets":
 
   test "Multiple blocks store correct offsets":
-    var arr = newSoAFragArr(Position, 4)
+    var arr = newSoAFragArr(Position, DEFAULT_BLK_SIZE)
     arr.blocks.setLen(3)
     arr.newBlockAt(0)
     arr.newBlockAt(1)
@@ -88,7 +87,7 @@ suite "Block boundaries and offsets":
     check arr[8].x == 8
 
   test "Access outside block count fails":
-    var arr = newSoAFragArr(Position, 4)
+    var arr = newSoAFragArr(Position, DEFAULT_BLK_SIZE)
     arr.blocks.setLen(1)
     arr.newBlockAt(0)
 
@@ -103,7 +102,7 @@ suite "Block boundaries and offsets":
 suite "Iteration":
 
   test "Iterator yields all elements in order":
-    var arr = newSoAFragArr(Position, 2)
+    var arr = newSoAFragArr(Position, DEFAULT_BLK_SIZE)
     arr.blocks.setLen(2)
     arr.newBlockAt(0)
     arr.newBlockAt(1)
@@ -120,7 +119,7 @@ suite "Iteration":
     check xs == @[1,2,3,4]
 
   test "Pairs iterator returns correct indices":
-    var arr = newSoAFragArr(Position, 2)
+    var arr = newSoAFragArr(Position, DEFAULT_BLK_SIZE)
     arr.blocks.setLen(1)
     arr.newBlockAt(0)
 
@@ -165,7 +164,7 @@ suite "Change tracking":
     arr[5] = Position(x:7)
 
     let blk = arr.blocks[0]
-    let bit = (blk.valMask[0] shr 5) and 1
+    let bit = (arr.changeFilter.dlayer.getL0(0) shr 5) and 1
     check bit == 1
 
   test "Multiple writes set multiple bits":
@@ -176,7 +175,7 @@ suite "Change tracking":
     arr[1] = Position(x:1)
     arr[6] = Position(x:2)
 
-    let mask = arr.blocks[0].valMask[0]
+    let mask = arr.changeFilter.dlayer.getL0(0)
     check (mask and (1'u shl 1)) != 0
     check (mask and (1'u shl 6)) != 0
 
@@ -194,7 +193,7 @@ suite "Sparse activation":
     let bid = 3 div (sizeof(uint)*8)
     let id  = arr.toSparse[bid] - 1
 
-    check (arr.sparse[id].mask and (1'u shl 3)) != 0
+    check (arr.sparseMask.getL0(0) and (1'u shl 3)) != 0
 
   test "Deactivate sparse bit clears mask":
     var arr = newSoAFragArr(Position, 8)
@@ -204,7 +203,7 @@ suite "Sparse activation":
     let bid = 2 div (sizeof(uint)*8)
     let id  = arr.toSparse[bid] - 1
 
-    check arr.sparse[id].mask == 0'u
+    check arr.sparseMask.getL0(0) == 0'u
 
 
 #############################################
@@ -242,10 +241,10 @@ suite "High volume sanity":
       arr.newBlockAt(i)
 
     for i in 0..<64:
-      arr[i] = Position(x:i.float32)
+      arr[i.uint] = Position(x:i.float32)
 
     for i in 0..<64:
-      check arr[i].x == i.float32
+      check arr[i.uint].x == i.float32
 
 type Pos = object
   x, y: float32
@@ -310,7 +309,8 @@ suite "P=true getter/setter semantics":
     arr[5] = Pos(x:1, y:1)
 
     let blk = arr.blocks[0]
-    let bit = (blk.valMask[0] shr 5) and 1
+    echo arr.changeFilter.dlayer.getL0(0)
+    let bit = (arr.changeFilter.dlayer.getL0(0) shr 5) and 1
 
     check bit == 1
 

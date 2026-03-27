@@ -4,4 +4,4 @@ description   = "A powerful game engine kernel in Nim"
 license       = "MIT"
 srcDir        = "src"
 bin           = @["Cruise"]
-requires      = @["nim >= 2.0.0"]
+requires      = @["nim >= 2.0.0", "windy >= 0.0.1", "sdl3_nim >= 3.4.0"]

@@ -6,6 +6,7 @@ include "../../src/ecs/table.nim"
 include "../../src/profile/benchmarks.nim"
 
 const SAMPLE = 10000
+const WARMUP = 1
 
 # =========================
 # Components

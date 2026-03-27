@@ -172,6 +172,20 @@ proc `xor`*(a, b: HiBitSet): HiBitSet =
       let l1Idx = i shr L0_SHIFT
       result.layer1[l1Idx] = result.layer1[l1Idx] or (1'u64 shl (i and L0_MASK))
 
+proc andNot*(a, b: HiBitSet): HiBitSet =
+  ## Bitwise AND NOT operation: returns bits set in `a` but cleared in `b`.
+  ## Avoids generating an expensive inverted intermediate HiBitSet.
+  result = newHiBitSet()
+  result.layer0.setLen(a.layer0.len)
+  result.layer1.setLen(a.layer1.len)
+  
+  for i in 0..<a.layer0.len:
+    let bVal = if i < b.layer0.len: b.layer0[i] else: 0'u64
+    result.layer0[i] = a.layer0[i] and not bVal
+    if result.layer0[i] != 0:
+      let l1Idx = i shr L0_SHIFT
+      result.layer1[l1Idx] = result.layer1[l1Idx] or (1'u64 shl (i and L0_MASK))
+
 proc `not`*(a: HiBitSet): HiBitSet =
   ## Bitwise NOT operation: inverts all bits.
   ## Note: This includes flipping bits beyond the highest set bit.

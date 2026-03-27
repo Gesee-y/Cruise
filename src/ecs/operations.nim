@@ -165,7 +165,7 @@ template deleteEntity*(world:var ECSWorld, d:DenseHandle) =
 ## @param buffer_id: The ID of the command buffer to use.
 template deleteEntityDefer*(world:var ECSWorld, d:DenseHandle, buffer_id:int) =
   # Add a DeleteOp command with the source archetype ID and the entity's world index (widx).
-  world.cb[buffer_id].addCommmand(DeleteOp.int, d.obj.archetypeId, 0'u32, PayLoad(eid:d.obj.widx.uint, obj:d))
+  world.commandBufs[buffer_id].addCommand(DeleteOp.int, d.obj.archetypeId, 0'u32, PayLoad(eid:d.obj.widx.uint, obj:d))
 
 ## Immediately migrates an entity to a new archetype (Dense storage).
 ##
@@ -244,7 +244,7 @@ template migrateEntity*(world: var ECSWorld, ents:var openArray, archNode:Archet
 ## @param buffer_id: The ID of the command buffer.
 template migrateEntityDefer*(world:var ECSWorld, d:DenseHandle, archNode:ArchetypeNode, buffer_id:int) =
   # Add a MigrateOp command: Destination Archetype ID, Source Archetype ID, Payload.
-  world.cb[buffer_id].addCommmand(MigrateOp.int, archNode.id, d.obj.archetypeId.uint32, PayLoad(eid:d.obj.widx.uint, obj:d))
+  world.commandBufs[buffer_id].addCommand(MigrateOp.int, archNode.id, d.obj.archetypeId.uint32, PayLoad(eid:d.obj.widx.uint, obj:d))
 
 ## Adds components to an existing entity (Dense storage).
 ##
