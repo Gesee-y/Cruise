@@ -69,7 +69,7 @@ Querying consists of intersecting the hibitsets of the requested components. Ite
 
 ## Features
 
-* **Really fast**: Performance is one of the main aspects of any ECS, and Cruise takes this seriously. Using an SoA + Fragment Vector layout, it enables extremely fast dense iterations and efficient sparse iterations.
+* **Extremely fast**: Performance is one of the main aspects of any ECS, and Cruise takes this seriously. Using an SoA + Fragment Vector layout, it enables extremely fast dense iterations and efficient sparse iterations. Cruise is one of the fastest ECS in nim, check those [benchmarks](https://githubcom/Gesee-y/nim-ecs-benchmarks) for more.
 
 * **Cross-languages**: Compile the ECS to C, C++ or even JS to integrate it in your project (even if it's a web engine)
 
