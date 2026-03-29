@@ -127,7 +127,7 @@ proc unsetBatch*(h: var HiBitSet, idxs: openArray[uint|int]) =
     h.unset(idx.int)
 
 
-proc unset*(h: var HiBitSet, idx: int) {.inline.} =
+template unset*(h: var HiBitSet, idx: int) =
   ## Sets the bit at the specified index to 0.
   ## Updates layer1 if the entire block becomes empty.
   ## 

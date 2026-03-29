@@ -343,6 +343,17 @@ proc deleteEntity*(w:var ECSWorld, s:var SparseHandle) =
   # Increment generation to invalidate handles.
   w.sparse_gens[s.id] += 1
 
+proc migrateEntity(w:var ECSWorld, s:var SparseHandle, newArch:var ArchetypeNode) = 
+  let oldNode = addr w.archGraph.nodes[s.archID]
+  if newArch.id == s.archID: return
+  
+  let toActivate = newArch.mask and not (oldNode.mask)
+  let toDeactivate = oldNode.mask and not (newArch.mask)
+
+  w.deactivateComponentsSparse(s.id, toDeactivate)
+  s.archID = oldNode.id
+  w.activateComponentsSparse(s.id, toActivate)  
+
 ## Adds components to a sparse entity.
 ##
 ## In sparse sets, this usually involves updating the entity's bitmask
