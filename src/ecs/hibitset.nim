@@ -67,7 +67,7 @@ proc len*(h: HiBitSet): int {.inline.} =
   ## Returns the total capacity of the bitset in bits
   h.layer0.len * L0_BITS
 
-proc ensureCapacity(h: var HiBitSet, idx: int) =
+template ensureCapacity(h: var HiBitSet, idx: int) =
   ## Ensures the bitset can hold the given index, growing if necessary
   let neededL0 = (idx shr L0_SHIFT) + 1
   if neededL0 > h.layer0.len:
@@ -76,7 +76,7 @@ proc ensureCapacity(h: var HiBitSet, idx: int) =
     if neededL1 > h.layer1.len:
       h.layer1.setLen(neededL1)
 
-proc set*(h: var HiBitSet, idx: int) {.inline.} =
+template set*(h: var HiBitSet, idx: int) =
   ## Sets the bit at the specified index to 1.
   ## Automatically grows the bitset if needed.
   ## 
@@ -102,7 +102,7 @@ proc setL0Block*(h: var HiBitSet, l0Idx: int, value: BitBlock) {.inline.} =
   else:
     h.layer1[l1Idx] = h.layer1[l1Idx] and not (BitBlock(1) shl l1Bit)
 
-proc setBatch*(h: var HiBitSet, idxs: openArray[uint|int]) =
+template setBatch*(h: var HiBitSet, idxs: openArray[uint|int]) =
   ## Sets multiple bits at once. 
   ## Optimizes layer1 updates by grouping indices into blocks.
   if idxs.len == 0: return
@@ -491,11 +491,6 @@ proc setBatch*(h: var SparseHiBitSet, idxs: openArray[uint|int]) =
       h.setL1(l1Idx, l1Old or (BitBlock(1) shl l1Bit))
       lastL0Idx = l0Idx
 
-proc unsetBatch*(h: var SparseHiBitSet, idxs: openArray[uint|int]) =
-  ## Unsets multiple bits in a sparse bitset.
-  for idx in idxs:
-    h.unset(idx.int)
-
 proc unset*(h: var SparseHiBitSet, idx: int) {.inline.} =
   ## Sets the bit at the specified index to 0.
   ## Deallocates the block if it becomes empty.
@@ -516,6 +511,11 @@ proc unset*(h: var SparseHiBitSet, idx: int) {.inline.} =
     let l1Bit = l0Idx and L0_MASK
     let l1Old = h.getL1(l1Idx)
     h.setL1(l1Idx, l1Old and not (BitBlock(1) shl l1Bit))
+
+proc unsetBatch*(h: var SparseHiBitSet, idxs: openArray[uint|int]) =
+  ## Unsets multiple bits in a sparse bitset.
+  for idx in idxs:
+    h.unset(idx.int)
 
 proc get*(h: SparseHiBitSet, idx: int): bool {.inline.} =
   ## Returns true if the bit at index is set.
@@ -648,6 +648,11 @@ proc `not`*(a: SparseHiBitSet): SparseHiBitSet =
       let l1Bit = l0Idx and L0_MASK
       let l1Old = result.getL1(l1Idx)
       result.setL1(l1Idx, l1Old or (BitBlock(1) shl l1Bit))
+
+proc andNot*(a, b: SparseHiBitSet): SparseHiBitSet =
+  ## Bitwise AND NOT operation: returns bits set in `a` but cleared in `b`.
+  ## Avoids generating an expensive inverted intermediate HiBitSet.
+  a and not b
 
 proc maxLen(h: SparseHiBitSet): int =
   return h.layer1Count

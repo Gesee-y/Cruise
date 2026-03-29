@@ -114,7 +114,7 @@ proc runSparseBenchmarks() =
       w.deleteEntity(e)
   )
   showDetailed(suite.benchmarks[2])
-
+#[
   # ------------------------------
   # Add component
   # ------------------------------
@@ -235,7 +235,7 @@ proc runSparseBenchmarks() =
   # Results
   # ==============================
   suite.showSummary()
-
+]#
 # ==============================
 # Entry point
 # ==============================

@@ -55,9 +55,12 @@ type
 
 proc newQueryFilter(): QueryFilter =
   var q: QueryFilter
-  q.dLayer = newHiBitSet()
-  q.sLayer = newHiBitSet()
-
+  when HibitsetType is HiBitSet:
+    q.dLayer = newHiBitSet()
+    q.sLayer = newHiBitSet()
+  else:
+    q.dLayer = newSparseHiBitSet()
+    q.sLayer = newSparseHiBitSet()
   return q
 
 proc `and`*(a, b: QueryFilter): QueryFilter =

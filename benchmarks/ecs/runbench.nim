@@ -5,7 +5,7 @@ include "../../src/ecs/table.nim"
 # =========================
 include "../../src/profile/benchmarks.nim"
 
-const SAMPLE = 100
+const SAMPLE = 1000
 const WARMUP = 1
 const ENTITY_COUNT = 10000
 
@@ -215,7 +215,7 @@ proc runDenseBenchmarks() =
     )
   )
   showDetailed(suite.benchmarks[7])
-]#
+
   suite.add benchmarkWithSetup(
     "add component",
     SAMPLE,
@@ -235,8 +235,8 @@ proc runDenseBenchmarks() =
         w.addComponent(e, 2)
     )
   )
-  showDetailed(suite.benchmarks[0])
-#[
+  showDetailed(suite.benchmarks[8])
+
   suite.add benchmarkWithSetup(
     "remove component",
     SAMPLE,
@@ -277,7 +277,7 @@ proc runDenseBenchmarks() =
     )
   )
   showDetailed(suite.benchmarks[10])
-
+]#
 
   suite.add benchmarkWithSetup(
     "migrate_dense_entity",
@@ -299,10 +299,10 @@ proc runDenseBenchmarks() =
         migrateEntity(w, e, archDest)
     )
   )
-  showDetailed(suite.benchmarks[11])
+  showDetailed(suite.benchmarks[0])
   
   suite.add benchmarkWithSetup(
-    "migrate_dense_entity_batch",
+    "migrate dense entity batch",
     SAMPLE,
     WARMUP,
     (
@@ -318,8 +318,8 @@ proc runDenseBenchmarks() =
       migrateEntity(w, ents, archDest)
     )
   )
-  showDetailed(suite.benchmarks[12])
-  
+  showDetailed(suite.benchmarks[1])
+#[  
   suite.showSummary()
   suite.saveSummary("cr_dense")
 

@@ -2,7 +2,7 @@
 ############################################################## FRAGMENT ARRAYS #####################################################################
 ####################################################################################################################################################
 
-import macros
+import macros, math
 
 ## A single Structure-of-Arrays (SoA) fragment.
 ##
@@ -54,14 +54,16 @@ type
 
 
 const
-  ## Mask used to extract local indices from packed IDs.
-  BLK_MASK = (1 shl 32) - 1
+  UINT_BITS = sizeof(uint)*8
+  BIT_DIVIDER = floor(log(UINT_BITS.float, 2.0)).int
   ## Bit shift used to extract block indices from packed IDs.
-  BLK_SHIFT = 32
+  BLK_SHIFT = sizeof(uint)*4
+  ## Mask used to extract local indices from packed IDs.
+  BLK_MASK = (1 shl BLK_SHIFT) - 1
   ## Default size (in elements) of a dense block.
-  DEFAULT_BLK_SIZE = 4096
+  DEFAULT_BLK_SIZE = UINT_BITS*UINT_BITS
   ## Initial capacity of the sparse storage.
-  INITIAL_SPARSE_SIZE = 1000
+  INITIAL_SPARSE_SIZE = 10000
 
 proc toSoATuple(T: NimNode, N: int): NimNode =
   ## Transform an object type into a tuple-of-arrays (SoA-compatible) type.
@@ -119,6 +121,7 @@ macro newSoAFragArr(Ty: typedesc, N: static int,
     f.sparse = newSeqOfCap[SoAFragment[`@S`, `@P`, `@sy`, `@T`]](INITIAL_SPARSE_SIZE)
     f.toSparse = newSeqOfCap[int](INITIAL_SPARSE_SIZE*`@S`)
     f.freeBlocks = newSeq[int]()
+    f.sparseMask = newHiBitSet(INITIAL_SPARSE_SIZE)
     f
 
 macro SoAFragArr(N: static int, stmt: typed) =
@@ -328,8 +331,8 @@ template setChanged[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], id: u
 
 template setChangedSparse[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], id: uint) =
   ## Mark a sparse entry as modified.
-  let sbid = id shr 6
-  let si = id and 63
+  let sbid = id shr BIT_DIVIDER
+  let si = id and BIT_REMAINDER
   let physIdx = f.toSparse[sbid] - 1
 
   f.tick += 1
@@ -356,8 +359,7 @@ proc getDataType[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B]): typedesc[B]
 proc newSparseBlock[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B],
     offset: int, m: uint) =
   ## Allocate or update a sparse block covering a given offset.
-  let S = sizeof(uint)*8
-  var i = offset div S
+  var i = offset shr BIT_DIVIDER
 
   if i >= f.toSparse.len:
     f.toSparse.setLen(i+1)
@@ -375,13 +377,12 @@ proc newSparseBlock[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B],
 proc newSparseBlocks[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B],
     offset: int, masks: openArray[uint]) =
   ## Allocate multiple sparse blocks at once.
-  let S = sizeof(uint)*8
-  let base = offset shr 6
+  let base = offset shr BIT_DIVIDER
 
   for c in 0..<masks.len:
     let m = masks[c]
     let i = base + c
-    let j = i div S
+    let j = i shr BIT_DIVIDER
 
     if i >= f.toSparse.len:
       f.toSparse.setLen(i+1)
@@ -394,9 +395,7 @@ proc newSparseBlocks[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B],
         f.sparse.setLen(f.sparse.len+1)
         f.sparseTicks.setLen(f.sparse.len+1)
 
-    let id = f.toSparse[i]-1
     f.sparseMask.setL0Block(i.int, m.BitBlock)
-
 
 proc freeSparseBlock[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: int) =
   ## Free a sparse block and recycle its index for future use.
@@ -429,27 +428,27 @@ template getBlock[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B],
   ## Get the dense block from a packed ID.
   f.blocks[(i shr BLK_SHIFT) and BLK_MASK]
 
-proc activateSparseBit[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: int|uint) =
+template activateSparseBit[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: int|uint) =
   ## Mark a sparse index as active.
-  let bid = i shr 6
+  let bid = i shr BIT_DIVIDER
   if bid.int >= f.toSparse.len or f.toSparse[bid] == 0:
     f.newSparseBlock(i.int, 0'u)
   f.sparseMask.set(i.int)
 
-proc activateSparseBit[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B],
+template activateSparseBit[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B],
     idxs: openArray[uint]) =
   ## Mark multiple sparse indices as active.
   ## Optimized to allocate blocks first then set bits in batch.
   for i in idxs:
-    let bid = i shr 6
+    let bid = i shr BIT_DIVIDER
     if bid.int >= f.toSparse.len or f.toSparse[bid] == 0:
       f.newSparseBlock(i.int, 0'u)
   f.sparseMask.setBatch(idxs)
 
-proc deactivateSparseBit[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: int|uint) =
+template deactivateSparseBit[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: int|uint) =
   ## Deactivate a sparse index.
   f.sparseMask.unset(i.int)
-  let bid = i.int shr 6
+  let bid = i.int shr BIT_DIVIDER
   if f.sparseMask.getL0(bid) == 0'u.BitBlock:
     f.freeSparseBlock(bid)
 
@@ -460,7 +459,7 @@ proc deactivateSparseBit[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B],
   f.sparseMask.unsetBatch(idxs)
   # Check and free blocks that became empty
   for i in idxs:
-    let bid = i.int shr 6
+    let bid = i.int shr BIT_DIVIDER
     if f.sparseMask.hasL0(bid) and f.sparseMask.getL0(bid) == 0'u.BitBlock:
       f.freeSparseBlock(bid)
 

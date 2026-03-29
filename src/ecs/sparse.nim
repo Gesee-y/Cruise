@@ -4,28 +4,28 @@
 
 ## Activates a set of components for a single sparse entity index.
 ## This marks the entity as owning those components without allocating dense storage.
-proc activateComponentsSparse(table: var ECSWorld, i:int|uint, components:openArray[int]) =
+template activateComponentsSparse(table: var ECSWorld, i:int|uint, components:untyped) =
   for id in components:
-    let entry = table.registry.entries[id]
+    let entry = addr table.registry.entries[id]
     entry.activateSparseBitOp(entry.rawPointer, i.uint)
 
 ## Batch version of sparse activation.
 ## Efficiently activates the same set of components for multiple entity indices.
-template activateComponentsSparse(table: var ECSWorld, idxs:openArray, components:openArray[int]) =
+template activateComponentsSparse(table: var ECSWorld, idxs:openArray, components:untyped) =
   for id in components:
     let entry = table.registry.entries[id]
     entry.activateSparseBitBatchOp(entry.rawPointer, idxs)
 
 ## Deactivates a set of components for a single sparse entity index.
 ## This does NOT reclaim entity IDs, only clears component ownership.
-proc deactivateComponentsSparse(table: var ECSWorld, i:int|uint, components:openArray[int]) =
+template deactivateComponentsSparse(table: var ECSWorld, i:int|uint, components:untyped) =
   for id in components:
     let entry = table.registry.entries[id]
     entry.deactivateSparseBitOp(entry.rawPointer, i.uint)
 
 ## Deactivates components described by an archetype mask.
 ## Uses bit iteration for fast traversal of active component IDs.
-proc deactivateComponentsSparse(table: var ECSWorld, i:int|uint, components:ArchetypeMask) =
+template deactivateComponentsSparse(table: var ECSWorld, i:int|uint, components:ArchetypeMask) =
   for m in components:
     var mask = m
     while mask != 0:
@@ -37,7 +37,7 @@ proc deactivateComponentsSparse(table: var ECSWorld, i:int|uint, components:Arch
 ## Overrides component values from entity j into entity i
 ## for all components present in the archetype mask.
 ## Used during entity migration or structural transformations.
-proc overrideComponents(table: var ECSWorld, i,j:int|uint, components:ArchetypeMask) =
+template overrideComponents(table: var ECSWorld, i,j:int|uint, components:ArchetypeMask) =
   for m in components:
     var mask = m
     while mask != 0:
@@ -47,7 +47,7 @@ proc overrideComponents(table: var ECSWorld, i,j:int|uint, components:ArchetypeM
       mask = mask and (mask - 1)
 
 ## Batch deactivation of sparse components for multiple entity indices.
-template deactivateComponentsSparse(table: var ECSWorld, idxs:openArray, components:openArray[int]) =
+template deactivateComponentsSparse(table: var ECSWorld, idxs:openArray, components:untyped) =
   for id in components:
     let entry = table.registry.entries[id]
     entry.deactivateSparseBitBatchOp(entry.rawPointer, idxs)
@@ -57,20 +57,23 @@ template deactivateComponentsSparse(table: var ECSWorld, idxs:openArray, compone
 ## the sparse storage in block-sized chunks.
 ##
 ## Returns ranges describing the allocated entity indices.
-proc allocateSparseEntities(table: var ECSWorld, count:int, components:openArray[int]):seq[Range] =
-  var res: seq[Range]
-  var toActivate: seq[uint]
-  var n = count
+template allocateSparseEntities(table: var ECSWorld, count:untyped, components:untyped):seq[Range] =
+  var res = newSeqOfCap[Range](count shr BIT_DIVIDER)
   var free_cursor = table.free_list.len - 1
-  let S = sizeof(uint) * 8
+  var toActivate = newSeq[uint](free_cursor+1)
+  var n = count
+  var c = 0
 
   ## Reuse free entity slots first
   while n > 0 and free_cursor >= 0:
     let i = table.free_list[free_cursor].toIdx
     res.add(Range(s: i.int, e: i.int + 1))
-    toActivate.add(i)
-    free_cursor -= 1
-    n -= 1
+    toActivate[c] = i
+    dec free_cursor
+    dec n
+    inc c
+
+  activateComponentsSparse(table, toActivate, components)
 
   ## To be activated after also collecting new IDs
   # Removed early return and early activation
@@ -80,24 +83,20 @@ proc allocateSparseEntities(table: var ECSWorld, count:int, components:openArray
   let baseOffset = table.max_index
 
   while n > 0:
-    let toAdd = min(n, S)
+    let toAdd = min(n, UINT_BITS)
     let m = table.max_index
     let r = m ..< m + toAdd
     res.add(Range(s: m, e: m + toAdd))
 
-    ## Add new entity IDs to the activation list
-    for i in r:
-      toActivate.add(i.uint)
+    n -= UINT_BITS
+    var mask = (1.uint shl toAdd) - (1 + (toAdd == UINT_BITS).uint)
 
-    n -= S
-    var mask = (1.uint shl toAdd) - (1 + (toAdd == S).uint)
-
-    table.max_index += S
+    table.max_index += UINT_BITS
 
     ## Remaining slots in the block are pushed to the free list
     if n <= 0:
       let start = m + toAdd
-      let count = S - toAdd
+      let count = UINT_BITS - toAdd
       if count > 0:
         let curLen = table.free_list.len
         table.free_list.setLen(curLen + count)
@@ -108,7 +107,6 @@ proc allocateSparseEntities(table: var ECSWorld, count:int, components:openArray
 
   ## Update table state
   table.free_list.setLen(free_cursor + 1)
-  activateComponentsSparse(table, toActivate, components)
 
   ## Notify each component to materialize new sparse blocks
   for id in components:
@@ -116,38 +114,36 @@ proc allocateSparseEntities(table: var ECSWorld, count:int, components:openArray
     entry.newSparseBlocksOp(entry.rawPointer, baseOffset, masks)
 
   table.sparse_gens.setLen(table.max_index)
-  return res
+  res
 
 ## Allocates a single sparse entity.
 ## Grows sparse storage if no free IDs are available.
-proc allocateSparseEntity(table: var ECSWorld, components:openArray[int]):uint = 
+template allocateSparseEntity(table: var ECSWorld, components:untyped):uint = 
   if table.free_list.len > 0:
     let id = table.free_list.pop()
     activateComponentsSparse(table, id, components)
-    return id
+    id
+  else:
+    ## Allocate a new sparse block for each component
+    for id in components:
+      let entry = table.registry.entries[id]
+      entry.newSparseBlockOp(entry.rawPointer, table.max_index, 1.uint)
 
-  let S = sizeof(uint) * 8
+    ## Push remaining slots of the block into the free list
+    let count = UINT_BITS - 1
+    let curLen = table.free_list.len
+    table.free_list.setLen(curLen + count)
+    for i in 0..<count:
+      table.free_list[curLen + i] = (table.max_index + 1 + i).uint
 
-  ## Allocate a new sparse block for each component
-  for id in components:
-    let entry = table.registry.entries[id]
-    entry.newSparseBlockOp(entry.rawPointer, table.max_index, 1.uint)
+    let id = table.max_index
+    table.max_index += UINT_BITS
+    table.sparse_gens.setLen(table.max_index)
 
-  ## Push remaining slots of the block into the free list
-  let count = S - 1
-  let curLen = table.free_list.len
-  table.free_list.setLen(curLen + count)
-  for i in 0..<count:
-    table.free_list[curLen + i] = (table.max_index + 1 + i).uint
-
-  let id = table.max_index
-  table.max_index += S
-  table.sparse_gens.setLen(table.max_index)
-
-  return id.uint
+    id.uint
 
 ## Deletes a sparse entity row.
 ## The entity ID is recycled and all components are deactivated.
-proc deleteSparseRow(table: var ECSWorld, i:uint, components:ArchetypeMask) =
+template deleteSparseRow(table: var ECSWorld, i:uint, components:untyped) =
   table.free_list.add(i)
   deactivateComponentsSparse(table, i, components)

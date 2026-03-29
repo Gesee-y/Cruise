@@ -300,7 +300,7 @@ proc createSparseEntity*(w:var ECSWorld, archNode:ArchetypeNode):SparseHandle =
   # Allocate space in the sparse set.
   let id = w.allocateSparseEntity(archNode.componentIds)
   result.id = id
-  result.gen = w.sparse_gens[id]
+  #result.gen = w.sparse_gens[id]
   result.archID = archNode.id
   # Return the handle containing the bitmask of components.
   w.events.emitSparseEntityCreated(result)
@@ -338,8 +338,8 @@ proc createSparseEntities*(w:var ECSWorld, n:int, components:varargs[int]):seq[S
 ## @param w: The mutable `ECSWorld` instance.
 ## @param s: The `SparseHandle` of the entity to delete.
 proc deleteEntity*(w:var ECSWorld, s:var SparseHandle) =
-  w.events.emitSparseEntityDestroyed(s)
-  w.deleteSparseRow(s.id, w.archGraph.nodes[s.archID].mask)
+  #w.events.emitSparseEntityDestroyed(s)
+  w.deleteSparseRow(s.id, w.archGraph.nodes[s.archID].componentIds)
   # Increment generation to invalidate handles.
   w.sparse_gens[s.id] += 1
 

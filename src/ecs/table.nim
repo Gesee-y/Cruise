@@ -84,6 +84,7 @@ proc newECSWorld*(max_entities:int=1000000):ECSWorld =
   w.handles = newSeqofCap[ptr Entity](max_entities)
   w.free_list = newSeqofCap[uint](max_entities div 2)
   w.generations = newSeqofCap[uint32](max_entities)
+  w.sparse_gens = newSeqofCap[uint32](max_entities)
   w.events = initEventManager()
 
   return w
