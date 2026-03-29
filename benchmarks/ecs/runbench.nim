@@ -5,7 +5,7 @@ include "../../src/ecs/table.nim"
 # =========================
 include "../../src/profile/benchmarks.nim"
 
-const SAMPLE = 1000
+const SAMPLE = 100
 const WARMUP = 1
 const ENTITY_COUNT = 10000
 
@@ -102,7 +102,7 @@ proc runDenseBenchmarks() =
     )
   )
   showDetailed(suite.benchmarks[1])
-]#
+
   # ------------------------------
   # Delete dense entity
   # ------------------------------
@@ -120,8 +120,8 @@ proc runDenseBenchmarks() =
     for e in ents.mitems:
       w.deleteEntity(e)
   )
-  showDetailed(suite.benchmarks[0])
-#[
+  showDetailed(suite.benchmarks[2])
+
   suite.add benchmarkWithSetup(
     "query creation",
     SAMPLE,
@@ -215,7 +215,7 @@ proc runDenseBenchmarks() =
     )
   )
   showDetailed(suite.benchmarks[7])
-
+]#
   suite.add benchmarkWithSetup(
     "add component",
     SAMPLE,
@@ -235,8 +235,8 @@ proc runDenseBenchmarks() =
         w.addComponent(e, 2)
     )
   )
-  showDetailed(suite.benchmarks[8])
-
+  showDetailed(suite.benchmarks[0])
+#[
   suite.add benchmarkWithSetup(
     "remove component",
     SAMPLE,

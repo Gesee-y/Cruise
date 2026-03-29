@@ -8,7 +8,7 @@ const
 type
   ComponentId* = range[0..MAX_COMPONENTS-1]
 
-template `and`(a,b:ArchetypeMask):untyped =
+template `and`(a,b:ArchetypeMask | ptr ArchetypeMask):untyped =
   var res:ArchetypeMask
 
   for i in 0..<MAX_COMPONENT_LAYER:
@@ -16,7 +16,7 @@ template `and`(a,b:ArchetypeMask):untyped =
 
   res
 
-template `or`(a,b:ArchetypeMask):untyped =
+template `or`(a,b:ArchetypeMask | ptr ArchetypeMask):untyped =
   var res:ArchetypeMask
 
   for i in 0..<MAX_COMPONENT_LAYER:
@@ -24,7 +24,7 @@ template `or`(a,b:ArchetypeMask):untyped =
 
   res
 
-template `xor`(a,b:ArchetypeMask):untyped =
+template `xor`(a,b:ArchetypeMask | ptr ArchetypeMask):untyped =
   var res:ArchetypeMask
 
   for i in 0..<MAX_COMPONENT_LAYER:
@@ -32,7 +32,7 @@ template `xor`(a,b:ArchetypeMask):untyped =
 
   res
   
-template `not`(a: ArchetypeMask):untyped =
+template `not`(a: ArchetypeMask | ptr ArchetypeMask):untyped =
   var res:ArchetypeMask
 
   for i in 0..<MAX_COMPONENT_LAYER:
@@ -90,40 +90,40 @@ proc isEmpty*(mask: ArchetypeMask): bool =
       return false
   return true
 
-proc `==`*(a, b: ArchetypeMask): bool =
+proc `==`*(a, b: ArchetypeMask | ptr ArchetypeMask): bool =
   for i in 0..<MAX_COMPONENT_LAYER:
     if a[i] != b[i]:
       return false
   return true
 
-proc withComponent*(mask: ArchetypeMask, comp: ComponentId): ArchetypeMask =
+proc withComponent*(mask: ArchetypeMask | ptr ArchetypeMask, comp: ComponentId): ArchetypeMask =
   result = mask
   let layer = comp shr 6  # div 64
   let bit = comp and 63   # mod 64
   result[layer] = result[layer] or (1'u shl bit)
 
-proc withoutComponent*(mask: ArchetypeMask, comp: ComponentId): ArchetypeMask =
+proc withoutComponent*(mask: ArchetypeMask | ptr ArchetypeMask, comp: ComponentId): ArchetypeMask =
   result = mask
   let layer = comp shr 6
   let bit = comp and 63
   result[layer] = result[layer] and not (1'u shl bit)
 
-proc hasComponent*(mask: ArchetypeMask, comp: ComponentId | int): bool =
+proc hasComponent*(mask: ArchetypeMask | ptr ArchetypeMask, comp: ComponentId | int): bool =
   let layer = comp shr 6
   let bit = comp and 63
   return (mask[layer] and (1'u shl bit)) != 0
 
-proc componentCount*(mask: ArchetypeMask): int =
+proc componentCount*(mask: ArchetypeMask | ptr ArchetypeMask): int =
   result = 0
   for layer in mask:
     result += popcount(layer)
 
 {.pop.}
 
-proc hash*(mask: ArchetypeMask): Hash =
+proc hash*(mask: ArchetypeMask | ptr ArchetypeMask): Hash =
   result = !$(hash(mask[0]) !& hash(mask[1]) !& hash(mask[2]) !& hash(mask[3]))
 
-proc getComponents*(mask: ArchetypeMask): seq[int] =
+proc getComponents*(mask: ArchetypeMask | ptr ArchetypeMask): seq[int] =
   let count = mask.componentCount()
   result = newSeqOfCap[int](count)
   
@@ -138,7 +138,7 @@ proc getComponents*(mask: ArchetypeMask): seq[int] =
       result.add(baseId + tz)
       bits = bits and (bits - 1)
 
-proc matches*(arch, incl, excl: ArchetypeMask): bool {.inline.} =
+proc matches*(arch, incl, excl: ArchetypeMask | ptr ArchetypeMask): bool {.inline.} =
   ## Aggressive, single-pass archetype matching.
   ## Checks if (arch and incl) == incl AND (arch and excl) == 0.
   for i in 0..<MAX_COMPONENT_LAYER:
