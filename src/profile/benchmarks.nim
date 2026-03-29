@@ -2,7 +2,7 @@
 ######################################################## CRUISE PROFILER ###############################################################
 ########################################################################################################################################
 
-import times, math, algorithm, strutils, tables
+import times, math, algorithm, strutils, tables, unicode
 
 type
   Parameters* = object
@@ -66,16 +66,13 @@ proc prettyTime*(t: float): string =
   let v = t * fac
   
   # Format avec précision adaptée
-  if v < 10:
-    result = v.formatFloat(ffDecimal, 2) & " " & suffix
-  elif v < 100:
-    result = v.formatFloat(ffDecimal, 1) & " " & suffix
-  else:
-    result = v.formatFloat(ffDecimal, 0) & " " & suffix
+  result = v.formatFloat(ffDecimal, 2) & " " & suffix
 
 proc prettyMem*(m: float): string =
-  if m < 1024:
-    return m.formatFloat(ffDecimal, 2) & " B"
+  if m < 0:
+    return "Neg B"
+  elif m < 1024:
+    return m.formatFloat(ffDecimal, 2) & " B "
   elif m < 1024 * 1024:
     return (m / 1024).formatFloat(ffDecimal, 2) & " KB"
   else:
@@ -329,14 +326,25 @@ proc add*(suite: var BenchmarkSuite, bench: Benchmark) =
 
 proc showSummary*(suite: BenchmarkSuite) =
   echo ""
-  echo "╔═", "═".repeat(68), "═╗"
-  echo "║ ", suite.name, " ".repeat(max(0, 68 - suite.name.len)), "║"
-  echo "╠═", "═".repeat(68), "═╣"
-  
+  echo "╔═", "═".repeat(60), "═╗"
+  echo "║ ", suite.name, " Operations", " ".repeat(max(0, 50 - suite.name.len)), "║"
+  echo "╠═", "═".repeat(60), "═╣"
+
   for bench in suite.benchmarks:
     let timeStr = prettyTime(bench.timeStats.median).alignLeft(12)
     let memStr = prettyMem(bench.memStats.median).alignLeft(12)
     let nameStr = bench.name.alignLeft(30)
     echo "║ ", nameStr, " │ ", timeStr, " │ ", memStr, " ║"
-  
-  echo "╚═", "═".repeat(68), "═╝"
+
+  echo "╚═", "═".repeat(60), "═╝"
+
+proc saveSummary*(suite: BenchmarkSuite, name: string) =
+  var file = open(name & ".csv", fmWrite)
+  defer: file.close()
+
+  file.writeLine(suite.name & ",time_mean,mem_median")
+
+  for bench in suite.benchmarks:
+    let mem = prettyMem(bench.memStats.mean)
+    let time = prettyTime(bench.timeStats.mean)
+    file.writeLine(bench.name & "," & time & "," & mem)

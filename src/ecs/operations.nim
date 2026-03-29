@@ -23,7 +23,7 @@ type
 ## @param arch: The `ArchetypeNode` which is the initial archetype of the entity.
 ## @return: A `DenseHandle` used to safely refer to the entity. Includes a pointer to the
 ##          entity data and a generation ID for stale reference checks.
-template createEntity*(world:var ECSWorld, arch:var ArchetypeNode):DenseHandle =
+proc createEntity*(world:var ECSWorld, arch:var ArchetypeNode, enable_event=EVENT_ACTIVE):DenseHandle =
   # Acquire a stable internal ID (widx) for the entity record.
   let pid = getStableEntity(world)
   
@@ -47,11 +47,9 @@ template createEntity*(world:var ECSWorld, arch:var ArchetypeNode):DenseHandle =
   e.archetypeId = archId                
   e.widx = pid
 
-  let d = DenseHandle(obj:e, gen:world.generations[pid])
-  world.events.emitDenseEntityCreated(d)
-  
-  # Return a public handle containing the pointer and the current generation (for safety checks).
-  d
+  result.obj = e 
+  result.gen = world.generations[pid]
+  if enable_event: world.events.emitDenseEntityCreated(result)
 
 proc createEntity*(world:var ECSWorld, arch:ArchetypeMask):DenseHandle =
   var archNode = world.archGraph.findArchetypeFast(arch)
@@ -77,7 +75,7 @@ proc createEntity*(world:var ECSWorld, cids:varargs[int]):DenseHandle =
 ## @param arch: The `ArchetypeMask` for the new entities.
 ## @return: A sequence of `DenseHandle` objects, one for each created entity.
 proc createEntities*(world:var ECSWorld, n:int, archNode:var ArchetypeNode):seq[DenseHandle] =
-  result = newSeqOfCap[DenseHandle](n)
+  result = newSeq[DenseHandle](n)
   
   # Acquire 'n' stable internal IDs.
   let pids = getStableEntities(world, n)
@@ -104,9 +102,9 @@ proc createEntities*(world:var ECSWorld, n:int, archNode:var ArchetypeNode):seq[
       e.archetypeId = archId
       e.widx = pid
 
-      current += 1
       # Create the handle with the specific generation for this PID.
-      result.add(DenseHandle(obj:e, gen:world.generations[pid]))
+      result[current] = (DenseHandle(obj:e, gen:world.generations[pid]))
+      current += 1
   
   return result
 

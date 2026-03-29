@@ -5,8 +5,9 @@ include "../../src/ecs/table.nim"
 # =========================
 include "../../src/profile/benchmarks.nim"
 
-const SAMPLE = 10000
+const SAMPLE = 1000
 const WARMUP = 1
+const ENTITY_COUNT = 10000
 
 # =========================
 # Components
@@ -45,8 +46,6 @@ proc setComponent[T](blk: ptr T, i:uint, v:Position) =
 # Benchmarks
 # =========================
 
-const ENTITY_COUNT = 10000
-
 proc setupWorldNoEnt(): ECSWorld =
   var world = newECSWorld()
 
@@ -62,13 +61,13 @@ proc setupWorldNoEnt(): ECSWorld =
 # ---------------------------------
 
 proc runDenseBenchmarks() =
-  var suite = initSuite("Sparse ECS Operations")
-
+  var suite = initSuite("Cruise Dense")
+#[
   # ------------------------------
   # Create single sparse entity
   # ------------------------------
   suite.add benchmarkWithSetup(
-    "dense_create_entity",
+    "create entity",
     SAMPLE,
     WARMUP,
     (
@@ -88,7 +87,7 @@ proc runDenseBenchmarks() =
   showDetailed(suite.benchmarks[0])
 
   suite.add benchmarkWithSetup(
-    "dense_create_entity_batch",
+    "create entity batch",
     SAMPLE,
     WARMUP,
     (
@@ -103,9 +102,28 @@ proc runDenseBenchmarks() =
     )
   )
   showDetailed(suite.benchmarks[1])
-
+]#
+  # ------------------------------
+  # Delete dense entity
+  # ------------------------------
   suite.add benchmarkWithSetup(
-    "query_creation",
+    "delete entity",
+    Sample,
+    Warmup,
+    (
+      var w = setupWorldNoEnt()
+      var node = w.archGraph.findArchetype([0, 1])
+      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, node)
+      
+    )
+    ,
+    for e in ents.mitems:
+      w.deleteEntity(e)
+  )
+  showDetailed(suite.benchmarks[0])
+#[
+  suite.add benchmarkWithSetup(
+    "query creation",
     SAMPLE,
     WARMUP,
     (
@@ -117,10 +135,10 @@ proc runDenseBenchmarks() =
       discard query(w, Position and Velocity)
     )
   )
-  showDetailed(suite.benchmarks[2])
+  showDetailed(suite.benchmarks[3])
 
   suite.add benchmarkWithSetup(
-    "dense_query_creation",
+    "dense query creation",
     SAMPLE,
     WARMUP,
     (
@@ -133,10 +151,10 @@ proc runDenseBenchmarks() =
         continue
     )
   )
-  showDetailed(suite.benchmarks[3])
+  showDetailed(suite.benchmarks[4])
 
   suite.add benchmarkWithSetup(
-    "iterate_dense_entity",
+    "iteration",
     SAMPLE,
     WARMUP,
     (
@@ -159,11 +177,11 @@ proc runDenseBenchmarks() =
           y[i] += dy[i]
     )
   )
-  showDetailed(suite.benchmarks[4])
+  showDetailed(suite.benchmarks[5])
 
   var s = 0'f32
   suite.add benchmarkWithSetup(
-    "read_dense_entity",
+    "read",
     SAMPLE,
     WARMUP,
     (
@@ -178,10 +196,10 @@ proc runDenseBenchmarks() =
         s += posc[e].x
     )
   )
-  showDetailed(suite.benchmarks[5])
+  showDetailed(suite.benchmarks[6])
   
   suite.add benchmarkWithSetup(
-    "write_dense_entity",
+    "write",
     SAMPLE,
     WARMUP,
     (
@@ -196,7 +214,70 @@ proc runDenseBenchmarks() =
         posc[e] = Position(x:s)
     )
   )
-  showDetailed(suite.benchmarks[6])
+  showDetailed(suite.benchmarks[7])
+
+  suite.add benchmarkWithSetup(
+    "add component",
+    SAMPLE,
+    WARMUP,
+    (
+      var w = setupWorldNoEnt()
+      var archBase = w.archGraph.findArchetype([0, 1])
+      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, archBase)
+      
+      for e in ents:
+        w.addComponent(e, 2)
+      for e in ents:
+        w.removeComponent(e, 2)
+    ),
+    (
+      for e in ents:
+        w.addComponent(e, 2)
+    )
+  )
+  showDetailed(suite.benchmarks[8])
+
+  suite.add benchmarkWithSetup(
+    "remove component",
+    SAMPLE,
+    WARMUP,
+    (
+      var w = setupWorldNoEnt()
+      var archBase = w.archGraph.findArchetype([0, 1])
+      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, archBase)
+      
+      for e in ents:
+        w.addComponent(e, 2)
+    ),
+    (
+      for e in ents:
+        w.removeComponent(e, 2)
+    )
+  )
+  showDetailed(suite.benchmarks[9])
+
+  suite.add benchmarkWithSetup(
+    "add remove component",
+    SAMPLE,
+    WARMUP,
+    (
+      var w = setupWorldNoEnt()
+      var archBase = w.archGraph.findArchetype([0, 1])
+      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, archBase)
+      
+      for e in ents:
+        w.addComponent(e, 2)
+      for e in ents:
+        w.removeComponent(e, 2)
+    ),
+    (
+      for e in ents:
+        w.addComponent(e, 2)
+        w.removeComponent(e, 2)
+    )
+  )
+  showDetailed(suite.benchmarks[10])
+
 
   suite.add benchmarkWithSetup(
     "migrate_dense_entity",
@@ -218,7 +299,7 @@ proc runDenseBenchmarks() =
         migrateEntity(w, e, archDest)
     )
   )
-  showDetailed(suite.benchmarks[7])
+  showDetailed(suite.benchmarks[11])
   
   suite.add benchmarkWithSetup(
     "migrate_dense_entity_batch",
@@ -237,7 +318,10 @@ proc runDenseBenchmarks() =
       migrateEntity(w, ents, archDest)
     )
   )
-  showDetailed(suite.benchmarks[8])
+  showDetailed(suite.benchmarks[12])
+  
+  suite.showSummary()
+  suite.saveSummary("cr_dense")
 
-
+]#
 runDenseBenchmarks()

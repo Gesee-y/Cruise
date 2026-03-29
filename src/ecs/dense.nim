@@ -21,6 +21,7 @@ proc allocateNewBlocks(
   table: var ECSWorld,
   count: int,
   res: var seq[(uint, Range)],
+  current: int,
   partition: var TablePartition
 ) =
   
@@ -29,6 +30,7 @@ proc allocateNewBlocks(
   let s = n div DEFAULT_BLK_SIZE
   var bc = table.blockCount
   let pl = partition.zones.len
+  var c = current
   
   partition.zones.setLen(pl + s + 1)
 
@@ -37,7 +39,7 @@ proc allocateNewBlocks(
     let e = min(n, DEFAULT_BLK_SIZE)
     
     ## Register allocated range
-    res.add((bc.uint, Range(s: 0, e: e)))
+    res[c] = ((bc.uint, Range(s: 0, e: e)))
     trange.r.s = 0
     trange.r.e = e
     trange.block_idx = bc
@@ -56,6 +58,7 @@ proc allocateNewBlocks(
     table.blockCount += 1
     n -= DEFAULT_BLK_SIZE
     inc bc
+    inc c
 
   table.handles.setLen((table.blockCount + 1) * DEFAULT_BLK_SIZE)
 
@@ -67,16 +70,17 @@ proc allocateEntities(
   archNode: ArchetypeNode
 ): seq[(uint, Range)] =
   check(not archNode.isNil, "ArchetypeNode is nil during entity allocation")
-  var res: seq[(uint, Range)]
+  var res = newSeq[(uint, Range)](n div DEFAULT_BLK_SIZE + 1)
 
   ## First allocation for this archetype
   if archNode.partition.isNil:
     var partition = createPartition(table, archNode)
-    allocateNewBlocks(table, n, res, partition)
+    allocateNewBlocks(table, n, res, 0, partition)
     return res
 
   var m = n
   var partition = archNode.partition
+  var current = 0
 
   ## Fill existing blocks
   while m > 0 and partition.fill_index < partition.zones.len:
@@ -85,16 +89,17 @@ proc allocateEntities(
     let r = min(e + m, DEFAULT_BLK_SIZE)
 
     partition.zones[partition.fill_index].r.e = r
-    res.add((id.uint, Range(s: e, e: r)))
+    res[current] = ((id.uint, Range(s: e, e: r)))
     
     if r >= DEFAULT_BLK_SIZE:
       partition.fill_index += 1
 
     m -= r - e
+    current += 1
 
   ## Allocate new blocks if necessary
   if m > 0:
-    allocateNewBlocks(table, m, res, partition)
+    allocateNewBlocks(table, m, res, current, partition)
 
   return res
 
@@ -110,7 +115,7 @@ proc allocateEntities(
 
 ## Allocates a single dense entity and returns:
 ## (block index, offset inside block, archetype id)
-proc allocateEntity(
+template allocateEntity(
   table: var ECSWorld,
   archNode: var ArchetypeNode
 ): (uint, int, uint16) =
@@ -137,10 +142,10 @@ proc allocateEntity(
 
   zone.r.e += 1
     
-  if isFull(partition.zones[fill_index]):
+  if isFull(zone):
     partition.fill_index += 1
 
-  return (id.uint, e, archNode.id)
+  (id.uint, e, archNode.id)
 
 ## Allocates a single dense entity and returns:
 ## (block index, offset inside block, archetype id)
@@ -155,18 +160,14 @@ proc allocateEntity(
 
 ## Deletes a dense entity row.
 ## Performs swap-remove within the archetype partition.
-proc deleteRow(table: var ECSWorld, i: uint, arch: uint16): uint =
+template deleteRow(table: var ECSWorld, i: uint, arch: uint16): uint =
   check(arch.int < table.archGraph.nodes.len, "Archetype ID out of bounds")
-  let archNode = table.archGraph.nodes[arch]
-  let partition = archNode.partition
+  let partition = addr table.archGraph.nodes[arch].partition
   
-  check(not partition.isNil, "Attempting to delete from nil partition")
-
   if partition.zones.len <= partition.fill_index or
-     isEmpty(partition.zones[partition.fill_index]):
+     isEmpty(addr partition.zones[partition.fill_index]):
     partition.fill_index -= 1
 
-  check(partition.fill_index >= 0, "Partition index underflow during deletion")
   let zone = addr partition.zones[partition.fill_index]
 
   let last = zone.r.e - 1
@@ -180,7 +181,7 @@ proc deleteRow(table: var ECSWorld, i: uint, arch: uint16): uint =
       entry.overrideValsOp(entry.rawPointer, i, lid)
 
   zone.r.e -= 1
-  return last.uint + bid * DEFAULT_BLK_SIZE
+  last.uint + bid * DEFAULT_BLK_SIZE
 
 ## Moves a single entity from one archetype partition to another.
 ## Returns:
@@ -266,7 +267,7 @@ proc changePartition(
       )
   
   newZone.r.e += 1
-  if isFull(newZone[]):
+  if isFull(newZone):
     newPartition.fill_index += 1
 
   return (last + blast * DEFAULT_BLK_SIZE, new_id, bid)
