@@ -188,7 +188,7 @@ proc getAxis*(win: CWindow, axis: MouseAxis): AxisEvent =
 ##      if myWin.isKeyJustPressed(CKey_Escape): running = false
 ## ============================================================
 
-proc eventLoop*(app: CApp) =
+proc eventLoop*(app: CApp, routers:varargs[proc(app: CApp)]) =
   ## One iteration of the event loop:
   ##   1. Reset per-frame counters for every window.
   ##   2. Poll OS events (backend-specific via getEvents).
@@ -196,7 +196,21 @@ proc eventLoop*(app: CApp) =
   for win in app.windows:
     win.inputs.resetCounts()
 
-  app.getEvents()
+  for router in routers:
+    router(app)
+
+  for win in app.windows:
+    win.inputs.updateInputState()
+
+proc eventLoop*(app: CApp, router: proc(app: CApp)) =
+  ## One iteration of the event loop:
+  ##   1. Reset per-frame counters for every window.
+  ##   2. Poll OS events (backend-specific via getEvents).
+  ##   3. Advance the input state machine for every window.
+  for win in app.windows:
+    win.inputs.resetCounts()
+
+  router(app)
 
   for win in app.windows:
     win.inputs.updateInputState()

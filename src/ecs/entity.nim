@@ -59,9 +59,9 @@ template `[]`*[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B], d:DenseHandle):untyped
 template `[]`*[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B], d:SparseHandle):untyped = 
   let S = sizeof(uint)*8 # Size of the bucket range (e.g., 64 bits).
   
-  # Calculate the bucket index: `id shr 6` divides the ID by 64 to find the page.
+  # Calculate the bucket index via toSparse indirection.
   # Calculate the offset: `id and (S-1)` gets the index within that page (modulo 64).
-  f.sparse[d.id shr 6][d.id and (S-1).uint]
+  f.sparse[f.toSparse[d.id shr 6]-1][d.id and (S-1).uint]
 
 ## Sets component data in a `SoAFragmentArray` for a raw `Entity`.
 proc `[]=`[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], e:SomeEntity, v:B) = 

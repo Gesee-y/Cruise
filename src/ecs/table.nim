@@ -6,6 +6,8 @@ import tables, bitops, typetraits, hashes, sequtils
 
 const
   MAX_COMPONENT_LAYER = 4
+  PARTITION_ZONE_CAP = 10
+  EVENT_ACTIVE = false
 
 type 
   Range = object
@@ -53,6 +55,11 @@ include "archetypes.nim"
 include "events.nim"
 
 type
+  QueryKey* = tuple[incl: ArchetypeMask, excl: ArchetypeMask]
+  QueryCacheEntry* = object
+    version*: int
+    nodes*: seq[ArchetypeNode]
+
   ECSWorld* = ref object
     registry:ComponentRegistry
     entities:seq[Entity]
@@ -62,13 +69,11 @@ type
     generations:seq[uint32]
     sparse_gens:seq[uint32]
     free_entities:seq[int]
-    sparse_entities:seq[Entity]
-    archetypes:Table[ArchetypeMask, TablePartition]
     archGraph:ArchetypeGraph
-    pooltype:Table[string, int]
     free_list:seq[uint]
     max_index:int
-    block_count:int
+    blockCount:int
+    queryCache*: Table[QueryKey, QueryCacheEntry]
 
 proc newECSWorld*(max_entities:int=1000000):ECSWorld =
   var w:ECSWorld
@@ -76,7 +81,10 @@ proc newECSWorld*(max_entities:int=1000000):ECSWorld =
   #new(w.registry)
   w.archGraph = initArchetypeGraph()
   w.entities = newSeqofCap[Entity](max_entities)
+  w.handles = newSeqofCap[ptr Entity](max_entities)
   w.free_list = newSeqofCap[uint](max_entities div 2)
+  w.generations = newSeqofCap[uint32](max_entities)
+  w.sparse_gens = newSeqofCap[uint32](max_entities)
   w.events = initEventManager()
 
   return w
@@ -87,10 +95,11 @@ proc newECSWorld*(max_entities:int=1000000):ECSWorld =
 
 {.push inline.}
 
-proc isEmpty(t:TableRange):bool = t.r.s == t.r.e
-proc isFull(t:TableRange):bool = t.r.e - t.r.s == DEFAULT_BLK_SIZE
+proc isEmpty(t:TableRange | ptr TableRange):bool = t.r.s == t.r.e
+proc isFull(t:TableRange | ptr TableRange):bool = t.r.e - t.r.s == DEFAULT_BLK_SIZE
 
 proc getComponentId*(world:ECSWorld, t:typedesc):int =
+  check($t in world.registry.cmap, "Component type '" & $t & "' is not registered. Call registerComponent first.")
   return world.registry.cmap[$t]
 
 proc getArchetype*(w:ECSWorld, e:SomeEntity):ArchetypeNode =
@@ -111,8 +120,8 @@ proc makeId(i:int):uint =
   return (bid shl BLK_SHIFT) or idx
 
 proc makeId(i:uint):uint =
-  let bid = i.uint shr 6
-  let idx = i.uint and 63
+  let bid = i div DEFAULT_BLK_SIZE.uint
+  let idx = i mod DEFAULT_BLK_SIZE.uint
 
   return (bid shl BLK_SHIFT) or idx
 
@@ -129,24 +138,27 @@ proc isAlive*(w:ECSWorld, d:DenseHandle):bool =
 
 {.pop.}
 
-proc getStableEntity(world:ECSWorld):int =
-  var entity_idx: int
+template getStableEntity(world:ECSWorld):int =
   if world.free_entities.len > 0:
-    entity_idx = world.free_entities.pop()
+    world.free_entities.pop()
   else:
-    entity_idx = world.entities.len
-    world.entities.setLen(entity_idx + 1)
-    world.generations.setLen(entity_idx + 1)
-
-  return entity_idx
+    let id = world.entities.len
+    world.entities.setLen(id + 1)
+    world.generations.setLen(id + 1)
+    id
 
 proc getStableEntities(world:ECSWorld, n:int):seq[int] =
-  var entity_idx = newSeq[int](n)
+  result.setLen(n)
   let free_len = world.free_entities.len
   let start = max(0, free_len-n)
 
   if free_len > 0:
-    copyMem(addr entity_idx[0], addr world.free_entities[start], (free_len-start)*sizeof(int))
+    let count = free_len - start
+    when defined(js):
+      for i in 0..<count:
+        result[i] = world.free_entities[start + i]
+    else:
+      copyMem(addr result[0], addr world.free_entities[start], count * sizeof(int))
     world.free_entities.setLen(start)
 
   if world.free_entities.len == 0:
@@ -156,10 +168,8 @@ proc getStableEntities(world:ECSWorld, n:int):seq[int] =
     
     var c = 0
     for i in L..<world.entities.len:
-      entity_idx[free_len+c] = i
+      result[free_len+c] = i
       inc c
-
-  return entity_idx
 
 template registerComponent*(world:var ECSWorld, t:typed, P:static bool=false):int =
   registerComponent(world.registry, t, P)
@@ -246,8 +256,7 @@ proc process(world: var ECSWorld, cb: var CommandBuffer) =
 
 proc flush*(w:var ECSWorld) =
   for i in 0..<w.commandBufs.len:
-    var cb = w.commandBufs[i]
-    w.process(cb)
+    w.process(w.commandBufs[i])
 
 proc clearDenseChanges*(w: var ECSWorld) =
   for entry in w.registry.entries:
@@ -260,3 +269,7 @@ proc clearSparseChanges*(w: var ECSWorld) =
 proc clearChanges*(w: var ECSWorld) =
   w.clearDenseChanges()
   w.clearSparseChanges()
+
+proc destroy*(w: ECSWorld) =
+  for cb in mitems(w.commandBufs):
+    cb.destroy()

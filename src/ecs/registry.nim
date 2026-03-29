@@ -149,13 +149,21 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
 
     let overDS = proc (p:pointer, d:DenseHandle,s:SparseHandle) {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,false)
-      let r = fr[s]
-      fr[d] = r
+      let bidi = (d.obj.id shr BLK_SHIFT) and BLK_MASK
+      let idxi = d.obj.id and BLK_MASK
+      let sbid = s.id shr 6
+      let si = s.id and 63
+      let physIdx = fr.toSparse[sbid] - 1
+      toObjectCopy(`B`, fr.blocks[bidi].data, idxi, fr.sparse[physIdx].data, si)
 
     let overSD = proc (p:pointer,s:SparseHandle, d:DenseHandle) {.noSideEffect, nimcall, inline.} =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,false)
-      let r = fr[d]
-      fr[s] = r
+      let bidi = (d.obj.id shr BLK_SHIFT) and BLK_MASK
+      let idxi = d.obj.id and BLK_MASK
+      let sbid = s.id shr 6
+      let si = s.id and 63
+      let physIdx = fr.toSparse[sbid] - 1
+      toObjectCopy(`B`, fr.sparse[physIdx].data, si, fr.blocks[bidi].data, idxi)
 
     let overvb = proc (p:pointer, archId:uint16, ents: ptr seq[ptr Entity], ids:openArray[DenseHandle], sw:seq[uint], ad:seq[uint]) =
       var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,false)

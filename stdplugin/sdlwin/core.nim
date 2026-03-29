@@ -14,6 +14,7 @@
 import strutils
 import ../../externalLibs/sdl3_nim/src/sdl3_nim
 import ../../src/windows/windows
+export SDL_Delay
 
 # ---------------------------------------------------------------------------
 # SDL3-specific subtypes
@@ -237,9 +238,3 @@ method getMousePosition*(win: SDL3Window): tuple[x, y: int] =
   (fx.int, fy.int)
 
 include "events.nim"
-
-var app:CApp
-new(app)
-var win:SDL3Window
-new(win)
-app.initWindow(win)

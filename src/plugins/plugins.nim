@@ -10,14 +10,14 @@ include "data.nim"
 
 type
 
-  PluginStatus = enum
+  PluginStatus* = enum
     PLUGIN_OK, PLUGIN_ERR, PLUGIN_DEPRECATED, PLUGIN_OFF
   
-  PluginNode = ref object of RootObj
-    id:int
-    enabled,mainthread:bool
-    status:PluginStatus
-    lasterr:CatchableError
+  PluginNode* = ref object of RootObj
+    id*:int
+    enabled*,mainthread*:bool
+    status*:PluginStatus
+    lasterr*:CatchableError
     deps:Table[string, PluginNode]
 
   EffectivePluginNode = concept node
@@ -27,33 +27,37 @@ type
     getCapability(node)
     getObject(node)
 
-  Plugin = object
-    idtonode:seq[PluginNode]
-    res_manager: PResourceManager
+  Plugin* = object
+    idtonode*:seq[PluginNode]
+    res_manager*: PResourceManager
     graph:DiGraph
     parallel_cache:seq[array[2, seq[int]]]
     dirty:bool
 
-  NullPluginNode = ref object of PluginNode
+  NullPluginNode* = ref object of PluginNode
 
-template getStatus(s:typed):untyped = s.status
-template setStatus(s:typed, st:PluginStatus) = 
+template isDirty*(p: Plugin): bool = p.dirty
+template getParallelCache*(p: Plugin): seq[array[2, seq[int]]] = p.parallel_cache
+template getGraph*(p: Plugin): DiGraph = p.graph
+
+template getStatus*(s:typed):untyped = s.status
+template setStatus*(s:typed, st:PluginStatus) = 
   s.status = st
 
-method awake(p:PluginNode) {.base.} = p.setStatus(PLUGIN_OK)
-method update(p:PluginNode) {.base.} = discard
-method shutdown(p:PluginNode) {.base.} = p.setStatus(PLUGIN_OFF)
-method merge(p:PluginNode, p2:PluginNode):PluginNode {.base.} = p
-method getObject(p:PluginNode):int {.base.} = 0
-method getCapability(p:PluginNode):int {.base.} = 0
-template asKey(t:typedesc): string = $t
-method asKey(p:PluginNode):string {.base.} = asKey(p.typeof)
+method awake*(p:PluginNode) {.base.} = p.setStatus(PLUGIN_OK)
+method update*(p:PluginNode) {.base.} = discard
+method shutdown*(p:PluginNode) {.base.} = p.setStatus(PLUGIN_OFF)
+method merge*(p:PluginNode, p2:PluginNode):PluginNode {.base.} = p
+method getObject(p:PluginNode):RootRef {.base.} = nil
+method getCapability(p:PluginNode):RootRef {.base.} = nil
+template asKey*(t:typedesc): string = $t
+method asKey*(p:PluginNode):string {.base.} = asKey(p.typeof)
 
-macro makeAsKey(name) =
+macro makeAsKey*(name) =
   return quote do:
     method asKey(p:`name`):string = $`name`
 
-macro gameLogic(name, logic:untyped) =
+macro gameLogic*(name, logic:untyped) =
   return quote do:
     type
       `name` = ref object of PluginNode
@@ -188,7 +192,7 @@ macro attachSystem*(plugin: untyped, nameAndResources: untyped, body: untyped): 
   res.add(idSym)
   return res
 
-proc newNullPluginNode():NullPluginNode =
+proc newNullPluginNode*():NullPluginNode =
   var v:NullPluginNode
   return v
 

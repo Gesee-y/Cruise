@@ -56,10 +56,6 @@ proc findPosChild*(d: DiGraph, u, target: int): int =
       result = i
       break
 
-proc has_edge*(d: DiGraph, u, v: int):bool =
-  if not d.isValid(u) or not d.isValid(v): return false
-  return findPosChild(d, u, v) >= 0 or findPosChild(d, u, v) >= 0
-
 # find position of neighbor 'target' in outedges[v]; returns -1 if not found
 proc findPosParent*(d: DiGraph, v, target: int): int =
   result = -1
@@ -68,6 +64,10 @@ proc findPosParent*(d: DiGraph, v, target: int): int =
     if d.inedges[v][i].idx == target:
       result = i
       break
+
+proc has_edge*(d: DiGraph, u, v: int):bool =
+  if not d.isValid(u) or not d.isValid(v): return false
+  return findPosChild(d, u, v) >= 0 or findPosParent(d, v, u) >= 0
 
 # swap-remove helper for children list edges[u] at position pos
 proc swapPopChild(d: var DiGraph, u, pos: int) =

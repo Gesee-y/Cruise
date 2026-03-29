@@ -8,7 +8,7 @@ include "../../src/profile/benchmarks.nim"
 
 const
   Samples = 1000
-  Warmup  = 10
+  Warmup  = 1
 
 type
   Position = object
@@ -55,7 +55,7 @@ const ENTITY_COUNT = 10_000
 
 proc runSparseBenchmarks() =
   var suite = initSuite("Sparse ECS Operations")
-
+#[
   # ------------------------------
   # Create single sparse entity
   # ------------------------------
@@ -114,6 +114,7 @@ proc runSparseBenchmarks() =
       w.deleteEntity(e)
   )
   showDetailed(suite.benchmarks[2])
+]#
 
   # ------------------------------
   # Add component
@@ -124,12 +125,31 @@ proc runSparseBenchmarks() =
     Warmup,
     (
       var w = setupWorld()
-      var e = w.createSparseEntity([Pos])),
-    for i in 0..<ENTITY_COUNT:
-      w.addComponent(e, Vel)
+      var ents = w.createSparseEntities(ENTITY_COUNT,[Pos])
+      var node = w.archGraph.findArchetype([Pos, Vel])
+      for e in ents.mitems:
+        w.addComponent(e, Vel)
+      for e in ents.mitems:
+        w.removeComponent(e, Vel)),
+    for e in ents.mitems:
+      w.migrateEntity(e, node)
   )
-  showDetailed(suite.benchmarks[3])
+  showDetailed(suite.benchmarks[0])
 
+  # ------------------------------
+  # Add component batch
+  # ------------------------------
+  suite.add benchmarkWithSetup(
+    "sparse_add_component_batch",
+    Samples,
+    Warmup,
+    (
+      var w = setupWorld()
+      var ents = w.createSparseEntities(ENTITY_COUNT, [Pos])),
+    w.addComponentBatch(ents, Vel)
+  )
+  showDetailed(suite.benchmarks[suite.benchmarks.len-1])
+#[
   # ------------------------------
   # Remove component
   # ------------------------------
@@ -221,7 +241,7 @@ proc runSparseBenchmarks() =
   # Results
   # ==============================
   suite.showSummary()
-
+]#
 # ==============================
 # Entry point
 # ==============================

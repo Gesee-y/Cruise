@@ -2,16 +2,16 @@
 ########################################################### OPERATIONS ON PLUGINS ##################################################################
 ####################################################################################################################################################
 
-template isinitialized(s:typed):untyped = getstatus(s) == PLUGIN_OK
-template isuninitialized(s:typed):untyped = getstatus(s) == PLUGIN_OFF
-template isDeprecated(s:typed):untyped = getstatus(s) == PLUGIN_DEPRECATED
-template hasFailed(s:typed):untyped = getstatus(s) == PLUGIN_ERR
+template isinitialized*(s:typed):untyped = getstatus(s) == PLUGIN_OK
+template isuninitialized*(s:typed):untyped = getstatus(s) == PLUGIN_OFF
+template isDeprecated*(s:typed):untyped = getstatus(s) == PLUGIN_DEPRECATED
+template hasFailed*(s:typed):untyped = getstatus(s) == PLUGIN_ERR
 
-template getLastError(s:typed):untyped = s.lasterr
-template setLastErr(s:typed, e) = 
+template getLastError*(s:typed):untyped = s.lasterr
+template setLastErr*(s:typed, e) = 
   s.lasterr = e
 
-template hasFailedDeps(s:typed):untyped = 
+template hasFailedDeps*(s:typed):untyped = 
   var res = false
   for k,v in s.deps.pairs:
     if hasfailed(v):
@@ -19,7 +19,7 @@ template hasFailedDeps(s:typed):untyped =
 
   res
 
-template hasUninitializedDeps(s:typed):untyped = 
+template hasUninitializedDeps*(s:typed):untyped = 
   var res = false
   for k,v in s.deps.pairs:
     if isuninitialized(v):
@@ -27,7 +27,7 @@ template hasUninitializedDeps(s:typed):untyped =
 
   res
 
-template hasAllDepsInitialized(s:typed):untyped =
+template hasAllDepsInitialized*(s:typed):untyped =
   var res = true
   for k,v in s.deps.pairs:
     if isuninitialized(v) or hasfailed(v):
@@ -37,7 +37,7 @@ template hasAllDepsInitialized(s:typed):untyped =
 
 
 #template hasdeaddeps(s:typed):untyped = any(isnothing, values(_getdata(s.deps)))
-template getDependency[T](n:typed):untyped = 
+template getDependency*[T](n:typed):untyped = 
   let d = $T
   if not n.deps.hasKey(d): 
     raise newException(OSError, "Dependency $n not found in node")
@@ -45,7 +45,7 @@ template getDependency[T](n:typed):untyped =
   T(n.deps[d])
 #add_status_callback(f, p::CRPluginNode) = connect(f, p.status)
 
-template getNodeid(n:typed, s:string):untyped =
+template getNodeid*(n:typed, s:string):untyped =
   var res = -1
 
   for i,v in n.idtonode:
@@ -64,10 +64,10 @@ template addSystem*(p:var Plugin, obj):int =
   if id < 0:
     id = add_vertex(p.graph)
 
-    if id < p.idtonode.len:
-      p.idtonode[id] = obj
-    else:
-      p.idtonode.add(obj)
+    while id >= p.idtonode.len:
+      p.idtonode.add(nil)
+    
+    p.idtonode[id] = obj
 
     obj.id = id
     p.dirty = true
@@ -77,7 +77,7 @@ template addSystem*(p:var Plugin, obj):int =
 
   id
 
-proc remSystem(p:var Plugin, id:int) =
+proc remSystem*(p:var Plugin, id:int) =
   if id >= p.idtonode.len or p.idtonode[id] == nil: return
 
   rem_vertex(p.graph, id)
@@ -88,7 +88,7 @@ proc remSystem(p:var Plugin, id:int) =
     res.dirty = res.readRequests.contains(id) or res.writeRequests.contains(id)
     res.readRequests.excl id
 
-proc addDependency(p:var Plugin, start:int, to:int):bool =
+proc addDependency*(p:var Plugin, start:int, to:int):bool =
   if add_edge(p.graph, start, to):
     let par = p.idtonode[start]
     var child = p.idtonode[to]
@@ -100,12 +100,12 @@ proc addDependency(p:var Plugin, start:int, to:int):bool =
 
   return false
 
-proc remDependency(p:var Plugin, start:int, to:int) =
+proc remDependency*(p:var Plugin, start:int, to:int) =
   if rem_edge(p.graph, start, to):
     p.idtonode[to].deps.del(p.idtonode[start].asKey)
     p.dirty = true
 
-proc mergePlugin(p1:var Plugin, p2:var Plugin) =
+proc mergePlugin*(p1:var Plugin, p2:var Plugin) =
   var
     obj_to_id:Table[string, int]
     idmap:Table[int,int]
@@ -118,7 +118,7 @@ proc mergePlugin(p1:var Plugin, p2:var Plugin) =
     if obj_to_id.hasKey(n.asKey):
       idmap[i] = obj_to_id[n.asKey]
     else:
-      let id = add_system(p1, n)
+      let id = addSystem(p1, n)
       idmap[i] = id
 
   for i,vec in p2.graph.outedges:
@@ -138,7 +138,7 @@ template exec_node(f, n) =
     n.setLastErr(e[])
     n.setStatus(PLUGIN_ERR)
 
-proc computeParallelLevel(p:var Plugin) =
+proc computeParallelLevel*(p:var Plugin) =
   var graph = p.graph
 
   p.res_manager.buildGlobalAccessGraph
@@ -170,13 +170,13 @@ proc computeParallelLevel(p:var Plugin) =
   p.parallel_cache = result
   p.dirty = false
 
-template smap(f:untyped,p:Plugin) =
+template smap*(f:untyped,p:Plugin) =
   let tsort = p.graph.topo_sort()
   for i in tsort:
     var n = p.idtonode[i]
     exec_node(f, n)
 
-template pmap(f:untyped,p:Plugin) =
+template pmap*(f:untyped,p:Plugin) =
   if p.dirty: computeParallelLevel(p)
 
   for level in p.parallel_cache:

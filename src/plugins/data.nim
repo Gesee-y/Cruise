@@ -4,14 +4,14 @@
 
 type
   PluginResource* = object
-    data: pointer
-    readRequests: BitSet   # sys ids who read this resource
-    writeRequests: Bitset  # sys ids who write this resource
+    data*: pointer
+    readRequests: BitSet  # sys ids who read this resource
+    writeRequests: Bitset # sys ids who write this resource
     dirty: bool
     cachedGraph: DiGraph
 
   PResourceManager* = object
-    resources: seq[PluginResource]
+    resources*: seq[PluginResource]
     maxRequestId: int
     cachedGraph: DiGraph
     dirty: bool
@@ -30,11 +30,11 @@ proc addResource*[T](manager: var PResourceManager, obj: T): int =
 proc getResource*[T](manager: PResourceManager, id: int): T =
   return cast[T](manager.resources[id].data)
 
-proc addReadRequest(manager: var PResourceManager, sys, id: int) =
+proc addReadRequest*(manager: var PResourceManager, sys, id: int) =
   # A sys cannot read and write the same resource
   assert not manager.resources[id].writeRequests.contains(sys),
     "sys " & $sys & " already has a write request on resource " & $id
-  
+
   if sys > manager.maxRequestId:
     manager.maxRequestId = sys
 
@@ -42,23 +42,17 @@ proc addReadRequest(manager: var PResourceManager, sys, id: int) =
   manager.dirty = true
   manager.resources[id].readRequests.incl sys
 
-proc addReadRequest[T](manager: var PResourceManager, sys: int) =
-  manager.addReadRequest(sys, manager.toId[$T])
-
-proc addWriteRequest(manager: var PResourceManager, sys, id: int) =
+proc addWriteRequest*(manager: var PResourceManager, sys, id: int) =
   # A sys cannot read and write the same resource
   assert not manager.resources[id].readRequests.contains(sys),
     "sys " & $sys & " already has a read request on resource " & $id
-  
+
   if sys > manager.maxRequestId:
     manager.maxRequestId = sys
-  
+
   manager.resources[id].dirty = true
   manager.dirty = true
   manager.resources[id].writeRequests.incl sys
-
-proc addWriteRequest[T](manager: var PResourceManager, sys: int) =
-  manager.addWriteRequest(sys, manager.toId[$T])
 
 # ------------------------------------------------------------
 # Build the access graph for a single resource.
@@ -79,7 +73,7 @@ proc buildAccessGraph(res: var PluginResource) =
   # Collect the total number of systems involved to size the graph.
   # We work with sys IDs directly as node indices, so we need a graph
   # large enough to hold the largest sys id.
-  
+
   var maxId = max(res.readRequests.max, res.writeRequests.max)
 
   res.cachedGraph = newGraph(maxId + 1)
@@ -108,7 +102,7 @@ proc buildGlobalAccessGraph(manager: var PResourceManager) =
   manager.dirty = false
   manager.cachedGraph = result
 
-proc getAccessGraph(res: var PluginResource): DiGraph =
+proc getAccessGraph*(res: var PluginResource): DiGraph =
   if res.dirty:
     res.buildAccessGraph
     res.dirty = false

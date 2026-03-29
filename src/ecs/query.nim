@@ -36,7 +36,7 @@ type
   ## Iterator for dense queries.
   DenseIterator* = object
     r*:HSlice[int, int]
-    m:ptr seq[uint]
+    m:ptr seq[BitBlock]
     masked:bool
 
   ## A cached result object for Sparse queries.
@@ -55,9 +55,12 @@ type
 
 proc newQueryFilter(): QueryFilter =
   var q: QueryFilter
-  q.dLayer = newHiBitSet()
-  q.sLayer = newHiBitSet()
-
+  when HibitsetType is HiBitSet:
+    q.dLayer = newHiBitSet()
+    q.sLayer = newHiBitSet()
+  else:
+    q.dLayer = newSparseHiBitSet()
+    q.sLayer = newSparseHiBitSet()
   return q
 
 proc `and`*(a, b: QueryFilter): QueryFilter =
@@ -114,7 +117,7 @@ iterator maskIter(it: uint): int =
     yield countTrailingZeroBits(m)
     m = m and (m-1)
 
-iterator maskIter(it: (HSlice[int,int],seq[uint])): int =
+iterator maskIter(it: (HSlice[int,int],seq[uint|BitBlock])): int =
   var current = 0
   var i = 0
   let S = sizeof(uint)*8
@@ -206,24 +209,8 @@ template clear*(qf: QueryFilter) =
   qf.dLayer.clear()
   qf.sLayer.clear()
 
-proc matchesArchetype(sig: QuerySignature, arch: ArchetypeMask): bool =
-  ## Checks if an Archetype's mask matches a given Query Signature.
-  ##
-  ## @param sig: The `QuerySignature` to test against.
-  ## @param arch: The `ArchetypeMask` of the archetype being tested.
-  ## @return: True if the archetype matches the query, False otherwise.
-
-  # Check if all included components are present.
-  # (A & B) == B ensures B is a subset of A.
-  if (sig.includeMask and arch) != sig.includeMask:
-    return false
-
-  # Check if any excluded components are present.
-  # (A & ~B) == A ensures A and B do not overlap.
-  if (arch and not sig.excludeMask) != arch:
-    return false
-  
-  return true
+proc matchesArchetype(sig: QuerySignature, arch: ArchetypeMask): bool {.inline.} =
+  arch.matches(sig.includeMask, sig.excludeMask)
 
 ####################################################################################################################################################
 ################################################################### DENSE QUERIES ##################################################################
@@ -233,35 +220,45 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator)
   ## Iterate through all partitions that match the query signature
   ## Returns block index and range for each matching zone
   
-  for archNode in world.archGraph.nodes:
-    let arch = archNode.mask
-    # Skip archetypes that don't match the query.
-    if not matchesArchetype(sig, arch):
-      continue
+  let mlen = sig.modified.len
+  let nmlen = sig.notModified.len
+  let maskCount = ((DEFAULT_BLK_SIZE-1) shr L0_SHIFT) + 1
+  var res = newSeq[BitBlock](maskCount)
+
+  let key: QueryKey = (sig.includeMask, sig.excludeMask)
+  if not world.queryCache.hasKey(key):
+    world.queryCache[key] = QueryCacheEntry(version: 0, nodes: @[])
+  
+  template cacheEntry: untyped = world.queryCache[key]
+  
+  if cacheEntry.version < world.archGraph.nodes.len:
+    for i in cacheEntry.version ..< world.archGraph.nodes.len:
+      let archNode = world.archGraph.nodes[i]
+      if matchesArchetype(sig, archNode.mask):
+        cacheEntry.nodes.add(archNode)
+    cacheEntry.version = world.archGraph.nodes.len
+
+  for archNode in cacheEntry.nodes:
     
     if not archNode.partition.isNil:
-      let mlen = sig.modified.len
-      let nmlen = sig.notModified.len
-      let maskCount = ((DEFAULT_BLK_SIZE-1) shr 6) + 1
-      var modDef = newSeq[uint](maskCount)
-      var res = newSeq[uint](maskCount)
-      let nmodDef = newSeq[uint](maskCount)
-      
-      for i in 0..<maskCount:
-        modDef[i] = 0'u-1
-        res[i] = 0'u-1
-
       for zone in archNode.partition.zones:
         var masked = false
+
+        # Reset mask to all-1s for each zone
+        for k in 0..<maskCount:
+          res[k] = 0'u - 1
+
         for i in 0..<max(mlen, nmlen):
           masked = true
           if i < mlen: 
-            let incl = world.registry.entries[sig.modified[i]].getChangeMaskOp(world.registry.entries[sig.modified[i]].rawPointer).dLayer
+            let entry = world.registry.entries[sig.modified[i]]
+            let incl = entry.getChangeMaskOp(entry.rawPointer).dLayer
             for j in 0..<maskCount:
               res[j] = res[j] and incl.getL0(zone.block_idx*sizeof(uint)*8 + j)
 
           if i < nmlen: 
-            let excl = world.registry.entries[sig.notModified[i]].getChangeMaskOp(world.registry.entries[sig.notModified[i]].rawPointer).dLayer
+            let entry = world.registry.entries[sig.notModified[i]]
+            let excl = entry.getChangeMaskOp(entry.rawPointer).dLayer
             for j in 0..<maskCount:
               res[j] = res[j] and not excl.getL0(zone.block_idx*sizeof(uint)*8 + j)
 
@@ -282,11 +279,20 @@ proc denseQueryCache*(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
   ## @param sig: The `QuerySignature` defining the filter.
   ## @return: A `DenseQueryResult` containing the matching partitions.
 
-  for archNode in world.archGraph.nodes:
-    let arch = archNode.mask
-    if not matchesArchetype(sig, arch):
-      continue
-    
+  let key: QueryKey = (sig.includeMask, sig.excludeMask)
+  if not world.queryCache.hasKey(key):
+    world.queryCache[key] = QueryCacheEntry(version: 0, nodes: @[])
+  
+  template cacheEntry: untyped = world.queryCache[key]
+  
+  if cacheEntry.version < world.archGraph.nodes.len:
+    for i in cacheEntry.version ..< world.archGraph.nodes.len:
+      let archNode = world.archGraph.nodes[i]
+      if matchesArchetype(sig, archNode.mask):
+        cacheEntry.nodes.add(archNode)
+    cacheEntry.version = world.archGraph.nodes.len
+
+  for archNode in cacheEntry.nodes:
     if not archNode.partition.isNil: 
       result.part.add(archNode.partition)
 
@@ -308,6 +314,23 @@ proc denseQueryCount*(world: ECSWorld, sig: QuerySignature): int =
   
   for bid, r in world.denseQuery(sig):
     result += r.count
+
+template fastExecute*(world: ECSWorld, sig: QuerySignature, bid, startIdx, endIdx, body: untyped) =
+  ## Template for raw, SIMD-friendly SoA iteration.
+  ## Exposes `bid` (block index), `startIdx`, and `endIdx`.
+  ## Use this to iterate directly over native arrays like:
+  ## `let pos = world.get(Position); pos.blocks[bid].data.x[i] = ...`
+  for bid, dIt in world.denseQuery(sig):
+    if not dIt.masked:
+      let startIdx = dIt.r.a
+      let endIdx = dIt.r.b + 1
+      body
+    else:
+      # Slow path for masked queries
+      for i in dIt:
+        let startIdx = i
+        let endIdx = i + 1
+        body
 
 ####################################################################################################################################################
 ################################################################### SPARSE QUERIES #################################################################
@@ -337,7 +360,7 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, SparseIterato
 
     for compId in excludeIds:
       let entry = world.registry.entries[compId]
-      res = res and not entry.getSparseMaskOp(entry.rawPointer)[]
+      res = res.andNot(entry.getSparseMaskOp(entry.rawPointer)[])
 
     for compId in sig.modified:
       let entry = world.registry.entries[compId]
@@ -345,7 +368,7 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, SparseIterato
 
     for compId in sig.notModified:
       let entry = world.registry.entries[compId]
-      res = res and not entry.getChangeMaskOp(entry.rawPointer).sLayer
+      res = res.andNot(entry.getChangeMaskOp(entry.rawPointer).sLayer)
 
     for qf in sig.filters:
       res = res and qf.sLayer
@@ -458,7 +481,9 @@ macro query*(world: untyped, expr: untyped): untyped =
             modifiedComp(getComponentId(`@world`, `@compNode`))
           )
         else:
-          error("Unsupported bracket syntax in query. Only Modified[Type] is supported.")
+          components.add(quote("@") do:
+            includeComp(getComponentId(`@world`, `@node`))
+          )
       
       of nnkIdent, nnkSym:
         # Process a raw type identifier (Implies 'include')
