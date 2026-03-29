@@ -199,14 +199,14 @@ suite "Dense / Sparse equivalence":
     var c = 0
 
     let sig = query(world, Modified[Position])
-    check sparseQueryCount(world, sig) == 2
+    check sparseQueryCount(world, sig) == 1
 
     let d2 = world.makeDense(s)
     for (bid, r) in denseQuery(world, sig):
       for _ in r:
         c += 1
 
-    check c == 3
+    check c == 2
 
 suite "Query DSL":
 

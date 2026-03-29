@@ -56,6 +56,7 @@ type
 const
   UINT_BITS = sizeof(uint)*8
   BIT_DIVIDER = floor(log(UINT_BITS.float, 2.0)).int
+  BIT_REMAINDER = UINT_BITS-1
   ## Bit shift used to extract block indices from packed IDs.
   BLK_SHIFT = sizeof(uint)*4
   ## Mask used to extract local indices from packed IDs.

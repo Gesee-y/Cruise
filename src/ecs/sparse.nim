@@ -60,6 +60,9 @@ template deactivateComponentsSparse(table: var ECSWorld, idxs:openArray, compone
 template allocateSparseEntities(table: var ECSWorld, count:untyped, components:untyped):seq[Range] =
   var res = newSeqOfCap[Range](count shr BIT_DIVIDER)
   var free_cursor = table.free_list.len - 1
+
+  ## To be activated after also collecting new IDs
+  # Removed early return and early activation
   var toActivate = newSeq[uint](free_cursor+1)
   var n = count
   var c = 0
@@ -75,8 +78,8 @@ template allocateSparseEntities(table: var ECSWorld, count:untyped, components:u
 
   activateComponentsSparse(table, toActivate, components)
 
-  ## To be activated after also collecting new IDs
-  # Removed early return and early activation
+  ## Update table state
+  table.free_list.setLen(free_cursor + 1)
 
   ## Allocate new sparse blocks if free slots are exhausted
   var masks: seq[uint]
@@ -104,9 +107,6 @@ template allocateSparseEntities(table: var ECSWorld, count:untyped, components:u
           table.free_list[curLen + i] = (start + i).uint
 
     masks.add(mask)
-
-  ## Update table state
-  table.free_list.setLen(free_cursor + 1)
 
   ## Notify each component to materialize new sparse blocks
   for id in components:

@@ -132,15 +132,15 @@ template unset*(h: var HiBitSet, idx: int) =
   ## Updates layer1 if the entire block becomes empty.
   ## 
   ## Time complexity: O(1)
-  if idx >= h.len: return
-  let l0Idx = idx shr L0_SHIFT
-  let bitPos = idx and L0_MASK
-  h.layer0[l0Idx] = h.layer0[l0Idx] and not (BitBlock(1) shl bitPos)
-  
-  if h.layer0[l0Idx] == 0:
-    let l1Idx = l0Idx shr L0_SHIFT
-    let l1Bit = l0Idx and L0_MASK
-    h.layer1[l1Idx] = h.layer1[l1Idx] and not (BitBlock(1) shl l1Bit)
+  if idx < h.len:
+    let l0Idx = idx shr L0_SHIFT
+    let bitPos = idx and L0_MASK
+    h.layer0[l0Idx] = h.layer0[l0Idx] and not (BitBlock(1) shl bitPos)
+    
+    if h.layer0[l0Idx] == 0:
+      let l1Idx = l0Idx shr L0_SHIFT
+      let l1Bit = l0Idx and L0_MASK
+      h.layer1[l1Idx] = h.layer1[l1Idx] and not (BitBlock(1) shl l1Bit)
 
 proc get*(h: HiBitSet, idx: int): bool {.inline.} =
   ## Returns true if the bit at index is set, false otherwise.
