@@ -108,7 +108,7 @@ proc withoutComponent*(mask: ArchetypeMask, comp: ComponentId): ArchetypeMask =
   let bit = comp and 63
   result[layer] = result[layer] and not (1'u shl bit)
 
-proc hasComponent*(mask: ArchetypeMask, comp: ComponentId): bool =
+proc hasComponent*(mask: ArchetypeMask, comp: ComponentId | int): bool =
   let layer = comp shr 6
   let bit = comp and 63
   return (mask[layer] and (1'u shl bit)) != 0

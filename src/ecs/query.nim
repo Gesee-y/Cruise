@@ -478,7 +478,9 @@ macro query*(world: untyped, expr: untyped): untyped =
             modifiedComp(getComponentId(`@world`, `@compNode`))
           )
         else:
-          error("Unsupported bracket syntax in query. Only Modified[Type] is supported.")
+          components.add(quote("@") do:
+            includeComp(getComponentId(`@world`, `@node`))
+          )
       
       of nnkIdent, nnkSym:
         # Process a raw type identifier (Implies 'include')
