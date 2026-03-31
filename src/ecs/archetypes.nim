@@ -7,9 +7,9 @@ type
     id: uint16
     mask: ArchetypeMask
     partition: TablePartition
-    edges: seq[tuple[comp: int, node: ArchetypeNode]]
-    removeEdges: seq[tuple[comp: int, node: ArchetypeNode]]
-    edgeMask: array[4, uint64]
+    edges: array[MAX_COMPONENTS, ArchetypeNode]
+    removeEdges: array[MAX_COMPONENTS, ArchetypeNode]
+    edgeMask: ArchetypeMask
     componentIds: seq[int]
     lastEdge:int
     lastRemEdge:int
@@ -22,46 +22,30 @@ type
     lastMask: ArchetypeMask
     lastNode: ArchetypeNode
 
-{.push inline.}
 
-proc hasEdge(node: ArchetypeNode, comp: int): bool =
+template hasEdge(node: ArchetypeNode, comp: int): bool =
   let idx = comp shr 6
   let bit = comp and 63
-  return (node.edgeMask[idx] and (1'u64 shl bit)) != 0
+  (node.edgeMask[idx] and (1'u64 shl bit)) != 0
 
-proc setEdge(node: ArchetypeNode, comp: int) =
+template setEdge(node: ArchetypeNode, comp: int) =
   let idx = comp shr 6
   let bit = comp and 63
   node.edgeMask[idx] = node.edgeMask[idx] or (1'u64 shl bit)
 
-proc getEdge(node: ArchetypeNode, comp: int): ArchetypeNode =
-  for e in node.edges:
-    if e.comp == comp: return e.node
-  return nil
+template getEdge(node: ArchetypeNode, comp: int): ArchetypeNode =
+  node.edges[comp]
 
-proc setEdgePtr(node: ArchetypeNode, comp: int, target: ArchetypeNode) =
-  for i in 0..<node.edges.len:
-    if node.edges[i].comp == comp:
-      node.edges[i].node = target
-      node.setEdge(comp)
-      return
-  node.edges.add((comp, target))
+template setEdgePtr(node: ArchetypeNode, comp: int, target: ArchetypeNode) =
+  node.edges[comp] = target
   node.setEdge(comp)
 
-proc getRemoveEdge(node: ArchetypeNode, comp: int): ArchetypeNode =
-  for e in node.removeEdges:
-    if e.comp == comp: return e.node
-  return nil
+template getRemoveEdge(node: ArchetypeNode, comp: int): ArchetypeNode =
+  node.removeEdges[comp]
 
-proc setRemoveEdgePtr(node: ArchetypeNode, comp: int, target: ArchetypeNode) =
-  for i in 0..<node.removeEdges.len:
-    if node.removeEdges[i].comp == comp:
-      node.removeEdges[i].node = target
-      return
-  node.removeEdges.add((comp, target))
-
-{.pop.}
-
+template setRemoveEdgePtr(node: ArchetypeNode, comp: int, target: ArchetypeNode) =
+  node.removeEdges[comp] = target
+  
 proc initArchetypeGraph*(): ArchetypeGraph =
   var emptyMask: ArchetypeMask
   new(result)
@@ -78,9 +62,7 @@ proc initArchetypeGraph*(): ArchetypeGraph =
   result.nodes = @[result.root]
   result.maskToId[emptyMask] = 0
 
-proc createNode(graph: var ArchetypeGraph, mask: ArchetypeMask): ArchetypeNode {.inline.} =
-  let id = graph.nodes.len.uint16
-  
+proc createNode(graph: var ArchetypeGraph, mask: ArchetypeMask, id:uint16=graph.nodes.len.uint16): ArchetypeNode {.inline.} =
   result = ArchetypeNode(
     id: id,
     mask: mask,
@@ -90,7 +72,10 @@ proc createNode(graph: var ArchetypeGraph, mask: ArchetypeMask): ArchetypeNode {
     lastRemEdge: -1,
   )
   
-  graph.nodes.add(result)
+  if id.int >= graph.nodes.len:
+    graph.nodes.setLen(id+1)
+
+  graph.nodes[id] = result
   graph.maskToId[mask] = id
 
 proc addComponent*(graph: var ArchetypeGraph, 
@@ -146,6 +131,18 @@ proc removeComponent*(graph: var ArchetypeGraph,
     res = graph.removeComponent(res, id)
 
   return res
+
+proc findArchetype*(graph: var ArchetypeGraph, 
+                    components: static openArray[int]): ArchetypeNode =
+  let id = toArchetypeID(components)
+  if id >= graph.nodes.len or graph.nodes[id].isNil:
+    var newMask: ArchetypeMask
+    for c in components:
+      newMask.withComponentInPlace(c)
+
+    discard graph.createNode(newMask, id.uint16)
+  
+  graph.nodes[id]
 
 proc findArchetype*(graph: var ArchetypeGraph, 
                     components: openArray[int]): ArchetypeNode =

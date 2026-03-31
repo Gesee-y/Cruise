@@ -405,7 +405,6 @@ proc compile*(rg: var RenderGraph) =
       if not res.transient: continue             ## non-transient = swap-chain etc.
 
       let needed = byteSize(res.desc)
-      echo needed
 
       # Best-fit search: find the smallest slot that is (a) free and (b) big enough
       var bestIdx = -1

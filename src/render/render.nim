@@ -28,9 +28,9 @@ type
   CRenderer*[R] = object
     ## Generic renderer handle.
     ## `R` is the backend-specific data type (e.g. SDLData, GLData).
-    data*:          R                ## Backend-owned state (GPU context, etc.)
-    commandBuffer: CommandBuffer    ## Frame command queue.
-    registry:      ResourceRegistry ## All registered resource stores.
+    data*:           R                ## Backend-owned state (GPU context, etc.)
+    commandBuffer*: CommandBuffer    ## Frame command queue.
+    registry*:       ResourceRegistry ## All registered resource stores.
 
 # ---------------------------------------------------------------------------
 # Constructors
@@ -68,7 +68,8 @@ proc `.registry`*[R](ren: var CRenderer[R]): var ResourceRegistry {.inline.} =
 proc registerType*[R, T](ren: var CRenderer[R]): TypeId =
   ## Register resource type `T` with this renderer's registry.
   ## Returns the stable `TypeId` to be stored by the backend.
-  ren.registry.registerType[T]()
+  ## `typedesc` overload avoids some generic-instantiation edge cases (Nim 2.2+).
+  registerType(ren.registry, T)
 
 proc createResource*[R, T](ren: var CRenderer[R],
                             typeId: TypeId,

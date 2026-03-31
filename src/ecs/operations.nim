@@ -14,112 +14,86 @@ type
 ############################################################ DENSE OPERATIONS ######################################################################
 ###################################################################################################################################################
 
-## Creates a single new entity in the dense ECS storage.
-##
-## Dense storage is optimized for cache coherence and iteration speed. Entities are stored
-## in blocks/chunks defined by their Archetype (set of components).
-##
-## @param world: The mutable `ECSWorld` instance.
-## @param arch: The `ArchetypeNode` which is the initial archetype of the entity.
-## @return: A `DenseHandle` used to safely refer to the entity. Includes a pointer to the
-##          entity data and a generation ID for stale reference checks.
-proc createEntity*(world:var ECSWorld, arch:var ArchetypeNode, enable_event=EVENT_ACTIVE):DenseHandle =
-  # Acquire a stable internal ID (widx) for the entity record.
-  let pid = getStableEntity(world)
+macro createEntity*(world: ECSWorld, comps:varargs[typed]):DenseHandle =
+  let enable_event=EVENT_ACTIVE
+  var compIds = newNimNode(nnkBracket)
+  for c in comps:
+    compIds.add quote("@") do: 
+      toComponentId(`@c`)
+  if compIds.len == 0:
+    compIds = quote("@") do: array[0, int](`@compIds`)
+  return quote("@") do:
+    # Acquire a stable internal ID (widx) for the entity record.
+    let pid = getStableEntity(`@world`)
+    let arch = `@world`.archGraph.findArchetype(`@compIds`)
+    
+    # Allocate actual space for the entity data within the specific archetype.
+    # Returns block ID (bid), internal block index (id), and the archetype instance ID (archId).
+    let (bid, id, archId) = allocateEntity(`@world`, arch, `@comps`)
+
+    # Calculate the flat index into the handles array based on block arithmetic.
+    # Combines the block ID and the local ID within the block.
+    let idx = id.uint mod DEFAULT_BLK_SIZE + bid*DEFAULT_BLK_SIZE
+    
+    # Retrieve the memory address of the entity record.
+    var e = addr `@world`.entities[pid]
+
+    # Map the handle pointer at this index to the entity record.
+    # This allows O(1) access from an ID to the entity metadata.
+    `@world`.handles[idx] = e
+    
+    # Initialize entity metadata.
+    e.id = (bid shl BLK_SHIFT) or id.uint 
+    e.archetypeId = archId                
+    e.widx = pid
+
+    var d = DenseHandle()
+    d.obj = e 
+    d.gen = `@world`.generations[pid]
+    if `@enable_event`: `@world`.events.emitDenseEntityCreated(d)
+
+    d
+
+macro createEntities*(world:ECSWorld, n:untyped, comps:varargs[typed]):seq[DenseHandle] =
+  var compIds = newNimNode(nnkBracket)
+  for c in comps:
+    compIds.add quote("@") do: 
+      toComponentId(`@c`)
   
-  # Allocate actual space for the entity data within the specific archetype.
-  # Returns block ID (bid), internal block index (id), and the archetype instance ID (archId).
-  let (bid, id, archId) = allocateEntity(world, arch)
+  return quote("@") do:
+    var rest = newSeq[DenseHandle](`@n`)
+    var archNode = `@world`.archGraph.findArchetype(`@compIds`)
+    
+    # Acquire 'n' stable internal IDs.
+    let pids = getStableEntities(`@world`, `@n`)
+    let archId = archNode.id
+    
+    # Allocate the block space for 'n' entities. 
+    # 'res' contains ranges of allocated slots across potentially multiple blocks.
+    let res = allocateEntities(`@world`, `@n`, archNode, `@comps`)
+    var current = 0
 
-  # Calculate the flat index into the handles array based on block arithmetic.
-  # Combines the block ID and the local ID within the block.
-  let idx = id.uint mod DEFAULT_BLK_SIZE + bid*DEFAULT_BLK_SIZE
-  
-  # Retrieve the memory address of the entity record.
-  var e = addr world.entities[pid]
+    # Iterate through the allocation results (Block ID, Range of IDs)
+    for (bid, r) in res:
+      let b = (bid shl BLK_SHIFT)
 
-  # Map the handle pointer at this index to the entity record.
-  # This allows O(1) access from an ID to the entity metadata.
-  world.handles[idx] = e
-  
-  # Initialize entity metadata.
-  e.id = (bid shl BLK_SHIFT) or id.uint 
-  e.archetypeId = archId                
-  e.widx = pid
+      for id in r.s..<r.e:
+        # Setup variables for the current entity being processed.
+        let pid = pids[current]
+        let idx = id.uint mod DEFAULT_BLK_SIZE + bid*DEFAULT_BLK_SIZE
+        var e = addr `@world`.entities[pid]
 
-  result.obj = e 
-  result.gen = world.generations[pid]
-  if enable_event: world.events.emitDenseEntityCreated(result)
+        # Map handles and initialize metadata similar to single entity creation.
+        `@world`.handles[idx] = e
+        e.id = b or id.uint
+        e.archetypeId = archId
+        e.widx = pid
 
-proc createEntity*(world:var ECSWorld, arch:ArchetypeMask):DenseHandle =
-  var archNode = world.archGraph.findArchetypeFast(arch)
-  check(not archNode.isNil, "ArchetypeNode not found")
-
-  return world.createEntity(archNode)
-
-## Overload of `createEntity` that accepts a list of Component IDs.
-##
-## @param world: The mutable `ECSWorld` instance.
-## @param cids: A variadic list of Component IDs defining the entity's archetype.
-## @return: A `DenseHandle` to the newly created entity.
-proc createEntity*(world:var ECSWorld, cids:varargs[int]):DenseHandle =
-  return world.createEntity(maskOf(cids))
-
-## Creates multiple entities in a batch within the dense ECS storage.
-##
-## This is significantly more efficient than calling `createEntity` in a loop as it
-## allocates contiguous memory blocks and reduces metadata overhead.
-##
-## @param world: The mutable `ECSWorld` instance.
-## @param n: The number of entities to create.
-## @param arch: The `ArchetypeMask` for the new entities.
-## @return: A sequence of `DenseHandle` objects, one for each created entity.
-proc createEntities*(world:var ECSWorld, n:int, archNode:var ArchetypeNode):seq[DenseHandle] =
-  result = newSeq[DenseHandle](n)
-  
-  # Acquire 'n' stable internal IDs.
-  let pids = getStableEntities(world, n)
-  let archId = archNode.id
-  
-  # Allocate the block space for 'n' entities. 
-  # 'res' contains ranges of allocated slots across potentially multiple blocks.
-  let res = allocateEntities(world, n, archNode)
-  var current = 0
-
-  # Iterate through the allocation results (Block ID, Range of IDs)
-  for (bid, r) in res:
-    let b = (bid shl BLK_SHIFT)
-
-    for id in r.s..<r.e:
-      # Setup variables for the current entity being processed.
-      let pid = pids[current]
-      let idx = id.uint mod DEFAULT_BLK_SIZE + bid*DEFAULT_BLK_SIZE
-      var e = addr world.entities[pid]
-
-      # Map handles and initialize metadata similar to single entity creation.
-      world.handles[idx] = e
-      e.id = b or id.uint
-      e.archetypeId = archId
-      e.widx = pid
-
-      # Create the handle with the specific generation for this PID.
-      result[current] = (DenseHandle(obj:e, gen:world.generations[pid]))
-      current += 1
-  
-  return result
-
-proc createEntities*(world:var ECSWorld, n:int, arch:ArchetypeMask):seq[DenseHandle] =
-  var archNode = world.archGraph.findArchetypeFast(arch)
-  return world.createEntities(n, archNode)
-
-## Overload of `createEntities` that accepts a list of Component IDs.
-##
-## @param world: The mutable `ECSWorld` instance.
-## @param n: The number of entities to create.
-## @param cids: A variadic list of Component IDs.
-## @return: A sequence of `DenseHandle` objects.
-proc createEntities*(world:var ECSWorld, n:int, cids:varargs[int]):seq[DenseHandle] =
-  return world.createEntities(n, maskOf(cids))
+        # Create the handle with the specific generation for this PID.
+        rest[current] = (DenseHandle(obj:e, gen:`@world`.generations[pid]))
+        current += 1
+    
+    rest
 
 ## Immediately deletes an entity from the dense storage.
 ##
@@ -288,51 +262,223 @@ proc removeComponent*(world:var EcsWorld, d:DenseHandle, components:varargs[int]
 ########################################################## SPARSE OPERATIONS ######################################################################
 ###################################################################################################################################################
 
-## Creates a new entity in the sparse ECS storage.
+## createSparseEntity — typed, zero vtable.
 ##
-## Sparse storage uses a HiBitSet approach.
-## It is more flexible for dynamic changes and just a but slower to iterate than Dense storage.
+## Replaces:
+##   proc createSparseEntity*(w, components:varargs[int])
+## which calls allocateSparseEntity → vtable chain.
+macro createSparseEntity*(world: ECSWorld, comps: varargs[typed]): SparseHandle =
+  var compIds = newNimNode(nnkBracket)
+  for c in comps:
+    compIds.add quote("@") do: toComponentId(`@c`)
+  if compIds.len == 0:
+    compIds = quote("@") do: array[0, int](`@compIds`)
+
+  return quote("@") do:
+    block:
+      let archNode = `@world`.archGraph.findArchetype(`@compIds`)
+      let id       = allocateSparseEntity(`@world`, `@comps`)
+
+      var s = SparseHandle()
+      s.id     = id
+      s.archID = archNode.id
+      `@world`.events.emitSparseEntityCreated(s)
+      s
+
+
+## createSparseEntities — typed batch, zero vtable.
+macro createSparseEntities*(
+  world: ECSWorld,
+  n:     typed,
+  comps: varargs[typed]
+): seq[SparseHandle] =
+
+  var compIds = newNimNode(nnkBracket)
+  for c in comps:
+    compIds.add quote("@") do: toComponentId(`@c`)
+  if compIds.len == 0:
+    compIds = quote("@") do: array[0, int](`@compIds`)
+
+  return quote("@") do:
+    block:
+      let archNode = `@world`.archGraph.findArchetype(`@compIds`)
+      let archID   = archNode.id
+      let ranges   = allocateSparseEntities(`@world`, `@n`, `@comps`)
+
+      var result = newSeqOfCap[SparseHandle](`@n`)
+      for r in ranges:
+        for i in r.s..<r.e:
+          result.add(SparseHandle(id: i.uint, archID: archID))
+
+      result
+
+## addComponent (sparse, single) — typed, zero vtable.
 ##
-## @param w: The mutable `ECSWorld` instance.
-## @param components: A variadic list of Component IDs the entity starts with.
-## @return: A `SparseHandle` containing the entity ID, generation, and component mask.
-proc createSparseEntity*(w:var ECSWorld, archNode:ArchetypeNode):SparseHandle =
-  # Allocate space in the sparse set.
-  let id = w.allocateSparseEntity(archNode.componentIds)
-  result.id = id
-  #result.gen = w.sparse_gens[id]
-  result.archID = archNode.id
-  # Return the handle containing the bitmask of components.
-  w.events.emitSparseEntityCreated(result)
+## Only activates the NEW components — the entity already has the others.
+macro addComponent*(
+  world:      ECSWorld,
+  s:          var SparseHandle,
+  addedComps: varargs[typed]
+): untyped =
 
-proc createSparseEntity*(w:var ECSWorld, components:varargs[int]):SparseHandle =
-  # Allocate space in the sparse set.
-  let archNode = w.archGraph.findArchetype(components)
-  return w.createSparseEntity(archNode)
+  var addedIds = newNimNode(nnkBracket)
+  for c in addedComps:
+    addedIds.add quote("@") do: toComponentId(`@c`)
+  if addedIds.len == 0:
+    addedIds = quote("@") do: array[0, int](`@addedIds`)
 
-## Creates multiple entities in the sparse ECS storage.
+  ## Direct typed activation — one castTo per added component.
+  var activateCode = newNimNode(nnkStmtList)
+  for c in addedComps:
+    activateCode.add quote("@") do:
+      block:
+        let rawp = `@world`.registry.entries[toComponentId(`@c`)].rawPointer
+        var fr = castTo(rawp, `@c`, DEFAULT_BLK_SIZE)
+        fr.activateSparseBit(`@s`.id)
+
+  return quote("@") do:
+    block addComp:
+      ## Walk the archetype graph with compile-time ids — result is runtime node.
+      var archNode = `@world`.archGraph.nodes[`@s`.archID]
+      for cid in `@addedIds`:
+        archNode = `@world`.archGraph.addComponent(archNode, cid)
+
+      if archNode.id == `@s`.archID: break addComp
+
+      `@s`.archID = archNode.id
+
+      ## Activate only the added components — typed, no vtable.
+      `@activateCode`
+
+
+## addComponent batch (sparse) — typed, zero vtable.
 ##
-## @param w: The mutable `ECSWorld` instance.
-## @param n: The number of entities to create.
-## @param components: A variadic list of Component IDs.
-## @return: A sequence of `SparseHandle` objects.
-proc createSparseEntities*(w:var ECSWorld, n:int, archNode:ArchetypeNode):seq[SparseHandle] =
-  var res = newSeqOfCap[SparseHandle](n)
-  # Batch allocate sparse IDs.
-  let ids = w.allocateSparseEntities(n, archNode.componentIds)
-  let archID = archNode.id
+## Collects all entity ids once, then does one typed batch activation
+## per added component type — Component-Outside Entity-Inside pattern.
+macro addComponent*(
+  world:      ECSWorld,
+  entities:   var openArray[SparseHandle],
+  addedComps: varargs[typed]
+): untyped =
 
-  # Iterate through the allocated ID ranges.
-  for r in ids:
-    for i in r.s..<r.e:
-      res.add(SparseHandle(id:i.uint, gen:w.sparse_gens[i], archID:archID))
+  var addedIds = newNimNode(nnkBracket)
+  for c in addedComps:
+    addedIds.add quote("@") do: toComponentId(`@c`)
+  if addedIds.len == 0:
+    addedIds = quote("@") do: array[0, int](`@addedIds`)
 
-  return res
+  ## One typed batch activateSparseBit per component.
+  var activateBatchCode = newNimNode(nnkStmtList)
+  for c in addedComps[0]:
+    activateBatchCode.add quote("@") do:
+      block:
+        let rawp = `@world`.registry.entries[toComponentId(`@c`)].rawPointer
+        var fr = castTo(rawp, `@c`, DEFAULT_BLK_SIZE)
+        fr.activateSparseBit(batchIds)
 
-proc createSparseEntities*(w:var ECSWorld, n:int, components:varargs[int]):seq[SparseHandle] =
-  let archNode = w.archGraph.findArchetype(components)
-  return w.createSparseEntities(n, archNode)
+  return quote("@") do:
+    block addComp:
+      if `@entities`.len == 0: break addComp
 
+      ## Collect ids once — shared across all per-component passes.
+      var batchIds = newSeqOfCap[uint](`@entities`.len)
+      for i in 0..<`@entities`.len:
+        batchIds.add(`@entities`[i].id)
+
+      ## Update archetype node per entity (runtime graph walk).
+      var lastArchID = -1
+      var lastArch:ArchetypeNode = nil
+      for i in 0..<`@entities`.len:
+        let archId = `@entities`[i].archID
+        if lastArchID != archID.int: 
+          lastArchId = archID.int
+          lastArch = `@world`.archGraph.nodes[`@entities`[i].archID]
+          for cid in `@addedIds`:
+            lastArch = `@world`.archGraph.addComponent(lastArch, cid)
+
+        `@entities`[i].archID = lastArch.id
+
+      ## Typed batch activation — one castTo + one pass per component.
+      `@activateBatchCode`
+
+
+## removeComponent (sparse, single) — typed, zero vtable.
+macro removeComponent*(
+  world:        ECSWorld,
+  s:            var SparseHandle,
+  removedComps: varargs[typed]
+): untyped =
+
+  var removedIds = newNimNode(nnkBracket)
+  for c in removedComps:
+    removedIds.add quote("@") do: toComponentId(`@c`)
+  if removedIds.len == 0:
+    removedIds = quote("@") do: array[0, int](`@removedIds`)
+
+  var deactivateCode = newNimNode(nnkStmtList)
+  for c in removedComps:
+    deactivateCode.add quote("@") do:
+      block:
+        let rawp = `@world`.registry.entries[toComponentId(`@c`)].rawPointer
+        var fr = castTo(rawp, `@c`, DEFAULT_BLK_SIZE)
+        fr.deactivateSparseBit(`@s`.id)
+
+  return quote("@") do:
+    block remComp:
+      var archNode = `@world`.archGraph.nodes[`@s`.archID]
+      for cid in `@removedIds`:
+        archNode = `@world`.archGraph.removeComponent(archNode, cid)
+
+      if archNode.id == `@s`.archID: break remComp
+
+      `@s`.archID = archNode.id
+      `@deactivateCode`
+
+
+## removeComponent batch (sparse) — typed, zero vtable.
+macro removeComponent*(
+  world:        ECSWorld,
+  entities:     var openArray[SparseHandle],
+  removedComps: varargs[typed]
+): untyped =
+
+  var removedIds = newNimNode(nnkBracket)
+  for c in removedComps:
+    removedIds.add quote("@") do: toComponentId(`@c`)
+  if removedIds.len == 0:
+    removedIds = quote("@") do: array[0, int](`@removedIds`)
+
+  var deactivateBatchCode = newNimNode(nnkStmtList)
+  for c in removedComps:
+    deactivateBatchCode.add quote("@") do:
+      block:
+        let rawp = `@world`.registry.entries[toComponentId(`@c`)].rawPointer
+        var fr = castTo(rawp, `@c`, DEFAULT_BLK_SIZE)
+        fr.deactivateSparseBit(batchIds)
+
+  return quote("@") do:
+    block remComp:
+      if `@entities`.len == 0: break remComp
+
+      var batchIds = newSeqOfCap[uint](`@entities`.len)
+      for i in 0..<`@entities`.len:
+        batchIds.add(`@entities`[i].id)
+
+      for i in 0..<`@entities`.len:
+        var lastArchID = -1
+      var lastArch:ArchetypeNode = nil
+      for i in 0..<`@entities`.len:
+        let archId = `@entities`[i].archID
+        if lastArchID != archID.int: 
+          lastArchId = archID.int
+          lastArch = `@world`.archGraph.nodes[`@entities`[i].archID]
+
+        for cid in `@removedIds`:
+          lastArch = `@world`.archGraph.removeComponent(lastArch, cid)
+
+        `@entities`[i].archID = lastArch.id
+
+      `@deactivateBatchCode`
 ## Deletes an entity from the sparse storage.
 ##
 ## @param w: The mutable `ECSWorld` instance.
@@ -354,75 +500,6 @@ proc migrateEntity(w:var ECSWorld, s:var SparseHandle, newArch:var ArchetypeNode
   s.archID = oldNode.id
   w.activateComponentsSparse(s.id, toActivate)  
 
-## Adds components to a sparse entity.
-##
-## In sparse sets, this usually involves updating the entity's bitmask
-## and activating memory slots for the new components.
-##
-## @param w: The mutable `ECSWorld` instance.
-## @param s: The `SparseHandle` of the entity.
-## @param components: Variadic list of Component IDs to add.
-proc addComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
-  var current = w.archGraph.nodes[s.archID]
-  current = w.archGraph.addComponent(current, components)
-
-  if current.id == s.archID: return
-
-  s.archID = current.id 
-  w.activateComponentsSparse(s.id, components)
-  #w.events.emitSparseComponentAdded(s, components.toSeq)
-
-## Adds components to multiple sparse entities at once.
-## Optimized to use batch bitset updates and single registry per-component traversal.
-proc addComponentBatch*(w:var ECSWorld, entities:var openArray[SparseHandle], components:varargs[int]) =
-  if entities.len == 0: return
-
-  # Calculate target archetype once (assuming all entities moving to same)
-  # Actually, we should check their current archetypes. 
-  # But for simplicity and common use case (batch adding same comps), 
-  # we calculate the transition per-archetype if they differ.
-  
-  var ids = newSeqOfCap[uint](entities.len)
-  for i in 0..<entities.len:
-    var current = w.archGraph.nodes[entities[i].archID]
-    current = w.archGraph.addComponent(current, components)
-    entities[i].archID = current.id
-    ids.add(entities[i].id)
-
-  w.activateComponentsSparse(ids, components)
-  #w.events.emitSparseComponentAddedBatch(entities, components)
-
-## Removes components from a sparse entity.
-##
-## Updates the bitmask and deactivates memory slots (logic varies by implementation).
-##
-## @param w: The mutable `ECSWorld` instance.
-## @param s: The `SparseHandle` of the entity.
-## @param components: Variadic list of Component IDs to remove.
-proc removeComponent*(w:var ECSWorld, s:var SparseHandle, components:varargs[int]) =
-  var current = w.archGraph.nodes[s.archID]
-  current = w.archGraph.removeComponent(current, components)
-
-  if current.id == s.archID: return
-
-  s.archID = current.id
-  w.deactivateComponentsSparse(s.id, components)
-  #w.events.emitSparseComponentRemoved(s, components.toSeq)
-
-## Removes components from multiple sparse entities at once.
-proc removeComponentBatch*(w:var ECSWorld, entities:var openArray[SparseHandle], components:varargs[int]) =
-  if entities.len == 0: return
-
-  var ids = newSeqOfCap[uint](entities.len)
-  for i in 0..<entities.len:
-    var current = w.archGraph.nodes[entities[i].archID]
-    current = w.archGraph.removeComponent(current, components)
-    entities[i].archID = current.id
-    ids.add(entities[i].id)
-
-  w.deactivateComponentsSparse(ids, components)
-  #w.events.emitSparseComponentRemovedBatch(entities, components)
-
 ###################################################################################################################################################
 #################################################### SPARSE/DENSE OPERATIONS ######################################################################
 ###################################################################################################################################################
@@ -434,7 +511,8 @@ proc removeComponentBatch*(w:var ECSWorld, entities:var openArray[SparseHandle],
 ## @return: A new `DenseHandle` representing the entity in dense storage.
 proc makeDense*(world:var ECSWorld, s:var SparseHandle):DenseHandle =
   var archNode = world.archGraph.nodes[s.archID]
-  var d = world.createEntity(archNode)
+  var d = world.createEntity()
+  world.migrateEntity(d, archNode)
   
   # Iterate through the component mask to find active components.
   for id in archNode.componentIds:
@@ -456,7 +534,8 @@ proc makeDense*(world:var ECSWorld, s:var SparseHandle):DenseHandle =
 ## @return: A new `SparseHandle` representing the entity in sparse storage.
 proc makeSparse*(world:var ECSWorld, d:DenseHandle):SparseHandle =
   var comps = world.archGraph.nodes[d.obj.archetypeId].componentIds
-  var s = world.createSparseEntity(comps)
+  var s = world.createSparseEntity()
+  world.migrateEntity(s, world.archGraph.nodes[d.obj.archetypeId])
 
   # Iterate through the component mask.
   for id in comps:

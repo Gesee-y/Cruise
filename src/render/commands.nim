@@ -101,7 +101,7 @@ type DrawTexture2DCmd* = object
   ## Blit a texture onto a target surface.
   ## The source texture is encoded in the command's `caller` field (compressed
   ## handle) so the backend can recover it without an extra field here.
-  rect*:   tuple[x1,x2,x3,x4:float32]   ## Destination rectangle on the target surface.
+  rect*:   tuple[x1,x2,x3,x4:float32]   ## Axis-aligned box: minX, maxX, minY, maxY (same as DrawRect2D).
   center*: tuple[x,y:float32]    ## Rotation pivot in local space.
   angle*:  float32  ## Rotation in radians.
   flipH*:  bool
@@ -276,7 +276,8 @@ proc DrawTexture2D*[R; B: Box2Df; V: Vec2f](
     priority,
     compress(texture),   ## caller encodes the source texture
     DrawTexture2DCmd(
-      rect:   Box2Df(rect),
+      ## Same layout as DrawRect2DCmd: minX, maxX, minY, maxY stored as x1,x2,x3,x4.
+      rect:   (x1: rect.x1, x2: rect.x2, x3: rect.y1, x4: rect.y2),
       center: Vec2f(center),
       angle:  angle,
       flipH:  flipH,

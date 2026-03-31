@@ -9,6 +9,55 @@
 ## through a table of function pointers so higher-level systems (ECS, archetypes,
 ## schedulers) can manipulate components without knowing their concrete type.
 
+var NEXT_COMPONENT_ID {.compileTime.} = 0
+var NEXT_ARCHETYPE_ID {.compileTime.} = 0
+var COMPONENT_ID_REGISTRY {.compileTime.} = initTable[int, int]()
+var ARCHETYPE_ID_REGISTRY {.compileTime.} = initTable[ArchetypeMask, int]()
+var ARCHETYPE_ID_TO_MASK {.compileTime.} = initTable[int, ArchetypeMask]()
+
+static:
+  var r:ArchetypeMask
+  ARCHETYPE_ID_REGISTRY[r] = NEXT_ARCHETYPE_ID
+  ARCHETYPE_ID_TO_MASK[NEXT_ARCHETYPE_ID] = r
+  inc NEXT_ARCHETYPE_ID
+
+macro toComponentId(T:typedesc): int =
+  let str = T.getTypeInst.repr
+  let hash = T.getTypeInst.repr.hash.int
+  let maxComp = MAX_COMPONENT_LAYER*UINT_BITS
+
+  if hash notin COMPONENT_ID_REGISTRY:
+    if NEXT_COMPONENT_ID < maxComp:
+      COMPONENT_ID_REGISTRY[hash] = NEXT_COMPONENT_ID
+      inc NEXT_COMPONENT_ID
+    else:
+      error "Failed to add " & str & ". Can't have more than " & $maxComp & " component."
+
+  let id = COMPONENT_ID_REGISTRY[hash]
+  return quote do: `id`
+
+macro toArchetypeID(comps: static openArray[int]): int =
+  var m:ArchetypeMask
+  for c in comps:
+    m.withComponentInPlace(c)
+
+  if m notin ARCHETYPE_ID_REGISTRY:
+    ARCHETYPE_ID_REGISTRY[m] = NEXT_ARCHETYPE_ID
+    ARCHETYPE_ID_TO_MASK[NEXT_ARCHETYPE_ID] = m
+    inc NEXT_ARCHETYPE_ID
+
+  let id = ARCHETYPE_ID_REGISTRY[m]
+  return quote do: `id`
+
+macro typesToArchetypeID(comps:varargs[typed]): int =
+  var compIds = newNimNode(nnkBracket)
+  for c in comps:
+    echo c
+    compIds.add quote("@") do: 
+      toComponentId(`@c`)
+
+  return quote do: toArchetypeID(`compIds`)
+
 type
   ComponentEntry = ref object
     ## Raw pointer to the underlying SoAFragmentArray.
@@ -221,9 +270,11 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
       GC_unref(fr)
 
     # Register entry and return its component ID
-    let id = `registry`.entries.len
+    let id = toComponentId(`B`)
     `registry`.cmap[`str`] = id
-    `registry`.entries.add(entry)
+    if id >= `registry`.entries.len: 
+      `registry`.entries.setLen(id+1)
+    `registry`.entries[id] = entry
 
     id
 
