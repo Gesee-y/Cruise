@@ -74,7 +74,22 @@ proc toSoATuple(T: NimNode, N: int): NimNode =
 
     brack.add(ident"array")
     brack.add(intl)
-    brack.add(ident(v.strVal))
+
+    if v.kind == nnkBracketExpr:
+      if v[0].strVal == "array":
+        v[0] = ident v[0].strVal
+        
+        if v[1].kind == nnkBracketExpr:
+          var temp = newNimNode(nnkInfix)
+          temp.add(ident "..")
+          temp.add(v[1][1])
+          temp.add(v[1][2])
+          v[1] = temp
+        
+        v[2] = ident v[2].strVal
+        brack.add(v)
+    else:
+      brack.add(ident(v.strVal))
 
     intl.intVal = N
 

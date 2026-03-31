@@ -155,126 +155,129 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
   let str = B.getType()[1].strVal
 
   return quote do:
-    # Allocate SoA storage for the component
-    var frag = newSoAFragArr(`B`, DEFAULT_BLK_SIZE, `P`)
-
-    # Prevent GC from collecting the fragment array
-    GC_ref(frag)
-    let pt = cast[pointer](frag)
-
-    # --- Dense operations ---
-
-    let res = proc (p:pointer, n:int) {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      fr.resize(n)
-
-    let newBlkAt = proc (p:pointer, i:int) {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      fr.newBlockAt(i)
-
-    # --- Sparse operations ---
-
-    let newSparseBlk = proc (p:pointer, offset:int, m:uint) {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      fr.newSparseBlock(offset, m)
-
-    let newSparseBlks = proc (p:pointer, offset:int, m:seq[uint]) {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      fr.newSparseBlocks(offset, m)
-
-    let actBitB = proc (p:pointer, idxs:seq[uint]) {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      fr.activateSparseBit(idxs)
-
-    let deactBitB = proc (p:pointer, idxs:seq[uint]) {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      fr.deactivateSparseBit(idxs)
-
-    # --- Override operations ---
-
-    let overv = proc (p:pointer, i,j:uint) {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,false)
-      fr.overrideVals(i, j)
-
-    let overDS = proc (p:pointer, d:DenseHandle,s:SparseHandle) {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,false)
-      let bidi = (d.obj.id shr BLK_SHIFT) and BLK_MASK
-      let idxi = d.obj.id and BLK_MASK
-      let sbid = s.id shr 6
-      let si = s.id and 63
-      let physIdx = fr.toSparse[sbid] - 1
-      toObjectCopy(`B`, fr.blocks[bidi].data, idxi, fr.sparse[physIdx].data, si)
-
-    let overSD = proc (p:pointer,s:SparseHandle, d:DenseHandle) {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,false)
-      let bidi = (d.obj.id shr BLK_SHIFT) and BLK_MASK
-      let idxi = d.obj.id and BLK_MASK
-      let sbid = s.id shr 6
-      let si = s.id and 63
-      let physIdx = fr.toSparse[sbid] - 1
-      toObjectCopy(`B`, fr.sparse[physIdx].data, si, fr.blocks[bidi].data, idxi)
-
-    let overvb = proc (p:pointer, archId:uint16, ents: ptr seq[ptr Entity], ids:openArray[DenseHandle], sw:seq[uint], ad:seq[uint]) =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,false)
-      fr.overrideVals(archId, ents, ids, sw, ad)
-
-    # --- Change tracking accessors ---
-
-    let getchangeMask = proc (p:pointer):ptr QueryFilter {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      return addr fr.changeFilter
-
-    let getsmask = proc (p:pointer):ptr HibitsetType {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      return addr fr.sparseMask
-
-    let clearDCh = proc (p:pointer) {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      fr.clearDenseChanges()
-
-    let clearSCh = proc (p:pointer) {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      fr.clearSparseChanges()
-
-    let actSparseBit = proc (p:pointer, i:uint) {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      fr.activateSparseBit(i)
-
-    let deactSparseBit = proc (p:pointer, i:uint) {.noSideEffect, nimcall, inline.} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      fr.deactivateSparseBit(i)
-
-    # --- Build registry entry ---
-
-    var entry:ComponentEntry
-    new(entry)
-    entry.rawPointer = pt
-    entry.resizeOp = res
-    entry.newBlockAtOp = newBlkAt
-    entry.newSparseBlockOp = newSparseBlk
-    entry.newSparseBlocksOp = newSparseBlks
-    entry.overrideValsOp = overv
-    entry.overrideDSOp = overDS
-    entry.overrideSDOp = overSD
-    entry.overrideValsBatchOp = overvb
-    entry.getChangeMaskop = getchangeMask
-    entry.getSparseMaskOp = getsmask
-    entry.clearDenseChangeOp = clearDCh
-    entry.clearSparseChangeOp = clearSCh
-    entry.deactivateSparseBitOp = deactSparseBit
-    entry.activateSparseBitOp = actSparseBit
-    entry.activateSparseBitBatchOp = actBitB
-    entry.deactivateSparseBitBatchOp = deactBitB
-    entry.freeEntry = proc (p:pointer) {.raises: [].} =
-      var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
-      GC_unref(fr)
-
-    # Register entry and return its component ID
     let id = toComponentId(`B`)
-    `registry`.cmap[`str`] = id
-    if id >= `registry`.entries.len: 
-      `registry`.entries.setLen(id+1)
-    `registry`.entries[id] = entry
+
+    if id >= `registry`.entries.len or `registry`.entries[id].isNil:
+      `registry`.cmap[`str`] = id
+      if id >= `registry`.entries.len: 
+        `registry`.entries.setLen(id+1)
+      
+      # Allocate SoA storage for the component
+      var frag = newSoAFragArr(`B`, DEFAULT_BLK_SIZE, `P`)
+
+      # Prevent GC from collecting the fragment array
+      GC_ref(frag)
+      let pt = cast[pointer](frag)
+
+      # --- Dense operations ---
+
+      let res = proc (p:pointer, n:int) {.noSideEffect, nimcall, inline.} =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+        fr.resize(n)
+
+      let newBlkAt = proc (p:pointer, i:int) {.noSideEffect, nimcall, inline.} =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+        fr.newBlockAt(i)
+
+      # --- Sparse operations ---
+
+      let newSparseBlk = proc (p:pointer, offset:int, m:uint) {.noSideEffect, nimcall, inline.} =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+        fr.newSparseBlock(offset, m)
+
+      let newSparseBlks = proc (p:pointer, offset:int, m:seq[uint]) {.noSideEffect, nimcall, inline.} =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+        fr.newSparseBlocks(offset, m)
+
+      let actBitB = proc (p:pointer, idxs:seq[uint]) {.noSideEffect, nimcall, inline.} =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+        fr.activateSparseBit(idxs)
+
+      let deactBitB = proc (p:pointer, idxs:seq[uint]) {.noSideEffect, nimcall, inline.} =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+        fr.deactivateSparseBit(idxs)
+
+      # --- Override operations ---
+
+      let overv = proc (p:pointer, i,j:uint) {.noSideEffect, nimcall, inline.} =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,false)
+        fr.overrideVals(i, j)
+
+      let overDS = proc (p:pointer, d:DenseHandle,s:SparseHandle) {.noSideEffect, nimcall, inline.} =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,false)
+        let bidi = (d.obj.id shr BLK_SHIFT) and BLK_MASK
+        let idxi = d.obj.id and BLK_MASK
+        let sbid = s.id shr 6
+        let si = s.id and 63
+        let physIdx = fr.toSparse[sbid] - 1
+        toObjectCopy(`B`, fr.blocks[bidi].data, idxi, fr.sparse[physIdx].data, si)
+
+      let overSD = proc (p:pointer,s:SparseHandle, d:DenseHandle) {.noSideEffect, nimcall, inline.} =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,false)
+        let bidi = (d.obj.id shr BLK_SHIFT) and BLK_MASK
+        let idxi = d.obj.id and BLK_MASK
+        let sbid = s.id shr 6
+        let si = s.id and 63
+        let physIdx = fr.toSparse[sbid] - 1
+        toObjectCopy(`B`, fr.sparse[physIdx].data, si, fr.blocks[bidi].data, idxi)
+
+      let overvb = proc (p:pointer, archId:uint16, ents: ptr seq[ptr Entity], ids:openArray[DenseHandle], sw:seq[uint], ad:seq[uint]) =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,false)
+        fr.overrideVals(archId, ents, ids, sw, ad)
+
+      # --- Change tracking accessors ---
+
+      let getchangeMask = proc (p:pointer):ptr QueryFilter {.noSideEffect, nimcall, inline.} =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+        return addr fr.changeFilter
+
+      let getsmask = proc (p:pointer):ptr HibitsetType {.noSideEffect, nimcall, inline.} =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+        return addr fr.sparseMask
+
+      let clearDCh = proc (p:pointer) {.noSideEffect, nimcall, inline.} =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+        fr.clearDenseChanges()
+
+      let clearSCh = proc (p:pointer) {.noSideEffect, nimcall, inline.} =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+        fr.clearSparseChanges()
+
+      let actSparseBit = proc (p:pointer, i:uint) {.noSideEffect, nimcall, inline.} =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+        fr.activateSparseBit(i)
+
+      let deactSparseBit = proc (p:pointer, i:uint) {.noSideEffect, nimcall, inline.} =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+        fr.deactivateSparseBit(i)
+
+      # --- Build registry entry ---
+
+      var entry:ComponentEntry
+      new(entry)
+      entry.rawPointer = pt
+      entry.resizeOp = res
+      entry.newBlockAtOp = newBlkAt
+      entry.newSparseBlockOp = newSparseBlk
+      entry.newSparseBlocksOp = newSparseBlks
+      entry.overrideValsOp = overv
+      entry.overrideDSOp = overDS
+      entry.overrideSDOp = overSD
+      entry.overrideValsBatchOp = overvb
+      entry.getChangeMaskop = getchangeMask
+      entry.getSparseMaskOp = getsmask
+      entry.clearDenseChangeOp = clearDCh
+      entry.clearSparseChangeOp = clearSCh
+      entry.deactivateSparseBitOp = deactSparseBit
+      entry.activateSparseBitOp = actSparseBit
+      entry.activateSparseBitBatchOp = actBitB
+      entry.deactivateSparseBitBatchOp = deactBitB
+      entry.freeEntry = proc (p:pointer) {.raises: [].} =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+        GC_unref(fr)
+
+      # Register entry and return its component ID
+      `registry`.entries[id] = entry
 
     id
 
@@ -289,6 +292,6 @@ template getvalue[B](entry:ComponentEntry, P:static bool=false):untyped =
 
 proc `=destroy`(rg:var ComponentRegistry) {.raises: [].} = 
   for entry in rg.entries:
-    entry.freeEntry(entry.rawPointer)
+    if not entry.isNil: entry.freeEntry(entry.rawPointer)
 
   rg.entries = @[]

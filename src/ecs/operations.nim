@@ -59,6 +59,8 @@ macro createEntities*(world:ECSWorld, n:untyped, comps:varargs[typed]):seq[Dense
   for c in comps:
     compIds.add quote("@") do: 
       toComponentId(`@c`)
+  if compIds.len == 0:
+    compIds = quote("@") do: array[0, int](`@compIds`)
   
   return quote("@") do:
     var rest = newSeq[DenseHandle](`@n`)
