@@ -17,7 +17,6 @@
 ##   separated into the "gpu-assisted" path.
 
 import math
-import ./types
 
 # ---------------------------------------------------------------------------
 # PixelBuffer — CPU-side RGBA8 pixel array (matches SDL_LockTexture output)

@@ -21,17 +21,16 @@ import std/[options, sets, tables, os, hashes]
 import ../../src/render/render
 
 ## Render graph (must load before `backend.nim` — callbacks reference `RenderResource`)
-import "../rendergraph/core.nim"
+import ../rendergraph/core
+import ../../src/la/La
 
 ## SDL3 backend modules
-import "types.nim"
-export types
-import "texture_pool.nim"
-import "geometry_batcher.nim"
-import "postprocess.nim"
-import "backend.nim"
-import "math3d.nim"
-import ../../src/la/La
+include "types.nim"
+include "math3d.nim"
+include "texture_pool.nim"
+include "geometry_batcher.nim"
+include "postprocess.nim"
+include "backend.nim"
 
 # ---------------------------------------------------------------------------
 # Render graph backend callbacks (`RenderResource` lives in rendergraph/core)
@@ -378,7 +377,7 @@ proc DrawTexturedQuad*[R](
     pivot:     FPoint    = fpoint(0.5, 0.5),
     flipH:     bool      = false,
     flipV:     bool      = false,
-    blendMode: types.SDLBlendMode = blendAlpha,
+    blendMode: SDLBlendMode = blendAlpha,
     priority:  uint32    = 0,
     pass:      string     = "render"
 ) =
@@ -395,7 +394,7 @@ proc DrawGeometry*[R](
     vertices: seq[Vertex],
     indices:  seq[uint32],
     key:      TextureKey    = InvalidTextureKey,
-    blend:    types.SDLBlendMode  = blendAlpha,
+    blend:    SDLBlendMode  = blendAlpha,
     priority: uint32        = 0,
     pass:     string         = "render"
 ) =
@@ -414,7 +413,7 @@ proc DrawTexturedQuad3D*[R](
     viewportW:  float32,
     viewportH:  float32,
     tint:       SDLRGBA     = SDLRGBA.white,
-    blend:      types.SDLBlendMode = blendAlpha,
+    blend:      SDLBlendMode = blendAlpha,
     priority:   uint32      = 0,
     pass:       string      = "render"
 ) =
@@ -433,7 +432,7 @@ proc BlitTexture*[R](
     dst:      TextureKey       = InvalidTextureKey,
     srcRect:  FRect            = frect(0, 0, 1, 1),
     dstRect:  FRect            = frect(0, 0, 0, 0),   ## 0,0 = full target
-    blend:    types.SDLBlendMode     = blendAlpha,
+    blend:    SDLBlendMode     = blendAlpha,
     tint:     SDLRGBA          = SDLRGBA.white,
     alpha:    float32          = 1.0,
     priority: uint32           = 0,

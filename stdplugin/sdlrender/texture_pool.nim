@@ -16,7 +16,6 @@
 ## Fix: assign the key directly from slot+1 and update nextKey in one place.
 
 import std/[tables, hashes]
-import ./types
 
 type
   PoolEntryKind* = enum

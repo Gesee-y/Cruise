@@ -5,7 +5,6 @@
 ## Suitable for billboards and simple perspective; not a full 3D engine.
 
 import ../../src/la/La
-import ./types
 
 type
   SdlVec3f* = object

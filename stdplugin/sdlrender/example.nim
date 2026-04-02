@@ -10,7 +10,9 @@
 ##   - Custom geometry (per-vertex color triangle mesh)
 ##   - Multi-pass composite
 
-include "sdl3_renderer.nim"
+import ../../src/render/render
+import ../rendergraph/core
+import "sdl3_renderer.nim"
 import std/[math, random]
 
 # ===========================================================================

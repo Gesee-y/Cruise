@@ -21,13 +21,7 @@
 ##                      executeCommand feeds geometry into GeometryBatcher.
 ##                      At flush points, flushBatcher submits SDL_RenderGeometry.
 
-import ../../externalLibs/sdl3_nim/src/sdl3_nim
-import ../../src/render/render
 import std/[sets, tables, times]
-import ./types
-import ./texture_pool
-import ./geometry_batcher
-import ./postprocess
 
 # ---------------------------------------------------------------------------
 # TextureRegistry entry — what the render graph resource maps to
@@ -318,9 +312,6 @@ proc flushBatcher*(data: var SDLData) =
 # but since we define executeCommand for SDLData directly we cast accordingly.
 # ---------------------------------------------------------------------------
 
-# We need the CRenderer wrapper in scope
-# (imported by sdl3_renderer.nim that includes this file)
-
 proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[DrawPoint2DCmd]) =
   var data = ren.data
   for cmd in batch.commands:
@@ -418,7 +409,7 @@ type
     pivot*:      FPoint
     flipH*:      bool
     flipV*:      bool
-    blendMode*:  types.SDLBlendMode
+    blendMode*:  SDLBlendMode
     samplerKey*: uint32   ## index into sampler table (0 = default)
 commandAction DrawTexturedQuadCmd
 
@@ -428,7 +419,7 @@ type
     vertices*: seq[Vertex]
     indices*:  seq[uint32]
     texKey*:   TextureKey
-    blend*:    types.SDLBlendMode
+    blend*:    SDLBlendMode
 commandAction DrawGeometryCmd
 
 type
@@ -451,7 +442,7 @@ type
     dstKey*:    TextureKey   ## InvalidTextureKey = screen
     srcRect*:   FRect        ## normalized [0,1] source region
     dstRect*:   FRect        ## pixel destination rect
-    blend*:     types.SDLBlendMode
+    blend*:     SDLBlendMode
     tint*:      SDLRGBA
     alpha*:     float32
 commandAction BlitTextureCmd
@@ -495,12 +486,12 @@ proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[DrawPolygonCmd]) 
                               blendAlpha, cmd.filled, cmd.thickness)
 
 proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[DrawTexturedQuadCmd]) =
-  var data = ren.data
+  var data = addr ren.data
   for cmd in batch.commands:
     let texIdx = decompressIndex(batch.caller)
     let texKey  = TextureKey(texIdx + 1)
     data.batcher.emitTexturedQuad(cmd.dst, cmd.src, texKey,
-                                   data.currentTarget(), cmd.blendMode,
+                                   data[].currentTarget(), cmd.blendMode,
                                    cmd.tint, cmd.angle, cmd.pivot,
                                    cmd.flipH, cmd.flipV)
 

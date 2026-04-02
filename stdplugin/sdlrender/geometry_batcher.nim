@@ -17,31 +17,8 @@
 ##   Smooth edges are approximated by emitting a thin "fringe" ring around
 ##   circles/polygons at alpha = 0 (width = 1 pixel), which blends into the
 ##   background. This is compatible with SDL3's alpha blending without shaders.
-##
-## Fixes over the original version:
-##   [FIX-1] emitCircle: iInnFirst was recomputed from vertices.len after fringe
-##           vertices were already added — now inner ring indices are captured
-##           explicitly at vertex-creation time, making the fringe triangulation
-##           correct regardless of how many vertices preceded this circle in the
-##           same batch.
-##   [FIX-2] emitRect (outline): the four edge lines left open corners. Replaced
-##           with an explicit 8-vertex closed quad-strip that produces clean
-##           mitre-style joins at every corner.
-##   [FIX-3] canAppend now also checks indices.len against MaxBatchIndices so a
-##           dense circle with many segments cannot silently overflow the index
-##           budget.
-##   [FIX-4] emitPolygon (filled) used a naive fan from points[0], which is
-##           incorrect for concave polygons. The ear-clipping algorithm is now
-##           used for filled polygons, making it correct for any simple polygon
-##           (convex or concave, non-self-intersecting).
-##   [FIX-5] sort() is now opt-in and documented: calling it after emitting all
-##           geometry reorders batches for minimal GPU state changes but discards
-##           the original painter's-order depth. Callers that rely on Z-ordering
-##           via draw order must NOT call sort(), or must assign explicit depth
-##           keys before sorting.
 
 import std/[math, algorithm]
-import ./types
 
 # ---------------------------------------------------------------------------
 # Batch
@@ -98,7 +75,6 @@ type
     batches*: seq[Batch]
     ## NOTE: batches are appended in draw order (painter's algorithm).
     ## Call sort() only when all geometry is opaque and Z-ordering via draw
-    ## order is not required — see [FIX-5].
 
 proc initGeometryBatcher*(): GeometryBatcher =
   GeometryBatcher(batches: @[])
@@ -161,18 +137,6 @@ proc emitLine*(gb:        var GeometryBatcher,
   bat.addTriangle(i0, i1, i2)
   bat.addTriangle(i0, i2, i3)
 
-# ---------------------------------------------------------------------------
-# [FIX-2] emitRect outline — closed 8-vertex ring with clean mitre corners
-# ---------------------------------------------------------------------------
-#
-# Original approach emitted 4 independent emitLine calls.  Each line was a
-# standalone quad: its endpoints stopped exactly at the rect corner, leaving
-# a triangular gap (or overlap) of size thickness/2 at every corner.
-#
-# Fix: we build a closed double-ring (inner + outer) of 8 vertices and
-# triangulate the 4 edge quads manually.  Because both rings share the same
-# corner point, the joins are gap-free and require no extra maths.
-#
 #   outer ring: o0 o1 o2 o3   (expanded by half-thickness)
 #   inner ring: i0 i1 i2 i3   (shrunk by half-thickness)
 #
@@ -227,20 +191,9 @@ proc emitRect*(gb:        var GeometryBatcher,
     ## left
     b.addTriangle(o3, o0, ii0); b.addTriangle(o3, ii0, ii3)
 
-# ---------------------------------------------------------------------------
-# [FIX-1] emitCircle — explicit inner-ring index tracking
-# ---------------------------------------------------------------------------
-#
-# Original code computed iInnFirst by subtracting a fixed offset from
-# vertices.len *after* the inner-ring loop, which was wrong whenever the
-# batch already contained other vertices before this circle.
-#
-# Fix: capture the base index of the very first inner-ring vertex (the one
+# capture the base index of the very first inner-ring vertex (the one
 # at angle 0, i.e. iPrev) before the loop starts, and use that base to
 # compute indices for subsequent inner-ring vertices: innerIdx(i) = iBase + i.
-# This is always correct because inner-ring vertices are added sequentially
-# with no interleaving.
-
 proc emitCircle*(gb:        var GeometryBatcher,
                  center:    FPoint,
                  radius:    float32,
@@ -323,26 +276,10 @@ proc emitCircle*(gb:        var GeometryBatcher,
       let p1 = fpoint(center.x + cos(a1) * radius, center.y + sin(a1) * radius)
       gb.emitLine(p0, p1, color, targetKey, blend, thickness)
 
-# ---------------------------------------------------------------------------
-# [FIX-4] emitPolygon — ear-clipping for arbitrary simple polygons
-# ---------------------------------------------------------------------------
-#
-# Original code used fan triangulation from points[0], which is only correct
-# for strictly convex polygons.  For any concave simple polygon it produces
-# triangles that overlap the polygon's exterior.
-#
-# Fix: ear-clipping triangulation.  An "ear" is a vertex whose two neighbours
-# form a triangle that:
-#   (a) has the correct winding (cross product > 0 for CCW input), and
-#   (b) contains no other polygon vertex in its interior.
-# We clip one ear at a time until only a single triangle remains.
-# Complexity is O(n²) which is fine for the typical UI polygon sizes (<100 pts).
-#
 # The algorithm assumes a simple (non-self-intersecting) polygon.
 # Winding order is auto-detected: if the signed area is negative (CW input),
 # the vertex list is reversed before clipping so the algorithm always works
 # on CCW-wound data.
-
 proc cross2D(o, a, b: FPoint): float32 {.inline.} =
   ## 2-D cross product of vectors OA and OB.
   ## Positive → A is to the left of OB (CCW turn at O).
@@ -574,10 +511,6 @@ proc emitRoundedRect*(gb:         var GeometryBatcher,
     gb.emitLine(fpoint(cx1, rect.y + rect.h), fpoint(cx0, rect.y + rect.h), color, targetKey, blend)
     gb.emitLine(fpoint(rect.x,          cy0), fpoint(rect.x,          cy1), color, targetKey, blend)
     gb.emitLine(fpoint(rect.x + rect.w, cy0), fpoint(rect.x + rect.w, cy1), color, targetKey, blend)
-
-# ---------------------------------------------------------------------------
-# [FIX-5] sort — documented painter's-order caveat
-# ---------------------------------------------------------------------------
 
 proc sort*(gb: var GeometryBatcher) =
   ## Sort batches to minimise GPU state changes (target → texture → blend).
