@@ -59,6 +59,7 @@ type
     width*, height*: uint32
     format*:         TextureFormat
     mips*:           uint32       ## 0 = full mip chain, 1 = no mips
+    access*:int
 
   RenderResource* = ref object
     name*:       string
@@ -492,7 +493,7 @@ proc compile*(rg: var RenderGraph) =
 #   3. Flush CommandBuffer through executeAll
 # ---------------------------------------------------------------------------
 
-proc executeFrame*[R](rg: var RenderGraph, renderer: var R) =
+proc executeFrame*[R](rg: var RenderGraph, renderer: var CRenderer[R]) =
   if rg.plugin.isDirty:
     compile(rg)
 
@@ -534,12 +535,13 @@ proc executeFrame*[R](rg: var RenderGraph, renderer: var R) =
     for threadBucket in level:
       for nodeId in threadBucket:
         let pass = RenderPassNode(rg.plugin.idtonode[nodeId])
-        if pass == nil or not pass.enabled: continue
+        if pass == nil #[or not pass.enabled]#: continue
         if pass.execute != nil:
           pass.execute(pass, rg.cb)
 
-    executeAll(renderer, rg.cb)
+    renderer.executeAll(renderer, rg.cb)
     for pass in passOrder(renderer):
+      echo pass
       clearPass(rg.cb, pass)
 
     # --- Apply transitions that fire after this level

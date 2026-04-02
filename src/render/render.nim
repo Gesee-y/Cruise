@@ -25,12 +25,13 @@ include "resource.nim"
 # ---------------------------------------------------------------------------
 
 type
-  CRenderer*[R] = object
+  CRenderer*[R] = ref object
     ## Generic renderer handle.
     ## `R` is the backend-specific data type (e.g. SDLData, GLData).
     data*:           R                ## Backend-owned state (GPU context, etc.)
     commandBuffer*: CommandBuffer    ## Frame command queue.
     registry*:       ResourceRegistry ## All registered resource stores.
+    executeAll*: proc (r: var CRenderer[R], cb: var CommandBuffer)
 
 # ---------------------------------------------------------------------------
 # Constructors
@@ -43,6 +44,7 @@ proc initCRenderer*[R](data: R): CRenderer[R] =
     data:          data,
     commandBuffer: initCommandBuffer(),
     registry:      initResourceRegistry(),
+    executeAll: defExecuteAll[CRenderer[R]]
   )
 
 # ---------------------------------------------------------------------------

@@ -3,9 +3,9 @@
 ## Top-level SDL3 2D Renderer — the single import for end-users.
 ##
 ## What this provides:
-##   SDLRenderer       — the concrete renderer type (CRenderer[SDLData])
+##   CSDLRenderer       — the concrete renderer type (CRenderer[SDLData])
 ##   SDLRenderGraph    — render-graph wrapper pre-wired to the SDL3 backend
-##   initSDLRenderer   — create window + SDL context + renderer
+##   initCSDLRenderer   — create window + SDL context + renderer
 ##   Standard draw API — DrawPoint2D, DrawLine2D, DrawRect2D, etc.
 ##   Extended draw API — DrawCircleAdv, DrawRoundRect, DrawPolygon,
 ##                       DrawTexturedQuad, DrawGeometry
@@ -21,7 +21,7 @@ import std/[options, sets, tables, os, hashes]
 import ../../src/render/render
 
 ## Render graph (must load before `backend.nim` — callbacks reference `RenderResource`)
-include "../rendergraph/core.nim"
+import "../rendergraph/core.nim"
 
 ## SDL3 backend modules
 import "types.nim"
@@ -29,7 +29,7 @@ export types
 import "texture_pool.nim"
 import "geometry_batcher.nim"
 import "postprocess.nim"
-include "backend.nim"
+import "backend.nim"
 import "math3d.nim"
 import ../../src/la/La
 
@@ -37,20 +37,30 @@ import ../../src/la/La
 # Render graph backend callbacks (`RenderResource` lives in rendergraph/core)
 # ---------------------------------------------------------------------------
 
-proc sdlOnAllocate*(data: var SDLData): AllocateCallback =
-  proc onAlloc(res: var RenderResource) =
+template sdlOnAllocate*(data: var SDLData): AllocateCallback =
+  let onAlloc = proc (res: var RenderResource) =
     if res.name in data.rgTextures:
       let entry = data.rgTextures[res.name]
       res.backingPtr = data.pool.rawPtr(entry.key)
       return
-    let desc = renderTargetDesc(int(res.desc.width), int(res.desc.height))
+
+    var desc: SDLTextureDesc
+
+
+    if res.desc.access == 0:
+      desc = staticTextureDesc(int(res.desc.width), int(res.desc.height))
+    elif res.desc.access == 1:
+      desc = streamingTextureDesc(int(res.desc.width), int(res.desc.height))
+    else:
+      desc = renderTargetDesc(int(res.desc.width), int(res.desc.height))
     let key  = data.pool.allocTransient(desc, res.name)
     data.rgTextures[res.name] = SDLTextureEntry(key: key, desc: desc)
     res.backingPtr = data.pool.rawPtr(key)
-  result = onAlloc
+  
+  onAlloc
 
-proc sdlOnRelease*(data: var SDLData): ReleaseCallback =
-  proc onRelease(res: var RenderResource) =
+template sdlOnRelease*(data: var SDLData): ReleaseCallback =
+  let onRelease = proc (res: var RenderResource) =
     if sets.contains(data.externalGraphTextures, res.name):
       data.rgTextures.del(res.name)
       res.backingPtr = nil
@@ -60,29 +70,36 @@ proc sdlOnRelease*(data: var SDLData): ReleaseCallback =
       data.pool.release(entry.key)
       data.rgTextures.del(res.name)
     res.backingPtr = nil
-  result = onRelease
 
-proc sdlOnAlias*(data: var SDLData): AliasCallback =
-  proc onAlias(canonical: var RenderResource, alias: var RenderResource) =
+  onRelease
+
+template sdlOnAlias*(data: var SDLData): AliasCallback =
+  let onAlias = proc (canonical: var RenderResource, alias: var RenderResource) =
     alias.backingPtr = canonical.backingPtr
     if canonical.name in data.rgTextures:
       let canonEntry = data.rgTextures[canonical.name]
       data.rgTextures[alias.name] = canonEntry
       data.pool.addRef(canonEntry.key)
-  result = onAlias
+  
+  onAlias
 
-proc sdlOnTransition*(data: var SDLData): TransitionCallback =
-  proc onTransition(res: var RenderResource,
+template sdlOnTransition*(data: var SDLData): TransitionCallback =
+  let onTransition = proc (res: var RenderResource,
                     fromState, toState: RenderResourceState) =
     if fromState == rsColorWrite and toState == rsShaderRead:
       data.flushBatcher()
-  result = onTransition
+  onTransition
 
-# ===========================================================================
-# SDLRenderer — concrete type alias
-# ===========================================================================
+proc sdlExecuteAll*(ren: var CSDLRenderer, cb: var CommandBuffer) =
+  ## Dispatch all recorded commands in pass order.
+  var data = ren.data
+  let dataPtr = cast[pointer](ren)
+  for pass in data.passOrder():
+    #echo pass
+    for h in cb.sortedHandles(pass):
+      h.process(dataPtr)
+  data.flushBatcher()
 
-type SDLRenderer* = CRenderer[SDLData]
 
 # ===========================================================================
 # SDLRenderGraph — wires SDL callbacks into the generic RenderGraph
@@ -90,10 +107,10 @@ type SDLRenderer* = CRenderer[SDLData]
 
 type SDLRenderGraph* = object
   rg*:  RenderGraph
-  ren*: ptr SDLRenderer   ## borrowed reference — must outlive the graph
+  ren*: ptr CSDLRenderer   ## borrowed reference — must outlive the graph
 
-proc initSDLRenderGraph*(ren: var SDLRenderer): SDLRenderGraph =
-  ## Build a render graph pre-wired to the given SDLRenderer's backend.
+proc initSDLRenderGraph*(ren: var CSDLRenderer): SDLRenderGraph =
+  ## Build a render graph pre-wired to the given CSDLRenderer's backend.
   let data = addr ren.data
   result.rg = initRenderGraph(
     onAllocate   = sdlOnAllocate(data[]),
@@ -119,7 +136,7 @@ proc setBackbuffer*(srg: var SDLRenderGraph, id: int) =
 
 proc executeFrame*(srg: var SDLRenderGraph) =
   ## Dispatches graph passes; `executeAll` targets `SDLData` (same as `endFrame` on `ren.data`).
-  srg.rg.executeFrame(srg.ren[].data)
+  srg.rg.executeFrame(srg.ren[])
 
 proc teardown*(srg: var SDLRenderGraph) =
   srg.rg.teardown()
@@ -133,17 +150,17 @@ proc teardown*(srg: var SDLRenderGraph) =
 # creating a second SDL texture. Graph `onRelease` skips destroying the pool slot
 # for bound names (you keep ownership via `releaseTexture`).
 
-proc bindRenderGraphTexture*(ren: var SDLRenderer, resourceName: string, key: TextureKey) =
+proc bindRenderGraphTexture*(ren: var CSDLRenderer, resourceName: string, key: TextureKey) =
   let desc = ren.data.pool.desc(key)
   ren.data.rgTextures[resourceName] = SDLTextureEntry(key: key, desc: desc)
   ren.data.externalGraphTextures.incl(resourceName)
 
-proc lookupGraphTexture*(ren: SDLRenderer, resourceName: string): TextureKey =
+proc lookupGraphTexture*(ren: CSDLRenderer, resourceName: string): TextureKey =
   if not tables.contains(ren.data.rgTextures, resourceName):
     raise newException(KeyError, "lookupGraphTexture: unknown resource \"" & resourceName & "\"")
   ren.data.rgTextures[resourceName].key
 
-proc tryLookupGraphTexture*(ren: SDLRenderer, resourceName: string): Option[TextureKey] =
+proc tryLookupGraphTexture*(ren: CSDLRenderer, resourceName: string): Option[TextureKey] =
   if not tables.contains(ren.data.rgTextures, resourceName):
     return none(TextureKey)
   some(ren.data.rgTextures[resourceName].key)
@@ -156,8 +173,8 @@ proc initSDLRenderer*(title:     string  = "SDL3 Renderer",
                        width:     int     = 1280,
                        height:    int     = 720,
                        vsync:     bool    = true,
-                       highDpi:   bool    = false): SDLRenderer =
-  ## Initialize SDL3, create window and renderer, return a fully ready SDLRenderer.
+                       highDpi:   bool    = false): CSDLRenderer =
+  ## Initialize SDL3, create window and renderer, return a fully ready CSDLRenderer.
   if not SDL_Init(SDL_INIT_VIDEO or SDL_INIT_EVENTS):
     raise newException(IOError, "SDL_Init failed: " & $SDL_GetError())
 
@@ -179,6 +196,7 @@ proc initSDLRenderer*(title:     string  = "SDL3 Renderer",
   var ren = initCRenderer[SDLData](data)
 
   ren.data.scrTypeId = registerType[SDLData, uint32](ren)
+  ren.executeAll = sdlExecuteAll
 
   discard createResource[SDLData, uint32](ren, ren.data.scrTypeId, 0u32)
   ren.data.screenKey = TextureKey(0)
@@ -189,7 +207,7 @@ proc initSDLRenderer*(title:     string  = "SDL3 Renderer",
 # screenTarget accessor (required by the command push helpers)
 # ---------------------------------------------------------------------------
 
-proc screenTarget*(ren: SDLRenderer): CResource[Screen] {.inline.} =
+proc screenTarget*(ren: CSDLRenderer): CResource[Screen] {.inline.} =
   ## Returns the handle for the screen render target.
   ## Commands pushed with this target go directly to the backbuffer.
   CResource[Screen](uint64(ren.data.scrTypeId) shl TypeIdShift)
@@ -198,19 +216,33 @@ proc screenTarget*(ren: SDLRenderer): CResource[Screen] {.inline.} =
 # Frame lifecycle
 # ===========================================================================
 
-proc beginFrame*(ren: var SDLRenderer) =
+# Dans commandBuf.nim
+proc passOrder*(ren: CSDLRenderer): seq[string] =
+  @["render", "postprocess", "composite"]
+
+# ===========================================================================
+# executeAll for SDLData (overrides the generic fallback)
+# ===========================================================================
+
+proc beginFrame*(ren: var CSDLRenderer) =
   ## Start a new frame: clear, reset stats, flush command buffer.
   ren.data.beginFrameSDL()
   ren.commandBuffer.clearPass("render")
   ren.commandBuffer.clearPass("postprocess")
   ren.commandBuffer.clearPass("composite")
 
-proc endFrame*(ren: var SDLRenderer) =
+proc endFrame*(rg: var SDLRenderGraph) =
   ## Execute all recorded commands, run post-process, present.
-  ren.data.executeAll(ren.commandBuffer)
+  var ren = rg.ren[]
+  #ren.executeAll(ren, rg.rg.cb)
   ren.data.endFrameSDL()
 
-proc teardown*(ren: var SDLRenderer) =
+proc endFrame*(ren: var CSDLRenderer) =
+  ## Execute all recorded commands, run post-process, present.
+  ren.executeAll(ren, ren.commandBuffer)
+  ren.data.endFrameSDL()
+
+proc teardown*(ren: var CSDLRenderer) =
   ## Release all SDL resources.
   ren.commandBuffer.destroyAllPasses()
   ren.registry.teardown()
@@ -219,13 +251,13 @@ proc teardown*(ren: var SDLRenderer) =
   SDL_DestroyWindow(ren.data.window)
   SDL_Quit_proc()
 
-proc stats*(ren: SDLRenderer): FrameStats {.inline.} =
+proc stats*(ren: CSDLRenderer): FrameStats {.inline.} =
   ren.data.stats
 
-proc setClearColor*(ren: var SDLRenderer, r, g, b: uint8, a: uint8 = 255) =
+proc setClearColor*(ren: var CSDLRenderer, r, g, b: uint8, a: uint8 = 255) =
   ren.data.clearColor = rgba(r, g, b, a)
 
-proc setViewport*(ren: var SDLRenderer, x, y, w, h: float32) =
+proc setViewport*(ren: var CSDLRenderer, x, y, w, h: float32) =
   ren.data.viewport = viewport(x, y, w, h)
   var vp = SDL_Rect(x: cint(x), y: cint(y), w: cint(w), h: cint(h))
   discard SDL_SetRenderViewport(ren.data.renderer, addr vp)
@@ -234,11 +266,17 @@ proc setViewport*(ren: var SDLRenderer, x, y, w, h: float32) =
 # Texture management
 # ===========================================================================
 
-proc loadTexture*(ren:   var SDLRenderer,
+proc loadTexture*(ren:   var CSDLRenderer,
                   path:  string,
                   sampler = defaultSampler()): TextureKey =
   ## Load an image file and register it as a persistent texture.
   ## Requires SDL3_image (sdl3_image_nim) — add it to your nimble deps.
+  var raw: ptr SDL_Surface = nil
+  when defined(sdl3Image):
+    raw = IMG_Load(path.cstring)
+    if raw == nil:
+      echo "WARN loadTexture IMG_Load failed, fallback BMP: ", SDL_GetError()
+  
   let raw = SDL_LoadBMP(path.cstring)   # fallback: BMP without SDL_image
   if raw == nil:
     raise newException(IOError, "loadTexture: " & path & " — " & $SDL_GetError())
@@ -254,17 +292,25 @@ proc loadTexture*(ren:   var SDLRenderer,
   result = ren.data.pool.registerExternalPersistent(cast[pointer](tex), desc, path)
   applySampler(ren.data.renderer, tex, sampler)
 
-proc createRenderTarget*(ren:     var SDLRenderer,
+proc createRenderTarget*(ren:     var CSDLRenderer,
                           width, height: int,
                           sampler = defaultSampler()): TextureKey =
   ## Allocate an off-screen render target texture.
   let desc = renderTargetDesc(width, height, sampler)
   ren.data.pool.allocTransient(desc, "rt_" & $width & "x" & $height)
 
-proc releaseTexture*(ren: var SDLRenderer, key: TextureKey) =
+proc createStreamingTexture*(ren:     var CSDLRenderer,
+                          width, height: int,
+                          sampler = defaultSampler()): TextureKey =
+  ## Allocate an off-screen render target texture.
+  let desc = streamingTextureDesc(width, height, sampler)
+  ren.data.pool.allocTransient(desc, "rt_" & $width & "x" & $height)
+
+
+proc releaseTexture*(ren: var CSDLRenderer, key: TextureKey) =
   ren.data.pool.release(key)
 
-proc textureSize*(ren: SDLRenderer, key: TextureKey): tuple[w, h: int] =
+proc textureSize*(ren: CSDLRenderer, key: TextureKey): tuple[w, h: int] =
   let d = ren.data.pool.desc(key)
   (d.width, d.height)
 
@@ -413,6 +459,19 @@ proc AddPostProcess*[R](
     pass
   )
 
+proc PostProcessRT*[R](
+    ren:      var R,
+    src:      TextureKey,            ## render target (accessTarget)
+    dst:      TextureKey,            ## streaming texture (accessStreaming)
+    effects:  seq[PostProcessEffect],
+    priority: uint32 = 0,
+    pass:     string  = "postprocess"
+) =
+  addCommand[PostProcessRTCmd, R](ren.commandBuffer,
+    0u32, priority, 0u32,
+    PostProcessRTCmd(srcKey: src, dstKey: dst, effects: effects),
+    pass)
+
 proc ClearTarget*[R](
     ren:    var R,
     target: TextureKey,
@@ -444,18 +503,6 @@ proc PopRenderTarget*[R](ren: var R, pass: string = "render") =
   )
 
 # ===========================================================================
-# executeAll for SDLData (overrides the generic fallback)
-# ===========================================================================
-
-proc executeAll*(data: var SDLData, cb: CommandBuffer) =
-  ## Dispatch all recorded commands in pass order.
-  let dataPtr = cast[pointer](data)
-  for pass in data.passOrder():
-    for h in cb.sortedHandles(pass):
-      h.process(dataPtr)
-  data.flushBatcher()
-
-# ===========================================================================
 # Event polling helpers (thin wrappers — keep SDL3 out of user code)
 # ===========================================================================
 
@@ -484,7 +531,7 @@ type
     of evQuit, evOther:
       discard
 
-proc pollEvents*(ren: var SDLRenderer): seq[InputEvent] =
+proc pollEvents*(ren: var CSDLRenderer): seq[InputEvent] =
   ## Poll all pending SDL events and return them as backend-agnostic InputEvents.
   result = @[]
   var e: SDL_Event
@@ -527,7 +574,7 @@ proc pollEvents*(ren: var SDLRenderer): seq[InputEvent] =
 # SSAA helper — render at 2× size, downscale to output
 # ===========================================================================
 
-proc createSSAATarget*(ren: var SDLRenderer,
+proc createSSAATarget*(ren: var CSDLRenderer,
                         outputW, outputH: int,
                         scale:  int = 2): tuple[hiRes, loRes: TextureKey] =
   ## Create a 2× (or N×) render target for SSAA, plus the output target.
@@ -545,7 +592,7 @@ proc createSSAATarget*(ren: var SDLRenderer,
 # Anisotropic hint
 # ===========================================================================
 
-proc setAnisotropy*(ren: var SDLRenderer, key: TextureKey, level: uint8) =
+proc setAnisotropy*(ren: var CSDLRenderer, key: TextureKey, level: uint8) =
   ## Apply SDL3 anisotropy hint to a texture.
   ## SDL3 maps this through hints — effectiveness depends on the GPU driver.
   let raw  = ren.data.pool.rawPtr(key)
@@ -559,7 +606,7 @@ proc setAnisotropy*(ren: var SDLRenderer, key: TextureKey, level: uint8) =
 # Debug overlay
 # ===========================================================================
 
-proc drawDebugStats*(ren: var SDLRenderer, x, y: float32) =
+proc drawDebugStats*(ren: var CSDLRenderer, x, y: float32) =
   ## Print frame stats as simple text using SDL_RenderDebugText (SDL3.1+).
   let s = ren.data.stats
   let lines = [

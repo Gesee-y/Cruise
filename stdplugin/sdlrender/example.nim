@@ -20,8 +20,12 @@ import std/[math, random, times]
 ## Pass IDs (assigned by addRenderResource / addRenderPass)
 
 var
-  ren:  SDLRenderer
+  ren:  CSDLRenderer
   srg:  SDLRenderGraph
+  enableBloom    = true
+  enableVignette = true
+  enableFXAA     = true
+  enableChroma   = false
 
   ## Off-screen render targets registered as RenderGraph resources
   mainRtId:   int   ## main scene
@@ -31,10 +35,11 @@ var
   backbufId:  int   ## "backbuffer" node
 
   ## Actual TextureKeys for direct use
-  mainRtKey:  TextureKey
-  uiRtKey:    TextureKey
-  ssaaRtKey:  TextureKey
-  bloomRtKey: TextureKey
+  mainRtKey:     TextureKey
+  uiRtKey:       TextureKey
+  ssaaRtKey:     TextureKey
+  bloomRtKey:    TextureKey
+  bloomRtCPUKey: TextureKey
 
 const W  = 1280
 const H  = 720
@@ -74,6 +79,11 @@ for _ in 0..200: particles.add spawnParticle()
 # ===========================================================================
 
 proc buildRenderGraph() =
+  ssaaRtKey  = ren.createRenderTarget(W2, H2, pixelArtSampler())
+  mainRtKey  = ren.createRenderTarget(W, H,   defaultSampler())
+  bloomRtKey = ren.createRenderTarget(W, H,   defaultSampler())
+  bloomRtCPUKey = ren.createStreamingTexture(W, H,   defaultSampler())
+  uiRtKey    = ren.createRenderTarget(W, H,   defaultSampler())
 
   ## ---- Resources -----------------------------------------------------------
 
@@ -94,14 +104,14 @@ proc buildRenderGraph() =
   # Bloom buffer
   bloomRtId = srg.addRenderResource(RenderResource(
     name: "BloomBuf",
-    desc: TextureDesc(width: uint32(W), height: uint32(H), format: fmtRGBA8, mips: 1),
+    desc: TextureDesc(width: uint32(W), height: uint32(H), format: fmtRGBA8, mips: 1, access: accessStreaming.int),
     transient: true
   ))
 
   # UI overlay buffer
   uiRtId = srg.addRenderResource(RenderResource(
     name: "UI_Overlay",
-    desc: TextureDesc(width: uint32(W), height: uint32(H), format: fmtRGBA8, mips: 1),
+    desc: TextureDesc(width: uint32(W), height: uint32(H), format: fmtRGBA8, mips: 1, access: accessStreaming.int),
     transient: true
   ))
 
@@ -119,14 +129,14 @@ proc buildRenderGraph() =
   let scenePass = RenderPassNode(id: 0, enabled: true,
     execute: proc(pass: RenderPassNode, cb: var CommandBuffer) =
       # Clear SSAA target
-      addCommand[ClearTargetCmd, SDLData](cb, 0, 0, 0,
+      addCommand[ClearTargetCmd, CSDLRenderer](cb, 0, 0, 0,
         ClearTargetCmd(targetKey: ssaaRtKey, color: rgba(20, 20, 30, 255)),
         "render")
-      addCommand[PushTargetCmd, SDLData](cb, 0, 1, 0,
+      addCommand[PushTargetCmd, CSDLRenderer](cb, 0, 1, 0,
         PushTargetCmd(targetKey: ssaaRtKey), "render")
 
       # Background gradient (large filled rect + circles)
-      addCommand[DrawRoundRectCmd, SDLData](cb, 0, 10, 0,
+      addCommand[DrawRoundRectCmd, CSDLRenderer](cb, 0, 10, 0,
         DrawRoundRectCmd(rect: frect(0, 0, float32(W2), float32(H2)),
                           radius: 0, color: rgba(20, 20, 30, 255), filled: true),
         "render")
@@ -134,7 +144,7 @@ proc buildRenderGraph() =
       # Particle cloud (circles)
       for p in particles:
         let alpha = uint8(clamp(p.life / 120.0, 0, 1) * float32(p.color.a))
-        addCommand[DrawCircleAdvCmd, SDLData](cb, 0, 20, 0,
+        addCommand[DrawCircleAdvCmd, CSDLRenderer](cb, 0, 20, 0,
           DrawCircleAdvCmd(
             center:   fpoint(p.x * 2, p.y * 2),  # scale to SSAA space
             radius:   p.r * 2,
@@ -145,7 +155,7 @@ proc buildRenderGraph() =
           ), "render")
 
       # Some geometry
-      addCommand[DrawRect2DCmd, SDLData](cb, 0, 30, 0,
+      addCommand[DrawRect2DCmd, CSDLRenderer](cb, 0, 30, 0,
         DrawRect2DCmd(
           color:  (200u8, 80u8, 80u8, 200u8),
           rect:   (100.0f*2, (100.0f + 200.0f)*2, 100.0f*2, (100.0f + 100.0f)*2),
@@ -155,7 +165,7 @@ proc buildRenderGraph() =
       # A line grid
       for i in 0..20:
         let x = float32(i * W2 div 20)
-        addCommand[DrawLine2DCmd, SDLData](cb, 0, 5, 0,
+        addCommand[DrawLine2DCmd, CSDLRenderer](cb, 0, 5, 0,
           DrawLine2DCmd(
             color: (50u8, 50u8, 80u8, 100u8),
             start: (x, 0.0f),
@@ -163,7 +173,7 @@ proc buildRenderGraph() =
           ), "render")
       for i in 0..12:
         let y = float32(i * H2 div 12)
-        addCommand[DrawLine2DCmd, SDLData](cb, 0, 5, 0,
+        addCommand[DrawLine2DCmd, CSDLRenderer](cb, 0, 5, 0,
           DrawLine2DCmd(
             color: (50u8, 50u8, 80u8, 100u8),
             start: (0.0f, y),
@@ -177,7 +187,7 @@ proc buildRenderGraph() =
         let a = float32(k) * Pi / 5.0 - Pi * 0.5
         let r = if k mod 2 == 0: 200.0f else: 80.0f
         starPts.add fpoint(cx + cos(a)*r, cy + sin(a)*r)
-      addCommand[DrawPolygonCmd, SDLData](cb, 0, 25, 0,
+      addCommand[DrawPolygonCmd, CSDLRenderer](cb, 0, 25, 0,
         DrawPolygonCmd(
           points:   starPts,
           color:    rgba(255, 220, 50, 220),
@@ -185,18 +195,18 @@ proc buildRenderGraph() =
           thickness: 3.0
         ), "render")
 
-      addCommand[PopTargetCmd, SDLData](cb, 0, 100, 0,
+      addCommand[PopTargetCmd, CSDLRenderer](cb, 0, 100, 0,
         PopTargetCmd(dummy: 0u8), "render")
   )
 
-  discard srg.addRenderPass(scenePass,
+  let scPass = srg.addRenderPass(scenePass,
     reads  = @[],
     writes = @[ssaaRtId])
 
   # Pass 1: SSAAResolvePass — downscale SSAA → MainScene using SDL blit
   let ssaaPass = RenderPassNode(id: 1, enabled: true,
     execute: proc(pass: RenderPassNode, cb: var CommandBuffer) =
-      addCommand[BlitTextureCmd, SDLData](cb, 0, 0, 0,
+      addCommand[BlitTextureCmd, CSDLRenderer](cb, 0, 0, 0,
         BlitTextureCmd(
           srcKey:  ssaaRtKey,
           dstKey:  mainRtKey,
@@ -207,7 +217,7 @@ proc buildRenderGraph() =
           alpha:   1.0
         ), "composite")
   )
-  discard srg.addRenderPass(ssaaPass,
+  let sPass = srg.addRenderPass(ssaaPass,
     reads  = @[ssaaRtId],
     writes = @[mainRtId])
 
@@ -215,15 +225,15 @@ proc buildRenderGraph() =
   let bloomPass = RenderPassNode(id: 2, enabled: true,
     execute: proc(pass: RenderPassNode, cb: var CommandBuffer) =
       # Blit main → bloom buffer
-      addCommand[BlitTextureCmd, SDLData](cb, 0, 0, 0,
+      addCommand[BlitTextureCmd, CSDLRenderer](cb, 0, 0, 0,
         BlitTextureCmd(srcKey: mainRtKey, dstKey: bloomRtKey,
                        srcRect: frect(0,0,1,1),
                        dstRect: frect(0,0,float32(W),float32(H)),
                        blend: blendNone, tint: SDLRGBA.white, alpha: 1.0),
         "composite")
       # Schedule bloom effect
-      addCommand[PostProcessCmd, SDLData](cb, 0, 10, 0,
-        PostProcessCmd(targetKey: bloomRtKey, effects: @[
+      if enableBloom: addCommand[PostProcessRTCmd, CSDLRenderer](cb, 0, 10, 0,
+        PostProcessRTCmd(srcKey: bloomRtKey, dstKey: bloomRtCPUKey, effects: @[
           PostProcessEffect(kind: ppBloom, bloom: BloomParams(
             threshold: 0.6,
             intensity: 1.5,
@@ -231,56 +241,57 @@ proc buildRenderGraph() =
           ))
         ]), "postprocess")
       # Add vignette to the bloom buffer
-      addCommand[PostProcessCmd, SDLData](cb, 0, 20, 0,
-        PostProcessCmd(targetKey: bloomRtKey, effects: @[
+      if enableVignette: addCommand[PostProcessRTCmd, CSDLRenderer](cb, 0, 20, 0,
+        PostProcessRTCmd(srcKey: bloomRtKey, dstKey: bloomRtCPUKey, effects: @[
           PostProcessEffect(kind: ppVignette, vignette: VignetteParams(
             strength: 0.6, radius: 0.7, softness: 0.3
           ))
         ]), "postprocess")
       # FXAA on the result
-      addCommand[PostProcessCmd, SDLData](cb, 0, 30, 0,
-        PostProcessCmd(targetKey: bloomRtKey, effects: @[
+      if enableFXAA: addCommand[PostProcessRTCmd, CSDLRenderer](cb, 0, 30, 0,
+        PostProcessRTCmd(srcKey: bloomRtKey, dstKey: bloomRtCPUKey, effects: @[
           PostProcessEffect(kind: ppFXAA, fxaaQuality: 1)
         ]), "postprocess")
   )
-  discard srg.addRenderPass(bloomPass,
+  let bpass = srg.addRenderPass(bloomPass,
+    deps = @[scPass],
     reads  = @[mainRtId],
     writes = @[bloomRtId])
 
   # Pass 3: UIPass — draw UI elements on a separate overlay
   let uiPass = RenderPassNode(id: 3, enabled: true,
     execute: proc(pass: RenderPassNode, cb: var CommandBuffer) =
-      addCommand[ClearTargetCmd, SDLData](cb, 0, 0, 0,
+      addCommand[ClearTargetCmd, CSDLRenderer](cb, 0, 0, 0,
         ClearTargetCmd(targetKey: uiRtKey, color: rgba(0,0,0,0)), "render")
-      addCommand[PushTargetCmd, SDLData](cb, 0, 1, 0,
+      addCommand[PushTargetCmd, CSDLRenderer](cb, 0, 1, 0,
         PushTargetCmd(targetKey: uiRtKey), "render")
 
       # HUD panel (rounded rect)
-      addCommand[DrawRoundRectCmd, SDLData](cb, 0, 10, 0,
+      addCommand[DrawRoundRectCmd, CSDLRenderer](cb, 0, 10, 0,
         DrawRoundRectCmd(
           rect: frect(20, 20, 200, 80), radius: 12,
           color: rgba(0, 0, 0, 160), filled: true
         ), "render")
-      addCommand[DrawRoundRectCmd, SDLData](cb, 0, 11, 0,
+      addCommand[DrawRoundRectCmd, CSDLRenderer](cb, 0, 11, 0,
         DrawRoundRectCmd(
           rect: frect(20, 20, 200, 80), radius: 12,
           color: rgba(100, 200, 255, 180), filled: false
         ), "render")
 
       # Health bar
-      addCommand[DrawRect2DCmd, SDLData](cb, 0, 15, 0,
+      addCommand[DrawRect2DCmd, CSDLRenderer](cb, 0, 15, 0,
         DrawRect2DCmd(color: (60u8, 60u8, 60u8, 200u8),
                       rect: (30.0f, 150.0f+30.0f, 30.0f+160.0f, 150.0f+30.0f+20.0f),
                       filled: true), "render")
-      addCommand[DrawRect2DCmd, SDLData](cb, 0, 16, 0,
+      addCommand[DrawRect2DCmd, CSDLRenderer](cb, 0, 16, 0,
         DrawRect2DCmd(color: (80u8, 220u8, 80u8, 220u8),
                       rect: (30.0f, 150.0f+30.0f, 30.0f+110.0f, 150.0f+30.0f+20.0f),
                       filled: true), "render")
 
-      addCommand[PopTargetCmd, SDLData](cb, 0, 100, 0,
+      addCommand[PopTargetCmd, CSDLRenderer](cb, 0, 100, 0,
         PopTargetCmd(dummy: 0u8), "render")
   )
-  discard srg.addRenderPass(uiPass,
+  let uPass = srg.addRenderPass(uiPass,
     reads  = @[],
     writes = @[uiRtId])
 
@@ -288,9 +299,9 @@ proc buildRenderGraph() =
   let compositePass = RenderPassNode(id: 4, enabled: true,
     execute: proc(pass: RenderPassNode, cb: var CommandBuffer) =
       # Bloom layer (base)
-      addCommand[BlitTextureCmd, SDLData](cb, 0, 0, 0,
+      addCommand[BlitTextureCmd, CSDLRenderer](cb, 0, 0, 0,
         BlitTextureCmd(
-          srcKey:  bloomRtKey,
+          srcKey:  bloomRtCpuKey,
           dstKey:  InvalidTextureKey,  # screen
           srcRect: frect(0, 0, 1, 1),
           dstRect: frect(0, 0, float32(W), float32(H)),
@@ -300,7 +311,7 @@ proc buildRenderGraph() =
         ), "composite")
 
       # UI layer on top (alpha blend)
-      addCommand[BlitTextureCmd, SDLData](cb, 0, 1, 0,
+      addCommand[BlitTextureCmd, CSDLRenderer](cb, 0, 1, 0,
         BlitTextureCmd(
           srcKey:  uiRtKey,
           dstKey:  InvalidTextureKey,
@@ -311,7 +322,8 @@ proc buildRenderGraph() =
           alpha:   1.0
         ), "composite")
   )
-  discard srg.addRenderPass(compositePass,
+  let cpassId = srg.addRenderPass(compositePass,
+    deps = @[uPass, scPass],
     reads  = @[bloomRtId, uiRtId],
     writes = @[backbufId])
 
@@ -333,10 +345,12 @@ when isMainModule:
   # (the graph allocates them on first frame; we mirror them here)
   # Note: in a real project you'd look these up from the rgTextures table.
   # For the demo we allocate manually so we have keys for command recording.
-  ssaaRtKey  = ren.createRenderTarget(W2, H2, pixelArtSampler())
-  mainRtKey  = ren.createRenderTarget(W, H,   defaultSampler())
-  bloomRtKey = ren.createRenderTarget(W, H,   defaultSampler())
-  uiRtKey    = ren.createRenderTarget(W, H,   defaultSampler())
+  #mainRtKey  = ren.createRenderTarget(W, H,   defaultSampler()) 
+
+  #ren.bindRenderGraphTexture("SSAA_HiRes", ssaaRtKey)
+  #ren.bindRenderGraphTexture("MainScene",  mainRtKey)
+  #ren.bindRenderGraphTexture("BloomBuf",   bloomRtKey)
+  #ren.bindRenderGraphTexture("UI_Overlay", uiRtKey)
 
   var running  = true
   var frame    = 0
@@ -344,11 +358,6 @@ when isMainModule:
 
   echo "SDL3 CRenderer running. Press ESC to quit."
   echo "Keys: B=toggle bloom, V=toggle vignette, F=toggle FXAA, C=chromatic aberration"
-
-  var enableBloom    = true
-  var enableVignette = true
-  var enableFXAA     = true
-  var enableChroma   = false
 
   while running:
 
@@ -376,6 +385,8 @@ when isMainModule:
         p = spawnParticle()
 
     ## ---- Render ----
+    echo "Frame " & $frame
+    echo ren.data.stats
     ren.beginFrame()
 
     ## Use the render graph for structured multi-pass rendering
@@ -406,3 +417,114 @@ when isMainModule:
   ren.teardown()
 
   echo "Ran ", frame, " frames. Bye!"
+#[
+when isMainModule:
+  randomize()
+  ren = initSDLRenderer("SDL3 CRenderer Demo", W, H, vsync = true)
+
+  # Allouer les targets AVANT tout
+  ssaaRtKey  = ren.createRenderTarget(W2, H2, pixelArtSampler())
+  mainRtKey  = ren.createRenderTarget(W,  H,  defaultSampler())
+  #bloomRtKey = ren.createStreamingTexture(W, H, defaultSampler())
+  uiRtKey    = ren.createRenderTarget(W, H, defaultSampler())
+
+  var running = true
+  var t = 0.0f
+  var frame = 0
+
+  while running:
+    for ev in ren.pollEvents():
+      if ev.kind == evQuit: running = false
+      if ev.kind == evKeyDown and ev.scancode == 41: running = false
+
+    t += 0.016f
+    for p in particles.mitems:
+      p.x += p.vx; p.y += p.vy
+      p.life -= 1
+      if p.life <= 0 or p.x < 0 or p.x > W or p.y < 0 or p.y > H:
+        p = spawnParticle()
+
+    ren.beginFrame()
+
+    # 1. Dessiner la scène sur ssaaRtKey
+    ren.ClearTarget(ssaaRtKey, rgba(20, 20, 30, 255))
+    ren.PushRenderTarget(ssaaRtKey)
+
+    # Grille
+    for i in 0..20:
+      let x = float32(i * W2 div 20)
+      ren.DrawLine2D(rgba(50,50,80,100).toVec, fpoint(x, 0), fpoint(x, float32(H2)))
+    for i in 0..12:
+      let y = float32(i * H2 div 12)
+      ren.DrawLine2D(rgba(50,50,80,100).toVec, fpoint(0, y), fpoint(float32(W2), y))
+
+    # Particules
+    for p in particles:
+      let alpha = uint8(clamp(p.life / 120.0, 0.0, 1.0) * float32(p.color.a))
+      ren.DrawCircleAdv(fpoint(p.x*2, p.y*2), p.r*2,
+                        rgba(p.color.r, p.color.g, p.color.b, alpha), filled=true)
+
+    # Étoile
+    var starPts: seq[FPoint]
+    let cx = float32(W2)*0.5; let cy = float32(H2)*0.5
+    for k in 0..9:
+      let a = float32(k) * Pi / 5.0 - Pi*0.5
+      let r = if k mod 2 == 0: 200.0f else: 80.0f
+      starPts.add fpoint(cx + cos(a)*r, cy + sin(a)*r)
+    ren.DrawPolygon(starPts, rgba(255,220,50,220), filled=true)
+
+    ren.PopRenderTarget()
+
+    # 2. Downscale SSAA → mainRtKey
+    ren.BlitTexture(ssaaRtKey, mainRtKey,
+                    srcRect=frect(0,0,1,1),
+                    dstRect=frect(0,0,float32(W),float32(H)),
+                    blend=blendNone, pass="composite")
+
+    # 3. Bloom sur mainRtKey → bloomRtKey
+    #ren.BlitTexture(mainRtKey, bloomRtKey,
+    #                srcRect=frect(0,0,1,1),
+    #                dstRect=frect(0,0,float32(W),float32(H)),
+    #                blend=blendNone, pass="composite")
+    #ren.AddPostProcess(bloomRtKey, PostProcessEffect(kind: ppBloom,
+    #  bloom: BloomParams(threshold: 0.6, intensity: 1.5,
+    #                     blur: BlurParams(radius: 8, sigma: 3.0, passes: 2))))
+    #ren.AddPostProcess(bloomRtKey, PostProcessEffect(kind: ppVignette,
+    #  vignette: VignetteParams(strength: 0.6, radius: 0.7, softness: 0.3)))
+
+    # 4. UI sur uiRtKey
+    ren.ClearTarget(uiRtKey, rgba(0,0,0,0))
+    ren.PushRenderTarget(uiRtKey)
+    ren.DrawRoundRect(frect(20,20,200,80), 12.0, rgba(0,0,0,160), filled=true)
+    ren.DrawRoundRect(frect(20,20,200,80), 12.0, rgba(100,200,255,180), filled=false)
+    # Barre de vie
+    ren.DrawRect2D(rgba(60,60,60,200).toVec, frect(30,180,160,20).toRect, filled=true)
+    ren.DrawRect2D(rgba(80,220,80,220).toVec, frect(30,180,110,20).toRect, filled=true)
+    ren.PopRenderTarget()
+
+    # 5. Composite → écran
+    #ren.BlitTexture(bloomRtKey, InvalidTextureKey,
+    #                srcRect=frect(0,0,1,1),
+    #                dstRect=frect(0,0,float32(W),float32(H)),
+    #                blend=blendNone, pass="composite")
+    ren.BlitTexture(uiRtKey, InvalidTextureKey,
+                    srcRect=frect(0,0,1,1),
+                    dstRect=frect(0,0,float32(W),float32(H)),
+                    blend=blendAlpha, pass="composite")
+
+    # 6. Disque animé direct (toujours sur écran)
+    ren.DrawCircleAdv(
+      fpoint(float32(W)*0.5 + cos(t)*150, float32(H)*0.5 + sin(t)*150),
+      30, rgba(255,100,50,200), filled=true)
+
+    ren.drawDebugStats(float32(W)-200, 10)
+    ren.endFrame()
+    inc frame
+
+  ren.releaseTexture(ssaaRtKey)
+  ren.releaseTexture(mainRtKey)
+  #ren.releaseTexture(bloomRtKey)
+  ren.releaseTexture(uiRtKey)
+  ren.teardown()
+  echo "Ran ", frame, " frames."
+]#

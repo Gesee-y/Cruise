@@ -96,6 +96,9 @@ type
 proc rgba*(r, g, b: uint8, a: uint8 = 255): SDLRGBA {.inline.} =
   SDLRGBA(r: r, g: g, b: b, a: a)
 
+proc toVec*(c: SDLRGBA): tuple[x,y,z,w:uint8] =
+  (c.r, c.g, c.b, c.a)
+
 proc white*(_: typedesc[SDLRGBA]):   SDLRGBA = rgba(255,255,255)
 proc black*(_: typedesc[SDLRGBA]):   SDLRGBA = rgba(0,0,0)
 proc red*(_: typedesc[SDLRGBA]):     SDLRGBA = rgba(255,0,0)
@@ -110,6 +113,9 @@ proc transparent*(_: typedesc[SDLRGBA]): SDLRGBA = rgba(0,0,0,0)
 type
   FRect* = object
     x*, y*, w*, h*: float32
+
+proc toRect*(f: FRect): tuple[x1, x2, y1, y2: float32] = 
+  (f.x, f.y, f.x+f.w, f.y+f.h)
 
 proc frect*(x, y, w, h: float32): FRect {.inline.} =
   FRect(x: x, y: y, w: w, h: h)
@@ -200,7 +206,10 @@ proc renderTargetDesc*(w, h: int,
                         sampler = defaultSampler()): SDLTextureDesc =
   SDLTextureDesc(width: w, height: h, format: sdlFmtRGBA8888,
                  access: accessTarget, sampler: sampler)
-
+proc streamingTextureDesc*(w, h: int,
+                        sampler = defaultSampler()): SDLTextureDesc =
+  SDLTextureDesc(width: w, height: h, format: sdlFmtRGBA8888,
+                 access: accessStreaming, sampler: sampler)
 proc staticTextureDesc*(w, h: int,
                          sampler = defaultSampler()): SDLTextureDesc =
   SDLTextureDesc(width: w, height: h, format: sdlFmtRGBA8888,

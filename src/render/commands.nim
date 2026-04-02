@@ -129,8 +129,8 @@ proc DrawPoint2D*[R; C: Vec4i; V: Vec2f](
     priority: uint32 = 0,
     pass:     string  = "render"
 ) =
-  ## Push a point-draw command onto `target`.
-  ren.commandBuffer.addCommand[DrawPoint2DCmd, R](
+  ## Push a point-draw command onto `target`
+  addCommand[DrawPoint2DCmd, R](ren.commandBuffer,
     compress(target), priority, 0u32,
     DrawPoint2DCmd(color: (color.x.uint8, color.y.uint8, color.z.uint8, color.w.uint8), pos: (pos.x, pos.y)),
     pass
@@ -160,7 +160,7 @@ proc DrawLine2D*[R; C: Vec4i; V: Vec2f](
     pass:     string  = "render"
 ) =
   ## Push a line-draw command onto `target`.
-  ren.commandBuffer.addCommand[DrawLine2DCmd, R](
+  addCommand[DrawLine2DCmd, R](ren.commandBuffer,
     compress(target), priority, 0u32,
     DrawLine2DCmd(color: (color.x.uint8, color.y.uint8, color.z.uint8, color.w.uint8), 
       start: (start.x, start.y), stop: (stop.x, stop.y)),
@@ -192,7 +192,7 @@ proc DrawRect2D*[R; C: Vec4i; B: Box2Df](
     pass:     string  = "render"
 ) =
   ## Push a rectangle-draw command onto `target`.
-  ren.commandBuffer.addCommand[DrawRect2DCmd, R](
+  addCommand[DrawRect2DCmd, R](ren.commandBuffer,
     compress(target), priority, 0u32,
     DrawRect2DCmd(color: (color.x.uint8, color.y.uint8, color.z.uint8, color.w.uint8), 
       rect: (rect.x1, rect.x2, rect.y1, rect.y2), filled: filled),
@@ -225,7 +225,7 @@ proc DrawCircle2D*[R; C: Vec4i; V: Vec2f](
     pass:     string  = "render"
 ) =
   ## Push a circle-draw command onto `target`.
-  ren.commandBuffer.addCommand[DrawCircle2DCmd, R](
+  addCommand[DrawCircle2DCmd, R](ren.commandBuffer,
     compress(target), priority, 0u32,
     DrawCircle2DCmd(
       color:  (color.x.uint8, color.y.uint8, color.z.uint8, color.w.uint8),
@@ -271,7 +271,7 @@ proc DrawTexture2D*[R; B: Box2Df; V: Vec2f](
   ## Push a texture-blit command.
   ## `texture` travels as the compressed `caller`; `target` as the compressed
   ## `target` field — both fit in 32 bits after generation stripping.
-  ren.commandBuffer.addCommand[DrawTexture2DCmd, R](
+  addCommand[DrawTexture2DCmd, R](ren.commandBuffer,
     compress(target),
     priority,
     compress(texture),   ## caller encodes the source texture

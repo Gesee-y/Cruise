@@ -82,9 +82,13 @@ type
     clearColor*: SDLRGBA
     defaultSampler*: SamplerDesc
 
+  CSDLRenderer* = CRenderer[SDLData]
+
 # ---------------------------------------------------------------------------
 # SDLData constructor
 # ---------------------------------------------------------------------------
+proc passOrder*(data: SDLData): seq[string] =
+  @["render", "postprocess", "composite"]
 
 proc initSDLData*(window: ptr SDL_Window,
                   renderer: ptr SDL_Renderer,
@@ -127,12 +131,14 @@ proc initSDLData*(window: ptr SDL_Window,
     pb = initPixelBuffer(int(w), int(h))
     var pixels: pointer
     var pitch:  cint
-    discard SDL_LockTexture(tex, nil, addr pixels, addr pitch)
+    if not SDL_LockTexture(tex, nil, addr pixels, addr pitch):
+      echo SDL_GetError()
+
     pb.pitch = int(pitch)
     # Copy pixel data into pb.pixels (row by row in case pitch != w*4)
     let rowBytes = int(w) * 4
     for row in 0 ..< int(h):
-      let src = cast[ptr UncheckedArray[uint8]](cast[int](pixels) + row * int(pitch))
+      let src = cast[ptr UncheckedArray[uint8]](cast[pointer](cast[int](pixels) + row * int(pitch)))
       let dst = cast[ptr UncheckedArray[uint8]](addr pb.pixels[row * int(w)])
       copyMem(dst, src, rowBytes)
     SDL_UnlockTexture(tex)
@@ -170,15 +176,20 @@ proc initSDLData*(window: ptr SDL_Window,
 # ---------------------------------------------------------------------------
 
 proc pushTarget*(data: var SDLData, key: TextureKey) =
-  ## Set `key` as the current SDL render target and push it onto the stack.
+  echo "DEBUG pushTarget: key=", key, " screenKey=", data.screenKey
   data.targetStack.add(key)
   if key == data.screenKey:
-    discard SDL_SetRenderTarget(data.renderer, nil)
+    if not SDL_SetRenderTarget(data.renderer, nil):
+      echo "ERROR pushTarget SDL_SetRenderTarget(screen): ", SDL_GetError()
   else:
-    discard SDL_SetRenderTarget(data.renderer,
-      cast[ptr SDL_Texture](data.pool.rawPtr(key)))
+    let raw = data.pool.rawPtr(key)
+    if raw == nil:
+      echo "ERROR pushTarget: rawPtr nil pour key=", key
+      return
+    if not SDL_SetRenderTarget(data.renderer, cast[ptr SDL_Texture](raw)):
+      echo "ERROR pushTarget SDL_SetRenderTarget: ", SDL_GetError()
   inc data.stats.renderTargetSwitches
-
+  
 proc popTarget*(data: var SDLData) =
   ## Restore the previous render target.
   if data.targetStack.len > 0:
@@ -221,8 +232,6 @@ proc applySampler*(renderer: ptr SDL_Renderer,
 # ---------------------------------------------------------------------------
 
 proc flushBatcher*(data: var SDLData) =
-  ## Sort batches, then submit each to SDL_RenderGeometry.
-  ## Called at end of each pass or when changing render target.
   if data.batcher.batches.len == 0: return
   data.batcher.sort()
 
@@ -231,38 +240,40 @@ proc flushBatcher*(data: var SDLData) =
   for batch in data.batcher.batches:
     if batch.vertices.len == 0: continue
 
-    # Switch render target if needed
     if batch.targetKey != lastTarget:
       if batch.targetKey == data.screenKey:
-        discard SDL_SetRenderTarget(data.renderer, nil)
+        if not SDL_SetRenderTarget(data.renderer, nil):
+          echo "ERROR SDL_SetRenderTarget(screen): ", SDL_GetError()
       else:
-        discard SDL_SetRenderTarget(data.renderer,
-          cast[ptr SDL_Texture](data.pool.rawPtr(batch.targetKey)))
+        let raw = data.pool.rawPtr(batch.targetKey)
+        if raw == nil:
+          echo "ERROR flushBatcher: rawPtr nil pour targetKey=", batch.targetKey
+          continue
+        if not SDL_SetRenderTarget(data.renderer, cast[ptr SDL_Texture](raw)):
+          echo "ERROR SDL_SetRenderTarget: ", SDL_GetError()
       lastTarget = batch.targetKey
       inc data.stats.renderTargetSwitches
 
-    # Set blend mode on renderer
     let sdlBlend = case batch.blendMode
       of blendNone:     SDL_BLENDMODE_NONE
       of blendAlpha:    SDL_BLENDMODE_BLEND
       of blendAdditive: SDL_BLENDMODE_ADD
       of blendModulate: SDL_BLENDMODE_MOD
       of blendMul:      SDL_BLENDMODE_MUL
-    discard SDL_SetRenderDrawBlendMode(data.renderer, sdlBlend)
+    if not SDL_SetRenderDrawBlendMode(data.renderer, sdlBlend):
+      echo "ERROR SDL_SetRenderDrawBlendMode: ", SDL_GetError()
 
-    # Build SDL_Vertex array from our Vertex
     var sdlVerts = newSeq[SDL_Vertex](batch.vertices.len)
     for i, v in batch.vertices:
-      sdlVerts[i].position.x = v.pos.x
-      sdlVerts[i].position.y = v.pos.y
-      sdlVerts[i].color.r    = float32(v.color.r) / 255.0
-      sdlVerts[i].color.g    = float32(v.color.g) / 255.0
-      sdlVerts[i].color.b    = float32(v.color.b) / 255.0
-      sdlVerts[i].color.a    = float32(v.color.a) / 255.0
+      sdlVerts[i].position.x  = v.pos.x
+      sdlVerts[i].position.y  = v.pos.y
+      sdlVerts[i].color.r     = float32(v.color.r) / 255.0
+      sdlVerts[i].color.g     = float32(v.color.g) / 255.0
+      sdlVerts[i].color.b     = float32(v.color.b) / 255.0
+      sdlVerts[i].color.a     = float32(v.color.a) / 255.0
       sdlVerts[i].tex_coord.x = v.uv.x
       sdlVerts[i].tex_coord.y = v.uv.y
 
-    # Indices
     var sdlIdx = newSeq[cint](batch.indices.len)
     for i, idx in batch.indices:
       sdlIdx[i] = cint(idx)
@@ -270,7 +281,24 @@ proc flushBatcher*(data: var SDLData) =
     let texPtr = if batch.textureKey == InvalidTextureKey: nil
                  else: cast[ptr SDL_Texture](data.pool.rawPtr(batch.textureKey))
 
-    inc data.stats.textureBinds
+    if batch.textureKey != InvalidTextureKey and texPtr == nil:
+      echo "ERROR flushBatcher: texture rawPtr nil pour textureKey=", batch.textureKey
+      continue
+
+    if sdlVerts.len == 0:
+      echo "WARN flushBatcher: batch avec 0 vertices, skip"
+      continue
+
+    if sdlIdx.len == 0:
+      echo "WARN flushBatcher: batch avec 0 indices, skip"
+      continue
+
+    echo "DEBUG flushBatcher: batch verts=", sdlVerts.len, 
+         " idx=", sdlIdx.len,
+         " tex=", batch.textureKey,
+         " target=", batch.targetKey,
+         " blend=", batch.blendMode
+
     if texPtr != nil:
       applySampler(data.renderer, texPtr, data.pool.entry(batch.textureKey).desc.sampler)
 
@@ -280,7 +308,9 @@ proc flushBatcher*(data: var SDLData) =
       cast[ptr cint](addr sdlIdx[0]), cint(sdlIdx.len)
     )
     if not ok:
-      echo "SDL_RenderGeometry error: ", SDL_GetError()
+      echo "ERROR SDL_RenderGeometry: ", SDL_GetError(),
+           " verts=", sdlVerts.len, " idx=", sdlIdx.len,
+           " target=", batch.targetKey
 
     inc data.stats.drawCalls
     data.stats.batchedPrimitives += batch.indices.len div 3
@@ -298,20 +328,23 @@ proc flushBatcher*(data: var SDLData) =
 # We need the CRenderer wrapper in scope
 # (imported by sdl3_renderer.nim that includes this file)
 
-proc executeCommand*(data: var SDLData, batch: RenderBatch[DrawPoint2DCmd]) =
+proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[DrawPoint2DCmd]) =
+  var data = ren.data
   for cmd in batch.commands:
     let color = rgba(cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a)
     data.batcher.emitPoint(fpoint(cmd.pos.x, cmd.pos.y), color,
                             data.currentTarget(), blendAlpha)
 
-proc executeCommand*(data: var SDLData, batch: RenderBatch[DrawLine2DCmd]) =
+proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[DrawLine2DCmd]) =
+  var data = ren.data
   for cmd in batch.commands:
     let color = rgba(cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a)
     data.batcher.emitLine(fpoint(cmd.start.x, cmd.start.y),
                            fpoint(cmd.stop.x,  cmd.stop.y),
                            color, data.currentTarget(), blendAlpha)
 
-proc executeCommand*(data: var SDLData, batch: RenderBatch[DrawRect2DCmd]) =
+proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[DrawRect2DCmd]) =
+  var data = ren.data
   for cmd in batch.commands:
     let color = rgba(cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a)
     data.batcher.emitRect(
@@ -319,14 +352,16 @@ proc executeCommand*(data: var SDLData, batch: RenderBatch[DrawRect2DCmd]) =
                                        cmd.rect.y2 - cmd.rect.y1),
       color, data.currentTarget(), blendAlpha, cmd.filled)
 
-proc executeCommand*(data: var SDLData, batch: RenderBatch[DrawCircle2DCmd]) =
+proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[DrawCircle2DCmd]) =
+  var data = ren.data
   for cmd in batch.commands:
     let color = rgba(cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a)
     data.batcher.emitCircle(fpoint(cmd.center.x, cmd.center.y),
                              cmd.radius, color, data.currentTarget(),
                              blendAlpha, cmd.filled)
 
-proc executeCommand*(data: var SDLData, batch: RenderBatch[DrawTexture2DCmd]) =
+proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[DrawTexture2DCmd]) =
+  var data = ren.data
   ## Recover the source texture key from the batch caller compressed handle.
   let texIdx = decompressIndex(batch.caller)
   let texKey  = TextureKey(texIdx + 1)   # pool uses key = slot+1
@@ -410,6 +445,12 @@ type
     effects*:   seq[PostProcessEffect]
 commandAction PostProcessCmd
 
+type PostProcessRTCmd* = object
+  srcKey*:  TextureKey          ## render target source (accessTarget)
+  dstKey*:  TextureKey          ## streaming dest (accessStreaming)
+  effects*: seq[PostProcessEffect]
+commandAction PostProcessRTCmd
+
 type
   ## GPU-assisted blit: copy texture A → texture B with optional scale/blend
   BlitTextureCmd* = object
@@ -440,24 +481,28 @@ type
     dummy*: uint8
 commandAction PopTargetCmd
 
-proc executeCommand*(data: var SDLData, batch: RenderBatch[DrawCircleAdvCmd]) =
+proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[DrawCircleAdvCmd]) =
+  var data = ren.data
   for cmd in batch.commands:
     data.batcher.emitCircle(cmd.center, cmd.radius, cmd.color,
                              data.currentTarget(), blendAlpha,
                              cmd.filled, cmd.thickness, cmd.segments)
 
-proc executeCommand*(data: var SDLData, batch: RenderBatch[DrawRoundRectCmd]) =
+proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[DrawRoundRectCmd]) =
+  var data = ren.data
   for cmd in batch.commands:
     data.batcher.emitRoundedRect(cmd.rect, cmd.radius, cmd.color,
                                   data.currentTarget(), blendAlpha,
                                   cmd.filled, cmd.cornerSegs)
 
-proc executeCommand*(data: var SDLData, batch: RenderBatch[DrawPolygonCmd]) =
+proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[DrawPolygonCmd]) =
+  var data = ren.data
   for cmd in batch.commands:
     data.batcher.emitPolygon(cmd.points, cmd.color, data.currentTarget(),
                               blendAlpha, cmd.filled, cmd.thickness)
 
-proc executeCommand*(data: var SDLData, batch: RenderBatch[DrawTexturedQuadCmd]) =
+proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[DrawTexturedQuadCmd]) =
+  var data = ren.data
   for cmd in batch.commands:
     let texIdx = decompressIndex(batch.caller)
     let texKey  = TextureKey(texIdx + 1)
@@ -466,7 +511,8 @@ proc executeCommand*(data: var SDLData, batch: RenderBatch[DrawTexturedQuadCmd])
                                    cmd.tint, cmd.angle, cmd.pivot,
                                    cmd.flipH, cmd.flipV)
 
-proc executeCommand*(data: var SDLData, batch: RenderBatch[DrawGeometryCmd]) =
+proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[DrawGeometryCmd]) =
+  var data = ren.data
   ## Direct geometry injection — bypass the batcher and submit immediately.
   for cmd in batch.commands:
     # Flush existing batcher first to preserve order
@@ -503,7 +549,8 @@ proc executeCommand*(data: var SDLData, batch: RenderBatch[DrawGeometryCmd]) =
       cast[ptr cint](addr sdlIdx[0]), cint(sdlIdx.len))
     inc data.stats.drawCalls
 
-proc executeCommand*(data: var SDLData, batch: RenderBatch[PostProcessCmd]) =
+proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[PostProcessCmd]) =
+  var data = ren.data
   data.flushBatcher()  # flush geometry before pixel manipulation
   for cmd in batch.commands:
     if cmd.targetKey == InvalidTextureKey: continue
@@ -512,6 +559,98 @@ proc executeCommand*(data: var SDLData, batch: RenderBatch[PostProcessCmd]) =
       data.pp.addEffect(raw, fx)
   inc data.stats.postProcessPasses
 
+proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[PostProcessRTCmd]) =
+  var data = ren.data
+  data.flushBatcher()
+
+  for cmd in batch.commands:
+    if cmd.srcKey == InvalidTextureKey or cmd.dstKey == InvalidTextureKey:
+      echo "WARN PostProcessRT: key invalide, skip"
+      continue
+    if not data.pool.isValid(cmd.srcKey) or not data.pool.isValid(cmd.dstKey):
+      echo "WARN PostProcessRT: key invalide dans le pool, skip"
+      continue
+
+    let srcDesc = data.pool.desc(cmd.srcKey)
+    let dstDesc = data.pool.desc(cmd.dstKey)
+
+    # Vérifier que les dimensions correspondent
+    if srcDesc.width != dstDesc.width or srcDesc.height != dstDesc.height:
+      echo "ERROR PostProcessRT: dimensions incompatibles src=",
+           srcDesc.width, "x", srcDesc.height,
+           " dst=", dstDesc.width, "x", dstDesc.height
+      continue
+
+    let w = srcDesc.width
+    let h = srcDesc.height
+
+    # 1. Lire les pixels de la render target → PixelBuffer CPU
+    var pb = initPixelBuffer(w, h)
+    let srcRaw = cast[ptr SDL_Texture](data.pool.rawPtr(cmd.srcKey))
+
+    # Pointer sur la render target pour SDL_RenderReadPixels
+    let prevTarget = data.currentTarget()
+    if not SDL_SetRenderTarget(data.renderer, srcRaw):
+      echo "ERROR PostProcessRT SDL_SetRenderTarget(src): ", SDL_GetError()
+      continue
+
+    let surf = SDL_RenderReadPixels(
+        data.renderer, nil)
+
+    if surf.isNil:
+      echo "ERROR PostProcessRT SDL_RenderReadPixels: ", SDL_GetError()
+      # Restore target avant de continuer
+      discard SDL_SetRenderTarget(data.renderer, nil)
+      continue
+
+    let srcPixels = cast[ptr UncheckedArray[uint32]](surf.pixels)
+    let pitchInU32 = int(surf.pitch) div 4
+    for row in 0 ..< h:
+      for col in 0 ..< w:
+        pb.pixels[row * w + col] = srcPixels[row * pitchInU32 + col]
+
+    # Restaurer la cible précédente
+    if prevTarget == data.screenKey:
+      discard SDL_SetRenderTarget(data.renderer, nil)
+    else:
+      discard SDL_SetRenderTarget(data.renderer,
+        cast[ptr SDL_Texture](data.pool.rawPtr(prevTarget)))
+
+    # 2. Appliquer les effets CPU sur le PixelBuffer
+    for fx in cmd.effects:
+      case fx.kind
+      of ppBlur:           applyBlur(pb, fx.blur)
+      of ppBloom:          applyBloom(pb, fx.bloom)
+      of ppSharpen:        applySharpen(pb, fx.sharpenAmt)
+      of ppVignette:       applyVignette(pb, fx.vignette)
+      of ppChromaticAberr: applyChromatic(pb, fx.chroma)
+      of ppColorGrade:     applyColorGrade(pb, fx.colorGrade)
+      of ppFXAA:           applyFXAA(pb, fx.fxaaQuality)
+      of ppDownscale:      applyDownscale(pb, fx.downscale.targetW,
+                                          fx.downscale.targetH, fx.downscale.filter)
+      of ppUpscale:        applyUpscale(pb, fx.upscale.targetW,
+                                        fx.upscale.targetH, fx.upscale.filter)
+      of ppSSAA:
+        let s = max(1, fx.ssaaScale)
+        let tw = pb.width div s
+        let th = pb.height div s
+        if tw > 0 and th > 0:
+          applyDownscale(pb, tw, th, scaleLinear)
+      of ppCustom, ppNone: discard
+
+    # 3. Upload le résultat → texture streaming destination
+    let dstRaw = cast[ptr SDL_Texture](data.pool.rawPtr(cmd.dstKey))
+    if not SDL_UpdateTexture(
+        dstRaw, nil,
+        cast[pointer](addr pb.pixels[0]),
+        cint(w * 4)):
+      echo "ERROR PostProcessRT SDL_UpdateTexture: ", SDL_GetError()
+      continue
+
+    SDL_DestroySurface(surf)
+
+    inc data.stats.postProcessPasses
+
 proc cmpBlitCmd(a, b: BlitTextureCmd): int =
   result = cmp(cast[uint32](a.dstKey), cast[uint32](b.dstKey))
   if result != 0: return
@@ -519,23 +658,57 @@ proc cmpBlitCmd(a, b: BlitTextureCmd): int =
   if result != 0: return
   result = cmp(ord(a.blend), ord(b.blend))
 
-proc executeCommand*(data: var SDLData, batch: RenderBatch[BlitTextureCmd]) =
+proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[BlitTextureCmd]) =
+  var data = ren.data
   data.flushBatcher()
-  var cmds = batch.commands
-  if cmds.len > 1:
-    cmds.sort(cmpBlitCmd)
-  for cmd in cmds:
-    let srcRaw = if cmd.srcKey == InvalidTextureKey: nil
-                 else: cast[ptr SDL_Texture](data.pool.rawPtr(cmd.srcKey))
-    if srcRaw == nil: continue
-
-    # Set destination target
+ 
+  for cmd in batch.commands:
+    ## Source texture — must be valid
+    if cmd.srcKey == InvalidTextureKey:
+      echo "WARN BlitTexture: srcKey is InvalidTextureKey, skip"
+      continue
+    let srcRaw = cast[ptr SDL_Texture](data.pool.rawPtr(cmd.srcKey))
+    if srcRaw == nil:
+      echo "ERROR BlitTexture: srcKey=", cmd.srcKey, " → rawPtr nil"
+      continue
+ 
+    ## Query source texture size for converting normalised rects to pixels
+    var srcW, srcH: cfloat
+    if not SDL_GetTextureSize(srcRaw, addr srcW, addr srcH):
+      echo "ERROR BlitTexture SDL_GetTextureSize: ", SDL_GetError()
+      continue
+    if srcW <= 0 or srcH <= 0:
+      echo "ERROR BlitTexture: invalid texture size ", srcW, "x", srcH
+      continue
+ 
+    ## Set destination render target
     if cmd.dstKey == data.screenKey or cmd.dstKey == InvalidTextureKey:
-      discard SDL_SetRenderTarget(data.renderer, nil)
+      if not SDL_SetRenderTarget(data.renderer, nil):
+        echo "ERROR BlitTexture SDL_SetRenderTarget(screen): ", SDL_GetError()
+        continue
     else:
-      discard SDL_SetRenderTarget(data.renderer,
-        cast[ptr SDL_Texture](data.pool.rawPtr(cmd.dstKey)))
-
+      let dstRaw = data.pool.rawPtr(cmd.dstKey)
+      if dstRaw == nil:
+        echo "ERROR BlitTexture: dstKey=", cmd.dstKey, " → rawPtr nil"
+        continue
+      if not SDL_SetRenderTarget(data.renderer, cast[ptr SDL_Texture](dstRaw)):
+        echo "ERROR BlitTexture SDL_SetRenderTarget: ", SDL_GetError()
+        continue
+ 
+    ## Query destination size (needed to expand a zero dstRect to full target)
+    var dstTexW, dstTexH: cfloat
+    if cmd.dstKey == data.screenKey or cmd.dstKey == InvalidTextureKey:
+      var outW, outH: cint
+      discard SDL_GetCurrentRenderOutputSize(data.renderer, addr outW, addr outH)
+      dstTexW = cfloat(outW); dstTexH = cfloat(outH)
+    else:
+      let dstDesc = data.pool.desc(cmd.dstKey)
+      dstTexW = cfloat(dstDesc.width); dstTexH = cfloat(dstDesc.height)
+ 
+    ## [FIX-9] Apply tint + alpha
+    discard SDL_SetTextureColorMod(srcRaw, cmd.tint.r, cmd.tint.g, cmd.tint.b)
+    discard SDL_SetTextureAlphaMod(srcRaw, uint8(clamp(cmd.alpha, 0.0f, 1.0f) * 255))
+ 
     let sdlBlend = case cmd.blend
       of blendNone:     SDL_BLENDMODE_NONE
       of blendAlpha:    SDL_BLENDMODE_BLEND
@@ -543,26 +716,37 @@ proc executeCommand*(data: var SDLData, batch: RenderBatch[BlitTextureCmd]) =
       of blendModulate: SDL_BLENDMODE_MOD
       of blendMul:      SDL_BLENDMODE_MUL
     discard SDL_SetTextureBlendMode(srcRaw, sdlBlend)
-    discard SDL_SetTextureColorMod(srcRaw, cmd.tint.r, cmd.tint.g, cmd.tint.b)
-    discard SDL_SetTextureAlphaMod(srcRaw, uint8(cmd.alpha * 255))
-
-    var srcW, srcH: cfloat
-    discard SDL_GetTextureSize(srcRaw, addr srcW, addr srcH)
-
-    let sdlSrc = SDL_FRect(
-      x: cmd.srcRect.x * float32(srcW),
-      y: cmd.srcRect.y * float32(srcH),
-      w: cmd.srcRect.w * float32(srcW),
-      h: cmd.srcRect.h * float32(srcH)
-    )
-    let sdlDst = SDL_FRect(x: cmd.dstRect.x, y: cmd.dstRect.y,
-                            w: cmd.dstRect.w, h: cmd.dstRect.h)
-
-    discard SDL_RenderTexture(data.renderer, srcRaw,
-      unsafeAddr sdlSrc, unsafeAddr sdlDst)
+ 
+    ## Convert normalised source rect [0,1] → pixels
+    var sdlSrcRect = SDL_FRect(
+      x: cmd.srcRect.x * srcW,
+      y: cmd.srcRect.y * srcH,
+      w: cmd.srcRect.w * srcW,
+      h: cmd.srcRect.h * srcH)
+ 
+    ## Convert destination rect: zero size = full target
+    var sdlDstRect: SDL_FRect
+    if cmd.dstRect.w <= 0 or cmd.dstRect.h <= 0:
+      sdlDstRect = SDL_FRect(x: 0, y: 0, w: dstTexW, h: dstTexH)
+    else:
+      sdlDstRect = SDL_FRect(
+        x: cmd.dstRect.x, y: cmd.dstRect.y,
+        w: cmd.dstRect.w, h: cmd.dstRect.h)
+ 
+    ## [FIX-9] The actual blit (was missing in original)
+    if not SDL_RenderTexture(data.renderer, srcRaw,
+                             addr sdlSrcRect, addr sdlDstRect):
+      echo "ERROR BlitTexture SDL_RenderTexture: ", SDL_GetError()
+ 
+    ## Restore default tint so subsequent draws are unaffected
+    discard SDL_SetTextureColorMod(srcRaw, 255, 255, 255)
+    discard SDL_SetTextureAlphaMod(srcRaw, 255)
+ 
     inc data.stats.drawCalls
+    inc data.stats.renderTargetSwitches
 
-proc executeCommand*(data: var SDLData, batch: RenderBatch[ClearTargetCmd]) =
+proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[ClearTargetCmd]) =
+  var data = ren.data
   data.flushBatcher()
   for cmd in batch.commands:
     if cmd.targetKey == data.screenKey or cmd.targetKey == InvalidTextureKey:
@@ -574,22 +758,17 @@ proc executeCommand*(data: var SDLData, batch: RenderBatch[ClearTargetCmd]) =
     discard SDL_SetRenderDrawColor(data.renderer, c.r, c.g, c.b, c.a)
     discard SDL_RenderClear(data.renderer)
 
-proc executeCommand*(data: var SDLData, batch: RenderBatch[PushTargetCmd]) =
+proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[PushTargetCmd]) =
+  var data = ren.data
   data.flushBatcher()
   for cmd in batch.commands:
     data.pushTarget(cmd.targetKey)
 
-proc executeCommand*(data: var SDLData, batch: RenderBatch[PopTargetCmd]) =
+proc executeCommand*(ren: var CSDLRenderer, batch: RenderBatch[PopTargetCmd]) =
+  var data = ren.data
   data.flushBatcher()
   for _ in batch.commands:
     data.popTarget()
-
-# ---------------------------------------------------------------------------
-# passOrder — controls CommandBuffer dispatch sequence
-# ---------------------------------------------------------------------------
-
-proc passOrder*(data: SDLData): seq[string] =
-  @["render", "postprocess", "composite"]
 
 # ---------------------------------------------------------------------------
 # beginFrame / endFrame for SDLData
