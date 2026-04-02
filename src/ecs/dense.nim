@@ -17,146 +17,140 @@ proc createPartition(table: var ECSWorld, arch: ArchetypeNode): TablePartition =
 ## Each block corresponds to DEFAULT_BLK_SIZE contiguous entity slots.
 ##
 ## The resulting ranges describe which block indices and offsets were allocated.
-proc allocateNewBlocks(
-  table: var ECSWorld,
-  count: int,
-  res: var seq[(uint, Range)],
-  current: int,
-  partition: var TablePartition
+
+macro allocateNewBlocks(
+  table,
+  count,
+  res,
+  current,
+  partition: typed,
+  comps: varargs[typed]
 ) =
+  var code = newNimNode(nnkStmtList)
+  for c in comps[0][0]:
+    code.add quote("@") do:
+      var fr = castTo(`@table`.registry.entries[toComponentId(`@c`)].rawPointer, `@c`, DEFAULT_BLK_SIZE)
+      fr.newBlockAt(`@table`.blockCount)
   
-  check(count >= 0, "Allocation count cannot be negative")
-  var n = count
-  let s = n div DEFAULT_BLK_SIZE
-  var bc = table.blockCount
-  let pl = partition.zones.len
-  var c = current
-  
-  partition.zones.setLen(pl + s + 1)
-
-  for i in 0..s:
-    var trange: TableRange
-    let e = min(n, DEFAULT_BLK_SIZE)
+  return quote("@") do:
+    check(`@count` >= 0, "Allocation count cannot be negative")
+    var n = `@count`
+    let s = n div DEFAULT_BLK_SIZE
+    var bc = `@table`.blockCount
+    let pl = `@partition`.zones.len
+    var c = `@current`
     
-    ## Register allocated range
-    res[c] = ((bc.uint, Range(s: 0, e: e)))
-    trange.r.s = 0
-    trange.r.e = e
-    trange.block_idx = bc
-    partition.zones[pl + i] = trange
-    
-    ## Advance fill index if the block is fully occupied
-    if n >= DEFAULT_BLK_SIZE:
-      partition.fill_index += 1
+    `@partition`.zones.setLen(pl + s + 1)
 
-    ## Materialize the new block for each component in the partition
-    for id in partition.components:
-      check(id < table.registry.entries.len, "Component ID out of registry bounds")
-      let entry = table.registry.entries[id]
-      entry.newBlockAtOp(entry.rawPointer, bc)
+    for i in 0..s:
+      var trange: TableRange
+      let e = min(n, DEFAULT_BLK_SIZE)
+      
+      ## Register allocated range
+      `@res`[c] = ((bc.uint, Range(s: 0, e: e)))
+      trange.r.s = 0
+      trange.r.e = e
+      trange.block_idx = bc
+      `@partition`.zones[pl + i] = trange
+      
+      ## Advance fill index if the block is fully occupied
+      if n >= DEFAULT_BLK_SIZE:
+        `@partition`.fill_index += 1
 
-    table.blockCount += 1
-    n -= DEFAULT_BLK_SIZE
-    inc bc
-    inc c
+      `@code`
 
-  table.handles.setLen((table.blockCount + 1) * DEFAULT_BLK_SIZE)
+      `@table`.blockCount += 1
+      n -= DEFAULT_BLK_SIZE
+      inc bc
+      inc c
+
+    `@table`.handles.setLen((`@table`.blockCount + 1) * DEFAULT_BLK_SIZE)
 
 ## Allocates `n` entities for a given archetype node.
 ## Reuses partially-filled blocks before allocating new ones.
-proc allocateEntities(
-  table: var ECSWorld,
-  n: int,
-  archNode: ArchetypeNode
+macro allocateEntities(
+  table,
+  n,
+  archNode: untyped,
+  comps: varargs[typed]
 ): seq[(uint, Range)] =
-  check(not archNode.isNil, "ArchetypeNode is nil during entity allocation")
-  var res = newSeq[(uint, Range)](n div DEFAULT_BLK_SIZE + 1)
 
-  ## First allocation for this archetype
-  if archNode.partition.isNil:
-    var partition = createPartition(table, archNode)
-    allocateNewBlocks(table, n, res, 0, partition)
-    return res
+  #let nblk1 = quote("@") do: allocateNewBlocksM(`@table`, `@n`, res, 0, partition, `@comps`)
+  #let nblk2 = quote("@") do: allocateNewBlocksM(`@table`, m, res, current, partition, `@comps`)
 
-  var m = n
-  var partition = archNode.partition
-  var current = 0
+  return quote("@") do:
+    check(not `@archNode`.isNil, "ArchetypeNode is nil during entity allocation")
+    var res = newSeq[(uint, Range)](`@n` div DEFAULT_BLK_SIZE + 1)
 
-  ## Fill existing blocks
-  while m > 0 and partition.fill_index < partition.zones.len:
-    let id = partition.zones[partition.fill_index].block_idx
-    let e = partition.zones[partition.fill_index].r.e
-    let r = min(e + m, DEFAULT_BLK_SIZE)
+    ## First allocation for this archetype
+    if `@archNode`.partition.isNil:
+      var partition = createPartition(`@table`, `@archNode`)
+      allocateNewBlocks(`@table`, `@n`, res, 0, partition, `@comps`)
+      res
+    else:
+      var m = `@n`
+      var partition = `@archNode`.partition
+      var current = 0
 
-    partition.zones[partition.fill_index].r.e = r
-    res[current] = ((id.uint, Range(s: e, e: r)))
-    
-    if r >= DEFAULT_BLK_SIZE:
+      ## Fill existing blocks
+      while m > 0 and partition.fill_index < partition.zones.len:
+        let id = partition.zones[partition.fill_index].block_idx
+        let e = partition.zones[partition.fill_index].r.e
+        let r = min(e + m, DEFAULT_BLK_SIZE)
+
+        partition.zones[partition.fill_index].r.e = r
+        res[current] = ((id.uint, Range(s: e, e: r)))
+        
+        if r >= DEFAULT_BLK_SIZE:
+          partition.fill_index += 1
+
+        m -= r - e
+        current += 1
+
+      ## Allocate new blocks if necessary
+      if m > 0:
+        allocateNewBlocks(`@table`, m, res, current, partition, `@comps`)
+
+      res
+
+## Allocates a single dense entity and returns:
+## (block index, offset inside block, archetype id)
+macro allocateEntity(
+  table,
+  archNode: untyped,
+  comps:varargs[typed]
+): (uint, int, uint16) =
+  var code = newNimNode(nnkStmtList)
+  for c in comps[0]:
+    code.add quote("@") do:
+      let p = `@table`.registry.entries[toComponentId(`@c`)].rawPointer
+      var fr = castTo(p, `@c`, DEFAULT_BLK_SIZE)
+      fr.newBlockAt(`@table`.blockCount)
+
+  return quote("@") do:
+    var partition = createPartition(`@table`, `@archNode`)
+    var fill_index = partition.fill_index
+
+    ## Allocate a new block if required
+    if fill_index >= partition.zones.len:
+      partition.zones.setLen(fill_index + 1)
+
+      `@code`
+
+      partition.zones[fill_index].block_idx = `@table`.blockCount
+      `@table`.blockCount += 1
+      `@table`.handles.setLen((`@table`.blockCount + 1) * DEFAULT_BLK_SIZE)
+
+    var zone = addr partition.zones[fill_index]
+    let id = zone.block_idx
+    let e = zone.r.e
+
+    zone.r.e += 1
+      
+    if isFull(zone):
       partition.fill_index += 1
 
-    m -= r - e
-    current += 1
-
-  ## Allocate new blocks if necessary
-  if m > 0:
-    allocateNewBlocks(table, m, res, current, partition)
-
-  return res
-
-## Allocates multiple entities using an archetype mask.
-## Fast-path through archetype graph lookup.
-proc allocateEntities(
-  table: var ECSWorld,
-  n: int,
-  arch: ArchetypeMask
-): seq[(uint, Range)] =
-  let archNode = table.archGraph.findArchetypeFast(arch)
-  return allocateEntities(table, n, archNode)
-
-## Allocates a single dense entity and returns:
-## (block index, offset inside block, archetype id)
-template allocateEntity(
-  table: var ECSWorld,
-  archNode: var ArchetypeNode
-): (uint, int, uint16) =
-
-  var partition = createPartition(table, archNode)
-  var fill_index = partition.fill_index
-
-  ## Allocate a new block if required
-  if fill_index >= partition.zones.len:
-    partition.zones.setLen(fill_index + 1)
-
-    for id in partition.components:
-      check(id < table.registry.entries.len, "Invalid component ID")
-      let entry = table.registry.entries[id]
-      entry.newBlockAtOp(entry.rawPointer, table.blockCount)
-
-    partition.zones[fill_index].block_idx = table.blockCount
-    table.blockCount += 1
-    table.handles.setLen((table.blockCount + 1) * DEFAULT_BLK_SIZE)
-
-  var zone = addr partition.zones[fill_index]
-  let id = zone.block_idx
-  let e = zone.r.e
-
-  zone.r.e += 1
-    
-  if isFull(zone):
-    partition.fill_index += 1
-
-  (id.uint, e, archNode.id)
-
-## Allocates a single dense entity and returns:
-## (block index, offset inside block, archetype id)
-proc allocateEntity(
-  table: var ECSWorld,
-  arch: ArchetypeMask
-): (uint, int, uint16) =
-  var archNode = table.archGraph.findArchetypeFast(arch)
-  check(not archNode.isNil, "ArchetypeNode not found")
-
-  return allocateEntity(table, archNode)
+    (id.uint, e, `@archNode`.id)
 
 ## Deletes a dense entity row.
 ## Performs swap-remove within the archetype partition.
@@ -371,3 +365,4 @@ template changePartition(
     e.archetypeId = newArch.id
 
   (toSwap, toAdd)
+

@@ -58,7 +58,7 @@ type
     batches: Table[Signature, BatchHandle]
 
   CommandBuffer* = object
-    passes: Table[string, PassStorage]
+    passes*: Table[string, PassStorage]
 
 proc `==`*(a, b: Signature): bool {.inline.} =
   a.hi == b.hi and a.lo == b.lo
@@ -130,7 +130,6 @@ proc matches*(q: CommandQuery, sig: Signature): bool {.inline.} =
 
 proc initRenderBatch*[T](target, priority, caller: uint32): RenderBatch[T] =
   RenderBatch[T](target: target, priority: priority, caller: caller, commands: @[])
-
 
 macro commandAction*(typeName: untyped): untyped =
   # Assign a stable compile-time ID.
@@ -228,6 +227,7 @@ proc initPassStorage(): PassStorage =
 proc initCommandBuffer*(): CommandBuffer =
   result.passes["render"]      = initPassStorage()
   result.passes["postprocess"] = initPassStorage()
+  result.passes["composite"]   = initPassStorage()
 
 proc addPass*(cb: var CommandBuffer, name: string) =
   ## Register a new named render pass.
@@ -277,8 +277,7 @@ proc removeCommand*[T](
 proc clearPass*(cb: var CommandBuffer, pass = "render") =
   ## Reset every batch in `pass` — keeps seq memory allocated for next frame.
   if pass notin cb.passes: return
-  for h in cb.passes[pass].batches.values:
-    h.clear()
+  cb.passes[pass] = initPassStorage()
 
 proc destroyAllPasses*(cb: var CommandBuffer) =
   ## Destroy all inner batches and remove all handles across every pass.
@@ -327,13 +326,13 @@ proc sortedHandles*(
 
 proc passOrder*(ren: auto): seq[string] =
   ## Default pass order. Override per renderer type.
-  @["render", "postprocess"]
+  @["render", "postprocess", "composite"]
 
-proc executeCommand*[T](ren: var auto, commands: RenderBatch[T]) =
+proc executeCommand*[R, T](ren: var R, commands: RenderBatch[T]) =
   ## Fallback — compile error if the required overload is missing.
-  {.error: "executeCommand not implemented for this (renderer, command) pair".}
+  {.error: "executeCommand not implemented for this (" & $R & ", command) pair".}
 
-proc executeAll*[R](ren: var R, cb: CommandBuffer) =
+proc defExecuteAll*[R](ren: var R, cb: var CommandBuffer) =
   ## Flush the buffer: iterate passes in order, sort by priority, dispatch.
   ## Each `BatchHandle.process` calls the statically resolved `executeCommand`.
   let renPtr = cast[RendererPtr](ren)

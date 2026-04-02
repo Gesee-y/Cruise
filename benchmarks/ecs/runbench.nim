@@ -62,7 +62,7 @@ proc setupWorldNoEnt(): ECSWorld =
 
 proc runDenseBenchmarks() =
   var suite = initSuite("Cruise Dense")
-#[
+
   # ------------------------------
   # Create single sparse entity
   # ------------------------------
@@ -75,13 +75,13 @@ proc runDenseBenchmarks() =
       var node = w.archGraph.findArchetype([0, 1])
       var ents:seq[DenseHandle]
       for i in 0..<ENTITY_COUNT:
-        ents.add w.createEntity(node)
+        ents.add w.createEntity(Position, Velocity)
       for e in ents.mitems:
         w.deleteEntity(e)
     ),
     (
       for i in 0..<ENTITY_COUNT:
-        discard w.createEntity(node)
+        discard w.createEntity(Position, Velocity)
     )
   )
   showDetailed(suite.benchmarks[0])
@@ -92,13 +92,12 @@ proc runDenseBenchmarks() =
     WARMUP,
     (
       var w = setupWorldNoEnt()
-      var node = w.archGraph.findArchetype([0, 1])
-      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, node)
+      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, Position, Velocity)
       for e in ents.mitems:
         w.deleteEntity(e)
     ),
     (
-      discard w.createEntities(ENTITY_COUNT, node)
+      discard w.createEntities(ENTITY_COUNT, Position, Velocity)
     )
   )
   showDetailed(suite.benchmarks[1])
@@ -112,9 +111,7 @@ proc runDenseBenchmarks() =
     Warmup,
     (
       var w = setupWorldNoEnt()
-      var node = w.archGraph.findArchetype([0, 1])
-      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, node)
-      
+      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, Position, Velocity)
     )
     ,
     for e in ents.mitems:
@@ -128,8 +125,7 @@ proc runDenseBenchmarks() =
     WARMUP,
     (
       var w = setupWorldNoEnt()
-      var node = w.archGraph.findArchetype([0, 1])
-      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, node)
+      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, Position, Velocity)
     ),
     (
       discard query(w, Position and Velocity)
@@ -143,8 +139,7 @@ proc runDenseBenchmarks() =
     WARMUP,
     (
       var w = setupWorldNoEnt()
-      var node = w.archGraph.findArchetype([0, 1])
-      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, node)
+      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, Position, Velocity)
     ),
     (
       for (_,_) in w.denseQuery(query(w, Position and Velocity)):
@@ -159,8 +154,7 @@ proc runDenseBenchmarks() =
     WARMUP,
     (
       var w = setupWorldNoEnt()
-      var node = w.archGraph.findArchetype([0, 1])
-      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, node)
+      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, Position, Velocity)
       let q2 = w.denseQueryCache(query(w, Position and Velocity))
       var posc = w.get(Position)
       let velc = w.get(Velocity)
@@ -186,8 +180,7 @@ proc runDenseBenchmarks() =
     WARMUP,
     (
       var w = setupWorldNoEnt()
-      var node = w.archGraph.findArchetype([0, 1])
-      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, node)
+      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, Position)
       var posc = w.get(Position)
       
     ),
@@ -204,10 +197,8 @@ proc runDenseBenchmarks() =
     WARMUP,
     (
       var w = setupWorldNoEnt()
-      var node = w.archGraph.findArchetype([0, 1])
-      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, node)
+      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, Position)
       var posc = w.get(Position)
-      
     ),
     (
       for e in ents:
@@ -222,17 +213,16 @@ proc runDenseBenchmarks() =
     WARMUP,
     (
       var w = setupWorldNoEnt()
-      var archBase = w.archGraph.findArchetype([0, 1])
-      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, archBase)
+      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, Position, Velocity)
       
       for e in ents:
-        w.addComponent(e, 2)
+        w.addComponent(e, Acceleration.toComponentId)
       for e in ents:
-        w.removeComponent(e, 2)
+        w.removeComponent(e, Acceleration.toComponentId)
     ),
     (
       for e in ents:
-        w.addComponent(e, 2)
+        w.addComponent(e, Acceleration.toComponentId)
     )
   )
   showDetailed(suite.benchmarks[8])
@@ -243,15 +233,14 @@ proc runDenseBenchmarks() =
     WARMUP,
     (
       var w = setupWorldNoEnt()
-      var archBase = w.archGraph.findArchetype([0, 1])
-      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, archBase)
+      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, Position, Velocity)
       
       for e in ents:
-        w.addComponent(e, 2)
+        w.addComponent(e, Velocity.toComponentId)
     ),
     (
       for e in ents:
-        w.removeComponent(e, 2)
+        w.removeComponent(e, Velocity.toComponentId)
     )
   )
   showDetailed(suite.benchmarks[9])
@@ -262,22 +251,20 @@ proc runDenseBenchmarks() =
     WARMUP,
     (
       var w = setupWorldNoEnt()
-      var archBase = w.archGraph.findArchetype([0, 1])
-      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, archBase)
+      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, Position, Velocity)
       
       for e in ents:
-        w.addComponent(e, 2)
+        w.addComponent(e, Acceleration.toComponentId)
       for e in ents:
-        w.removeComponent(e, 2)
+        w.removeComponent(e, Acceleration.toComponentId)
     ),
     (
       for e in ents:
-        w.addComponent(e, 2)
-        w.removeComponent(e, 2)
+        w.addComponent(e, Acceleration.toComponentId)
+        w.removeComponent(e, Acceleration.toComponentId)
     )
   )
   showDetailed(suite.benchmarks[10])
-]#
 
   suite.add benchmarkWithSetup(
     "migrate_dense_entity",
@@ -285,9 +272,9 @@ proc runDenseBenchmarks() =
     WARMUP,
     (
       var w = setupWorldNoEnt()
-      var archBase = w.archGraph.findArchetype([0, 1])
-      var archDest = w.archGraph.findArchetype([0, 1, 2])
-      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, archBase)
+      var archBase = w.archGraph.findArchetype([toComponentId(Position), toComponentId(Velocity)])
+      var archDest = w.archGraph.findArchetype([toComponentId(Position), toComponentId(Velocity), toComponentId(Acceleration)])
+      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, Position, Velocity)
       
       for e in ents:
         migrateEntity(w, e, archDest)
@@ -299,7 +286,7 @@ proc runDenseBenchmarks() =
         migrateEntity(w, e, archDest)
     )
   )
-  showDetailed(suite.benchmarks[0])
+  showDetailed(suite.benchmarks[11])
   
   suite.add benchmarkWithSetup(
     "migrate dense entity batch",
@@ -307,9 +294,9 @@ proc runDenseBenchmarks() =
     WARMUP,
     (
       var w = setupWorldNoEnt()
-      var archBase = w.archGraph.findArchetype([0, 1])
-      var archDest = w.archGraph.findArchetype([0, 1, 2])
-      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, archBase)
+      var archBase = w.archGraph.findArchetype([toComponentId(Position), toComponentId(Velocity)])
+      var archDest = w.archGraph.findArchetype([toComponentId(Position), toComponentId(Velocity), toComponentId(Acceleration)])
+      var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, Position, Velocity)
       
       migrateEntity(w, ents, archDest)
       migrateEntity(w, ents, archBase)
@@ -318,10 +305,8 @@ proc runDenseBenchmarks() =
       migrateEntity(w, ents, archDest)
     )
   )
-  showDetailed(suite.benchmarks[1])
-#[  
+  showDetailed(suite.benchmarks[12])
   suite.showSummary()
-  suite.saveSummary("cr_dense")
+#  suite.saveSummary("cr_dense")
 
-]#
 runDenseBenchmarks()

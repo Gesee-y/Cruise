@@ -52,20 +52,6 @@ type
     ## Change counter tick
     tick: uint64
 
-
-const
-  UINT_BITS = sizeof(uint)*8
-  BIT_DIVIDER = floor(log(UINT_BITS.float, 2.0)).int
-  BIT_REMAINDER = UINT_BITS-1
-  ## Bit shift used to extract block indices from packed IDs.
-  BLK_SHIFT = sizeof(uint)*4
-  ## Mask used to extract local indices from packed IDs.
-  BLK_MASK = (1 shl BLK_SHIFT) - 1
-  ## Default size (in elements) of a dense block.
-  DEFAULT_BLK_SIZE = UINT_BITS*UINT_BITS
-  ## Initial capacity of the sparse storage.
-  INITIAL_SPARSE_SIZE = 10000
-
 proc toSoATuple(T: NimNode, N: int): NimNode =
   ## Transform an object type into a tuple-of-arrays (SoA-compatible) type.
   ##
@@ -88,7 +74,22 @@ proc toSoATuple(T: NimNode, N: int): NimNode =
 
     brack.add(ident"array")
     brack.add(intl)
-    brack.add(ident(v.strVal))
+
+    if v.kind == nnkBracketExpr:
+      if v[0].strVal == "array":
+        v[0] = ident v[0].strVal
+        
+        if v[1].kind == nnkBracketExpr:
+          var temp = newNimNode(nnkInfix)
+          temp.add(ident "..")
+          temp.add(v[1][1])
+          temp.add(v[1][2])
+          v[1] = temp
+        
+        v[2] = ident v[2].strVal
+        brack.add(v)
+    else:
+      brack.add(ident(v.strVal))
 
     intl.intVal = N
 

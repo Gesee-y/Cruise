@@ -63,19 +63,19 @@ proc newQueryFilter(): QueryFilter =
     q.sLayer = newSparseHiBitSet()
   return q
 
-proc `and`*(a, b: QueryFilter): QueryFilter =
+proc `and`*(a, b: var QueryFilter): QueryFilter =
   result.dLayer = a.dLayer and b.dLayer
   result.sLayer = a.sLayer and b.sLayer
 
-proc `or`*(a, b: QueryFilter): QueryFilter =
+proc `or`*(a, b: var QueryFilter): QueryFilter =
   result.dLayer = a.dLayer or b.dLayer
   result.sLayer = a.sLayer or b.sLayer
 
-proc `xor`*(a, b: QueryFilter): QueryFilter =
+proc `xor`*(a, b: var QueryFilter): QueryFilter =
   result.dLayer = a.dLayer xor b.dLayer
   result.sLayer = a.sLayer xor b.sLayer
 
-proc `not`*(a: QueryFilter): QueryFilter =
+proc `not`*(a: var QueryFilter): QueryFilter =
   result.dLayer = not a.dLayer 
   result.sLayer = not a.sLayer
 
@@ -356,22 +356,22 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, SparseIterato
         
     for compId in includeIds[1..^1]:
       let entry = world.registry.entries[compId]
-      res = res and entry.getSparseMaskOp(entry.rawPointer)[]
+      res.andi entry.getSparseMaskOp(entry.rawPointer)[]
 
     for compId in excludeIds:
       let entry = world.registry.entries[compId]
-      res = res.andNot(entry.getSparseMaskOp(entry.rawPointer)[])
+      res.andNoti(entry.getSparseMaskOp(entry.rawPointer)[])
 
     for compId in sig.modified:
       let entry = world.registry.entries[compId]
-      res = res and entry.getChangeMaskop(entry.rawPointer).sLayer
+      res.andi entry.getChangeMaskop(entry.rawPointer).sLayer
 
     for compId in sig.notModified:
       let entry = world.registry.entries[compId]
-      res = res.andNot(entry.getChangeMaskOp(entry.rawPointer).sLayer)
+      res.andNoti(entry.getChangeMaskOp(entry.rawPointer).sLayer)
 
     for qf in sig.filters:
-      res = res and qf.sLayer
+      res.andi qf.sLayer
 
     for chunkIdx in res.blkIter:
       yield (chunkIdx, SparseIterator(m:res.getL0(chunkIdx)))

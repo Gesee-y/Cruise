@@ -2,12 +2,23 @@
 ######################################################################## ECS TABLE #################################################################
 ####################################################################################################################################################
 
-import tables, bitops, typetraits, hashes, sequtils
+import tables, bitops, typetraits, hashes, sequtils, math
 
 const
   MAX_COMPONENT_LAYER = 4
   PARTITION_ZONE_CAP = 10
   EVENT_ACTIVE = false
+  UINT_BITS = sizeof(uint)*8
+  BIT_DIVIDER = floor(log(UINT_BITS.float, 2.0)).int
+  BIT_REMAINDER = UINT_BITS-1
+  ## Bit shift used to extract block indices from packed IDs.
+  BLK_SHIFT = sizeof(uint)*4
+  ## Mask used to extract local indices from packed IDs.
+  BLK_MASK = (1 shl BLK_SHIFT) - 1
+  ## Default size (in elements) of a dense block.
+  DEFAULT_BLK_SIZE = UINT_BITS*UINT_BITS
+  ## Initial capacity of the sparse storage.
+  INITIAL_SPARSE_SIZE = 10000
 
 type 
   Range = object
@@ -38,8 +49,9 @@ type
 include "fragment.nim"
 include "entity.nim"
 include "commands.nim"
-include "registry.nim"
 include "mask.nim"
+include "registry.nim"
+
 
 type
   TableRange* = object

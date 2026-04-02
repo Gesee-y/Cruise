@@ -24,7 +24,7 @@ var accID = w.registerComponent(Acc)
 
 var poscolumn = w.get(Pos)
 
-var e = w.createEntity(posID)
+var e = w.createEntity(Pos)
 poscolumn[e] = Pos()
 
 for (bid, r) in w.denseQuery(query(w, Pos)):

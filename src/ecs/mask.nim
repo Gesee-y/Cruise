@@ -96,11 +96,21 @@ proc `==`*(a, b: ArchetypeMask | ptr ArchetypeMask): bool =
       return false
   return true
 
+proc withComponentInPlace*(mask: var ArchetypeMask, comp: ComponentId) =
+  let layer = comp shr 6  # div 64
+  let bit = comp and 63   # mod 64
+  mask[layer] = mask[layer] or (1'u shl bit)
+
 proc withComponent*(mask: ArchetypeMask | ptr ArchetypeMask, comp: ComponentId): ArchetypeMask =
   result = mask
   let layer = comp shr 6  # div 64
   let bit = comp and 63   # mod 64
   result[layer] = result[layer] or (1'u shl bit)
+
+proc withoutComponentInPlace*(mask: var ArchetypeMask, comp: ComponentId) =
+  let layer = comp shr 6  # div 64
+  let bit = comp and 63   # mod 64
+  mask[layer] = mask[layer] and not (1'u shl bit)
 
 proc withoutComponent*(mask: ArchetypeMask | ptr ArchetypeMask, comp: ComponentId): ArchetypeMask =
   result = mask

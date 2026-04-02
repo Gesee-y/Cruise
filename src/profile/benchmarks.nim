@@ -229,7 +229,7 @@ template benchmark*(benchmarkName: string, sample, code: untyped): untyped =
       let t0 = cpuTime()
       code
       let elapsed = cpuTime() - t0
-      let allocated = (getOccupiedMem() - m0).float
+      let allocated = max(0, getOccupiedMem() - m0).float
       
       bench.times[i] = elapsed
       bench.mems[i] = allocated
@@ -254,7 +254,7 @@ template benchmark*(benchmarkName: string, sample, warm, code: untyped): untyped
       let t0 = cpuTime()
       code
       let elapsed = cpuTime() - t0
-      let allocated = (getOccupiedMem() - m0).float
+      let allocated = max(0, getOccupiedMem() - m0).float
       
       bench.times.add(elapsed)
       bench.mems.add(allocated)
@@ -282,7 +282,7 @@ template benchmarkWithSetup*(benchmarkName: string, sample,
       let t0 = cpuTime()
       code
       let elapsed = cpuTime() - t0
-      let allocated = (getOccupiedMem() - m0).float
+      let allocated = max(0, getOccupiedMem() - m0).float
       
       bench.times.add(elapsed)
       bench.mems.add(allocated)
@@ -309,7 +309,7 @@ template benchmarkWithSetup*(benchmarkName: string, sample, warm,
       let t0 = cpuTime()
       code
       let elapsed = cpuTime() - t0
-      let allocated = (getOccupiedMem() - m0).float
+      let allocated = max(0, getOccupiedMem() - m0).float
       
       bench.times.add(elapsed)
       bench.mems.add(allocated)

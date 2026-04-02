@@ -9,6 +9,7 @@ include "../../src/profile/benchmarks.nim"
 const
   Samples = 1000
   Warmup  = 1
+  ENTITY_COUNT = 10_000
 
 type
   Position = object
@@ -47,34 +48,31 @@ proc setupWorld(): ECSWorld =
 # Benchmarks
 # ==============================
 
-const ENTITY_COUNT = 10_000
-
 # ---------------------------------
 # Entity creation
 # ---------------------------------
 
 proc runSparseBenchmarks() =
-  var suite = initSuite("Sparse ECS Operations")
-#[
+  var suite = initSuite("Cruise Sparse")
+
   # ------------------------------
   # Create single sparse entity
   # ------------------------------
   suite.add benchmarkWithSetup(
-    "sparse_create_entity",
+    "create entity",
     Samples,
     Warmup,
     (
       var w = setupWorld()
       var ents:seq[SparseHandle]
-      var node = w.archGraph.findArchetype([Pos, Vel])
       for i in 0..<ENTITY_COUNT:
-        ents.add w.createSparseEntity(node)
+        ents.add w.createSparseEntity(Position, Velocity)
       for e in ents.mitems:
         w.deleteEntity(e)
     ),
     (
       for i in 0..<ENTITY_COUNT:
-        discard w.createSparseEntity(node)
+        discard w.createSparseEntity(Position, Velocity)
     )
   )
   showDetailed(suite.benchmarks[0])
@@ -83,18 +81,17 @@ proc runSparseBenchmarks() =
   # Create sparse entities batch
   # ------------------------------
   suite.add benchmarkWithSetup(
-    "sparse_create_entities_batch_1k",
+    "create entities batch 1k",
     Samples,
     Warmup,
     (
       var w = setupWorld()
-      var node = w.archGraph.findArchetype([Pos, Vel])
-      var ents:seq[SparseHandle] = w.createSparseEntities(ENTITY_COUNT, node)
+      var ents:seq[SparseHandle] = w.createSparseEntities(ENTITY_COUNT, Position, Velocity)
       
       for e in ents.mitems:
         w.deleteEntity(e)
     ),
-    (discard w.createSparseEntities(ENTITY_COUNT, node))
+    (discard w.createSparseEntities(ENTITY_COUNT, Position, Velocity))
   )
   showDetailed(suite.benchmarks[1])
 
@@ -102,66 +99,65 @@ proc runSparseBenchmarks() =
   # Delete sparse entity
   # ------------------------------
   suite.add benchmarkWithSetup(
-    "sparse_delete_entity",
+    "delete entity",
     Samples,
     Warmup,
     (
       var w = setupWorld()
-      var e = w.createSparseEntity([Pos, Vel])
+      var ents:seq[SparseHandle] = w.createSparseEntities(ENTITY_COUNT, Position, Velocity)
     )
     ,
-    for i in 0..<ENTITY_COUNT:
+    for e in ents.mitems:
       w.deleteEntity(e)
   )
   showDetailed(suite.benchmarks[2])
-]#
 
   # ------------------------------
   # Add component
   # ------------------------------
   suite.add benchmarkWithSetup(
-    "sparse_add_component",
+    "add component",
     Samples,
     Warmup,
-    (
+    ( 
       var w = setupWorld()
-      var ents = w.createSparseEntities(ENTITY_COUNT,[Pos])
-      var node = w.archGraph.findArchetype([Pos, Vel])
+      var ents = w.createSparseEntities(ENTITY_COUNT,Position)
       for e in ents.mitems:
-        w.addComponent(e, Vel)
+        w.addComponent(e, Velocity)
       for e in ents.mitems:
-        w.removeComponent(e, Vel)),
+        w.removeComponent(e, Velocity)),
     for e in ents.mitems:
-      w.migrateEntity(e, node)
+      w.addComponent(e, Velocity)
   )
-  showDetailed(suite.benchmarks[0])
+
+  showDetailed(suite.benchmarks[3])
 
   # ------------------------------
   # Add component batch
   # ------------------------------
   suite.add benchmarkWithSetup(
-    "sparse_add_component_batch",
+    "add component batch",
     Samples,
     Warmup,
     (
       var w = setupWorld()
-      var ents = w.createSparseEntities(ENTITY_COUNT, [Pos])),
-    w.addComponentBatch(ents, Vel)
+      var ents = w.createSparseEntities(ENTITY_COUNT, Position)),
+    w.addComponent(ents, Velocity)
   )
   showDetailed(suite.benchmarks[suite.benchmarks.len-1])
-#[
+
   # ------------------------------
   # Remove component
   # ------------------------------
   suite.add benchmarkWithSetup(
-    "sparse_remove_component",
+    "remove component",
     Samples,
     Warmup,
     (
       var w = setupWorld()
-      var e = w.createSparseEntity([Pos, Vel])),
+      var e = w.createSparseEntity(Position, Velocity)),
     for i in 0..<ENTITY_COUNT:
-      w.removeComponent(e, Vel)
+      w.removeComponent(e, Velocity)
   )
   showDetailed(suite.benchmarks[4])
 
@@ -169,28 +165,32 @@ proc runSparseBenchmarks() =
   # Add + Remove (stress mask ops)
   # ------------------------------
   suite.add benchmarkWithSetup(
-    "sparse_add_remove_component",
+    "add remove component",
     Samples,
     Warmup,
     (
       var w = setupWorld()
-      var e = w.createSparseEntity([Pos])),
-    block:
-      for i in 0..<ENTITY_COUNT:
-        w.addComponent(e, Vel)
-        w.removeComponent(e, Vel)
+      var ents = w.createSparseEntities(ENTITY_COUNT,Position)
+      for e in ents.mitems:
+        w.addComponent(e, Velocity)
+      for e in ents.mitems:
+        w.removeComponent(e, Velocity)),
+    for e in ents.mitems:
+      w.addComponent(e, Velocity)
+      w.removeComponent(e, Velocity),
   )
+
   showDetailed(suite.benchmarks[5])
 
   suite.add benchmarkWithSetup(
-    "sparse_iterations",
+    "iteration",
     Samples,
     Warmup,
     (
       var w = setupWorld()
       var posc = w.get(Position)
       var velc = w.get(Velocity)
-      discard w.createSparseEntities(ENTITY_COUNT, [Pos, Vel])),
+      discard w.createSparseEntities(ENTITY_COUNT, Position, Velocity)),
     (
       for (sid, r) in w.sparseQuery(query(w, Position and Velocity)):
         let bid = posc.toSparse[sid]-1
@@ -208,13 +208,13 @@ proc runSparseBenchmarks() =
   
   var s = 0'f32
   suite.add benchmarkWithSetup(
-    "sparse_read",
+    "read",
     Samples,
     Warmup,
     (
       var w = setupWorld()
       var posc = w.get(Position)
-      var ents = w.createSparseEntities(ENTITY_COUNT, [Pos])),
+      var ents = w.createSparseEntities(ENTITY_COUNT, Position)),
     (
       for e in ents:
         s += posc[e].x
@@ -223,13 +223,13 @@ proc runSparseBenchmarks() =
   showDetailed(suite.benchmarks[7])
 
   suite.add benchmarkWithSetup(
-    "sparse_write",
+    "write",
     Samples,
     Warmup,
     (
       var w = setupWorld()
       var posc = w.get(Position)
-      var ents = w.createSparseEntities(ENTITY_COUNT, [Pos])),
+      var ents = w.createSparseEntities(ENTITY_COUNT, Position)),
     (
       for e in ents:
         posc[e] = Position()
@@ -241,7 +241,8 @@ proc runSparseBenchmarks() =
   # Results
   # ==============================
   suite.showSummary()
-]#
+#  suite.saveSummary("cr_sparse")
+
 # ==============================
 # Entry point
 # ==============================
