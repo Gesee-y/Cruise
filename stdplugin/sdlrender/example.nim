@@ -12,7 +12,7 @@
 
 import ../../src/render/render
 import ../rendergraph/core
-import "sdl3_renderer.nim"
+import sdlrender
 import std/[math, random]
 
 # ===========================================================================

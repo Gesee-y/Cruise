@@ -15,7 +15,7 @@
 ## =============================================================
 
 import ../../src/windows/windows
-import core
+import sdlwin
 
 # ═══════════════════════════════════════════════════════════════════
 # EXAMPLE 1 — Minimal window with game loop

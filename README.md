@@ -64,6 +64,87 @@ let c = a.cross(b)
 
 - **Build your own engine**: Since Cruise is just a minimal core, you can just choose the set of plugins (or build your own) that perfectly match your use case.
 
+## Standard Plugins
+
+Cruise provides a set of default plugins and modules to allows you to start building games or tools with it, such as:
+
+- **Render graph**: Provide a functional render graph built directly on top of Cruise plugin system that allows you to control rendering pass and resource management.
+
+- **SDL Windows**: Provide an implementation of the windowing abstraction for SDL3, allowing you to conveniently mange inputs and windows.
+```nim
+import Cruise/src/windows/windows
+import Cruise/stdplugin/sdlwin/sdlwin
+
+# Opens an 800×600 window, runs until the user
+# presses Escape or closes the window.
+
+let app = initSDL3App()
+
+var win: SDL3Window
+new(win)
+app.initWindow(win, "Example 1 — Simple Window", "800", "600")
+
+# Connection to the close notifier: when the close button is clicked
+var running = true
+NOTIF_WINDOW_EVENT.connect do(win: CWindow, ev: WindowEvent):
+  if ev.kind == WINDOW_CLOSE:
+    running = false
+
+while running:
+  app.eventLoop(SDLEventRouter)
+
+  # Quit on Escape
+  if app.isKeyJustPressed(CKey_Escape):
+    running = false
+
+  win.updateWindow()
+
+win.quitWindow()
+app.quitSDL3App()
+```
+
+- **SDL Render**: An implementation of a renderer using the rendering interface, allows you to draw, manage resources and batch draw calls or even integrate it with a render graph.
+```nim
+import Cruise/src/render/render
+import Cruise/stdplugin//rendergraph/core
+import Cruise/stdplugin/sdlrender/sdlrender
+import Cruise/stdplugin/sdlwin/sdlwin
+import math
+
+# Creating the window
+let app = initSDL3App()
+
+var win: SDL3Window
+new(win)
+app.initWindow(win, "SDL Render", "800", "600")
+
+# Connection to the close notifier: when the close button is clicked
+var running = true
+NOTIF_WINDOW_EVENT.connect do(win: CWindow, ev: WindowEvent):
+  if ev.kind == WINDOW_CLOSE:
+    running = false
+
+var ren:  CSDLRenderer
+var t = 0.0f
+
+while running:
+    app.eventLoop(SDLEventRouter)
+
+    if app.isKeyJustPressed(CKey_Escape):
+      running = false
+
+    ren.beginFrame()
+
+    ren.DrawCircleAdv(
+      fpoint(float32(W)*0.5 + cos(t)*150, float32(H)*0.5 + sin(t)*150),
+      30, rgba(255,100,50,200), filled=true)
+
+    ren.endFrame()
+    t += 0.016f
+
+  ren.teardown()
+```
+
 ## License
 
 This package is licenced under the MIT License, you are free to use it as you wish.
