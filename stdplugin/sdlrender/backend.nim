@@ -23,7 +23,7 @@
 
 import ../../externalLibs/sdl3_nim/src/sdl3_nim
 import ../../src/render/render
-import std/[algorithm, sets, tables, math, times]
+import std/[sets, tables, times]
 import ./types
 import ./texture_pool
 import ./geometry_batcher
@@ -176,7 +176,6 @@ proc initSDLData*(window: ptr SDL_Window,
 # ---------------------------------------------------------------------------
 
 proc pushTarget*(data: var SDLData, key: TextureKey) =
-  echo "DEBUG pushTarget: key=", key, " screenKey=", data.screenKey
   data.targetStack.add(key)
   if key == data.screenKey:
     if not SDL_SetRenderTarget(data.renderer, nil):
@@ -292,12 +291,6 @@ proc flushBatcher*(data: var SDLData) =
     if sdlIdx.len == 0:
       echo "WARN flushBatcher: batch avec 0 indices, skip"
       continue
-
-    echo "DEBUG flushBatcher: batch verts=", sdlVerts.len, 
-         " idx=", sdlIdx.len,
-         " tex=", batch.textureKey,
-         " target=", batch.targetKey,
-         " blend=", batch.blendMode
 
     if texPtr != nil:
       applySampler(data.renderer, texPtr, data.pool.entry(batch.textureKey).desc.sampler)

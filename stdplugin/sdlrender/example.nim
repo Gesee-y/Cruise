@@ -11,7 +11,7 @@
 ##   - Multi-pass composite
 
 include "sdl3_renderer.nim"
-import std/[math, random, times]
+import std/[math, random]
 
 # ===========================================================================
 # Custom render passes (render graph nodes)
@@ -385,8 +385,6 @@ when isMainModule:
         p = spawnParticle()
 
     ## ---- Render ----
-    echo "Frame " & $frame
-    echo ren.data.stats
     ren.beginFrame()
 
     ## Use the render graph for structured multi-pass rendering

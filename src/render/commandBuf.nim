@@ -333,7 +333,6 @@ proc executeCommand*[R, T](ren: var R, commands: RenderBatch[T]) =
   {.error: "executeCommand not implemented for this (" & $R & ", command) pair".}
 
 proc defExecuteAll*[R](ren: var R, cb: var CommandBuffer) =
-  echo "Unknow call"
   ## Flush the buffer: iterate passes in order, sort by priority, dispatch.
   ## Each `BatchHandle.process` calls the statically resolved `executeCommand`.
   let renPtr = cast[RendererPtr](ren)

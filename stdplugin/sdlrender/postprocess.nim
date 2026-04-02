@@ -16,7 +16,7 @@
 ##   Effects that must be done purely with SDL draw calls (scale, copy) are
 ##   separated into the "gpu-assisted" path.
 
-import std/[math, algorithm, sequtils]
+import math
 import ./types
 
 # ---------------------------------------------------------------------------

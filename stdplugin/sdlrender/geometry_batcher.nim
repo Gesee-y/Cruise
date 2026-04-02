@@ -500,7 +500,7 @@ proc emitTriangle*(gb:         var GeometryBatcher,
                    textureKey: TextureKey,
                    targetKey:  TextureKey,
                    blend:      SDLBlendMode,
-                   uv0, uv1, uv2: FPoint = fpoint(0,0)) =
+                   uv0: FPoint = fpoint(0,0), uv1: FPoint = fpoint(0,0), uv2: FPoint = fpoint(0,0)) =
   ## Emit a single triangle with per-vertex colours and UVs.
   let b  = gb.currentBatch(textureKey, targetKey, blend)
   let i0 = b.addVertex(Vertex(pos: p0, uv: uv0, color: c0))

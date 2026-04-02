@@ -277,7 +277,7 @@ proc loadTexture*(ren:   var CSDLRenderer,
     if raw == nil:
       echo "WARN loadTexture IMG_Load failed, fallback BMP: ", SDL_GetError()
   
-  let raw = SDL_LoadBMP(path.cstring)   # fallback: BMP without SDL_image
+  raw = SDL_LoadBMP(path.cstring)   # fallback: BMP without SDL_image
   if raw == nil:
     raise newException(IOError, "loadTexture: " & path & " — " & $SDL_GetError())
   let tex = SDL_CreateTextureFromSurface(ren.data.renderer, raw)
@@ -600,7 +600,7 @@ proc setAnisotropy*(ren: var CSDLRenderer, key: TextureKey, level: uint8) =
   let tex  = cast[ptr SDL_Texture](raw)
   discard SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_LINEAR_enumval)
   discard SDL_SetHint("SDL_HINT_RENDER_SCALE_QUALITY",
-                      if level >= 8: "2" else: "1")
+                      if level >= 8: "2".cstring else: "1".cstring)
 
 # ===========================================================================
 # Debug overlay

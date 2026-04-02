@@ -148,8 +148,8 @@ type
     color*: SDLRGBA  ## per-vertex tint
 
 proc vertex*(x, y: float32,
-             u, v: float32 = 0,
-             r, g, b, a: uint8 = 255): Vertex =
+             u: float32 = 0, v: float32 = 0,
+             r: uint8 = 255, g: uint8 = 255, b: uint8 = 255, a: uint8 = 255): Vertex =
   Vertex(pos: fpoint(x, y), uv: fpoint(u, v), color: rgba(r, g, b, a))
 
 # ---------------------------------------------------------------------------

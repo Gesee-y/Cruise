@@ -541,7 +541,6 @@ proc executeFrame*[R](rg: var RenderGraph, renderer: var CRenderer[R]) =
 
     renderer.executeAll(renderer, rg.cb)
     for pass in passOrder(renderer):
-      echo pass
       clearPass(rg.cb, pass)
 
     # --- Apply transitions that fire after this level
