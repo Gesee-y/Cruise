@@ -12,8 +12,10 @@
 var NEXT_COMPONENT_ID {.compileTime.} = 0
 var NEXT_ARCHETYPE_ID {.compileTime.} = 0
 var COMPONENT_ID_REGISTRY {.compileTime.} = initTable[int, int]()
+var ID_TO_COMPONENT {.compileTime.} = initTable[int, NimNode]()
 var ARCHETYPE_ID_REGISTRY {.compileTime.} = initTable[ArchetypeMask, int]()
 var ARCHETYPE_ID_TO_MASK {.compileTime.} = initTable[int, ArchetypeMask]()
+var REQUIRED_COMPS {.compileTime.} = initTable[int, seq[int]]()
 
 static:
   var r:ArchetypeMask
@@ -21,7 +23,7 @@ static:
   ARCHETYPE_ID_TO_MASK[NEXT_ARCHETYPE_ID] = r
   inc NEXT_ARCHETYPE_ID
 
-macro toComponentId(T:typedesc): int =
+proc getComponentIdFromRegistry(T:NimNode): int =
   let str = T.getTypeInst.repr
   let hash = T.getTypeInst.repr.hash.int
   let maxComp = MAX_COMPONENT_LAYER*UINT_BITS
@@ -33,20 +35,48 @@ macro toComponentId(T:typedesc): int =
     else:
       error "Failed to add " & str & ". Can't have more than " & $maxComp & " component."
 
-  let id = COMPONENT_ID_REGISTRY[hash]
+  return COMPONENT_ID_REGISTRY[hash]
+
+proc getRequiredComps(id:int): seq[int] {.compileTime.} =
+  if id notin REQUIRED_COMPS:
+    return @[]
+
+  return REQUIRED_COMPS[id]
+
+proc getRequiredCompsNode(id:int): seq[NimNode] {.compileTime.} =
+  var res = newSeq[NimNode]()
+  if id notin REQUIRED_COMPS:
+    return res
+
+  for i in REQUIRED_COMPS[id]:
+    res.add(ID_TO_COMPONENT[i])
+
+  return res
+
+macro toComponentId(T:typedesc): int =
+  let id = getComponentIdFromRegistry(T)
+  ID_TO_COMPONENT[id] = T
+
   return quote do: `id`
 
-macro toArchetypeID(comps: static openArray[int]): int =
+proc toArchetypeIDC(comps: openArray[int]): (ArchetypeMask, int) {.compileTime.} =
   var m:ArchetypeMask
   for c in comps:
+    let req = getRequiredComps(c)
     m.withComponentInPlace(c)
+
+    for r in req:
+      m.withComponentInPlace(r)
 
   if m notin ARCHETYPE_ID_REGISTRY:
     ARCHETYPE_ID_REGISTRY[m] = NEXT_ARCHETYPE_ID
     ARCHETYPE_ID_TO_MASK[NEXT_ARCHETYPE_ID] = m
     inc NEXT_ARCHETYPE_ID
 
-  let id = ARCHETYPE_ID_REGISTRY[m]
+  return (m, ARCHETYPE_ID_REGISTRY[m])
+
+macro toArchetypeID(comps: static openArray[int]): int =
+  let (_, id) = toArchetypeIDC(comps)
   return quote do: `id`
 
 macro typesToArchetypeID(comps:varargs[typed]): int =
@@ -57,6 +87,25 @@ macro typesToArchetypeID(comps:varargs[typed]): int =
       toComponentId(`@c`)
 
   return quote do: toArchetypeID(`compIds`)
+
+proc getComponentsMetadata(comps:NimNode): tuple[ids: NimNode, components:seq[NimNode]] =
+  var compIds = newNimNode(nnkBracket)
+  var components: seq[NimNode]
+  for comp in comps:
+    components.add(comp)
+    let id = getComponentIdFromRegistry(comp)
+    let required = getRequiredCompsNode(id)
+    for c in required:
+      components.add(c)
+      compIds.add quote("@") do:
+        toComponentId(`@c`)
+    
+    compIds.add quote("@") do:
+      toComponentId(`@comp`)
+  if compIds.len == 0:
+    compIds = quote("@") do: array[0, int](`@compIds`)
+
+  return (compIds, components)
 
 type
   ComponentEntry = ref object

@@ -18,6 +18,7 @@ type
     root: ArchetypeNode
     nodes: seq[ArchetypeNode]
     maskToId: Table[ArchetypeMask, uint16]
+    requiredComps: array[MAX_COMPONENTS, seq[int]]
     lru_active: bool
     lastMask: ArchetypeMask
     lastNode: ArchetypeNode
@@ -46,6 +47,9 @@ template getRemoveEdge(node: ArchetypeNode, comp: int): ArchetypeNode =
 template setRemoveEdgePtr(node: ArchetypeNode, comp: int, target: ArchetypeNode) =
   node.removeEdges[comp] = target
   
+proc setRequired(g: var ArchetypeGraph, comp: int, req: int) =
+  g.requiredComps[comp].add(req)
+
 proc initArchetypeGraph*(): ArchetypeGraph =
   var emptyMask: ArchetypeMask
   new(result)
@@ -84,15 +88,28 @@ proc addComponent*(graph: var ArchetypeGraph,
   if node.hasEdge(comp):
     return node.getEdge(comp)
   
-  let newMask = node.mask.withComponent(comp)
+  var newMask = node.mask.withComponent(comp)
+  for r in graph.requiredComps[comp]:
+    newMask.withComponentInPlace(r)
   
   if newMask in graph.maskToId:
     result = graph.nodes[graph.maskToId[newMask]]
   else:
     result = graph.createNode(newMask)
+
+  newMask.withoutComponentInPlace(comp)
+  var remNode: ArchetypeNode
+
+  if newMask != node.mask:
+    if newMask in graph.maskToId:
+      remNode = graph.nodes[graph.maskToId[newMask]]
+    else:
+      remNode = graph.createNode(newMask)
+  else:
+    remNode = node
   
   node.setEdgePtr(comp, result)
-  result.setRemoveEdgePtr(comp, node)
+  result.setRemoveEdgePtr(comp, remNode)
   node.lastEdge = comp
 
 proc addComponent*(graph: var ArchetypeGraph, 
@@ -132,17 +149,15 @@ proc removeComponent*(graph: var ArchetypeGraph,
 
   return res
 
-proc findArchetype*(graph: var ArchetypeGraph, 
+macro findArchetype*(graph: var ArchetypeGraph, 
                     components: static openArray[int]): ArchetypeNode =
-  let id = toArchetypeID(components)
-  if id >= graph.nodes.len or graph.nodes[id].isNil:
-    var newMask: ArchetypeMask
-    for c in components:
-      newMask.withComponentInPlace(c)
-
-    discard graph.createNode(newMask, id.uint16)
+  let (m, id) = toArchetypeIDC(components)
   
-  graph.nodes[id]
+  return quote("@") do:
+    if `@id` >= `@graph`.nodes.len or `@graph`.nodes[`@id`].isNil:
+      discard `@graph`.createNode(`@m`, `@id`.uint16)
+    
+    `@graph`.nodes[`@id`]
 
 proc findArchetype*(graph: var ArchetypeGraph, 
                     components: openArray[int]): ArchetypeNode =

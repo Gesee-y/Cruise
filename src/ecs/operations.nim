@@ -16,12 +16,8 @@ type
 
 macro createEntity*(world: ECSWorld, comps:varargs[typed]):DenseHandle =
   let enable_event=EVENT_ACTIVE
-  var compIds = newNimNode(nnkBracket)
-  for c in comps:
-    compIds.add quote("@") do: 
-      toComponentId(`@c`)
-  if compIds.len == 0:
-    compIds = quote("@") do: array[0, int](`@compIds`)
+  var (compIds, components) = getComponentsMetadata(comps)
+
   return quote("@") do:
     # Acquire a stable internal ID (widx) for the entity record.
     let pid = getStableEntity(`@world`)
@@ -29,7 +25,7 @@ macro createEntity*(world: ECSWorld, comps:varargs[typed]):DenseHandle =
     
     # Allocate actual space for the entity data within the specific archetype.
     # Returns block ID (bid), internal block index (id), and the archetype instance ID (archId).
-    let (bid, id, archId) = allocateEntity(`@world`, arch, `@comps`)
+    let (bid, id, archId) = allocateEntity(`@world`, arch, `@components`)
 
     # Calculate the flat index into the handles array based on block arithmetic.
     # Combines the block ID and the local ID within the block.
@@ -55,12 +51,7 @@ macro createEntity*(world: ECSWorld, comps:varargs[typed]):DenseHandle =
     d
 
 macro createEntities*(world:ECSWorld, n:untyped, comps:varargs[typed]):seq[DenseHandle] =
-  var compIds = newNimNode(nnkBracket)
-  for c in comps:
-    compIds.add quote("@") do: 
-      toComponentId(`@c`)
-  if compIds.len == 0:
-    compIds = quote("@") do: array[0, int](`@compIds`)
+  var (compIds, components) = getComponentsMetadata(comps)
   
   return quote("@") do:
     var rest = newSeq[DenseHandle](`@n`)
@@ -72,7 +63,7 @@ macro createEntities*(world:ECSWorld, n:untyped, comps:varargs[typed]):seq[Dense
     
     # Allocate the block space for 'n' entities. 
     # 'res' contains ranges of allocated slots across potentially multiple blocks.
-    let res = allocateEntities(`@world`, `@n`, archNode, `@comps`)
+    let res = allocateEntities(`@world`, `@n`, archNode, `@components`)
     var current = 0
 
     # Iterate through the allocation results (Block ID, Range of IDs)
@@ -215,7 +206,7 @@ template migrateEntity*(world: var ECSWorld, ents:var openArray[DenseHandle], ar
       # Perform batch partition change.
       let (toSwap, toAdd) = changePartition(world, ents, oldArchId, archNode)
       world.events.emitDenseEntityMigratedBatch(ids, toSwap, toAdd, oldArchId, archNode.id)
-      
+
 ## Immediately migrates an entity to a new archetype using a DWEntity.
 proc migrateEntity*(dw:var DWEntity, archNode:ArchetypeNode) =
   migrateEntity(dw.w, dw.handle, archNode)
