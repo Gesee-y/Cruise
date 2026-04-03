@@ -27,6 +27,11 @@ type
                       ## If `gen` does not match the world's stored generation for this entity,
                       ## the handle is considered stale.
 
+type
+  DWEntity = object
+    handle:DenseHandle
+    w:ECSWorld
+
 ## A safe, public handle to a Sparse Entity.
 ##
 ## Sparse entities are stored using a hash map or set-like structure.
@@ -36,6 +41,10 @@ type
     id   : uint       ## The unique identifier of the entity in sparse storage.
     gen  : uint32     ## The generation counter for validity checks.
     archID : uint16 ## A bitmask representing the set of components currently owned by this entity.
+
+  SWEntity = object
+    handle:SparseHandle
+    w:ECSWorld
 
   ## A type class (concept-like alias) encompassing various raw Entity forms.
   ##
@@ -61,7 +70,7 @@ template `[]`*[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B], d:SparseHandle):untype
   
   # Calculate the bucket index via toSparse indirection.
   # Calculate the offset: `id and (S-1)` gets the index within that page (modulo 64).
-  f.sparse[f.toSparse[d.id shr 6]-1][d.id and (S-1).uint]
+  f.sparse[f.toSparse[d.id shr BIT_DIVIDER.uint]-1][d.id and BIT_REMAINDER.uint]
 
 ## Sets component data in a `SoAFragmentArray` for a raw `Entity`.
 proc `[]=`[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], e:SomeEntity, v:B) = 
@@ -75,7 +84,7 @@ proc `[]=`*[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], d:DenseHandle, v:B) =
 proc `[]=`*[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], d:SparseHandle, v:B) = 
   let S = sizeof(uint)*8
   when P: setChangedSparse(f, d.id)
-  f.sparse[f.toSparse[d.id shr 6]-1][d.id and (S-1).uint] = v
+  f.sparse[f.toSparse[d.id shr BIT_DIVIDER.uint]-1][d.id and BIT_REMAINDER.uint] = v
 
 ####################################################################################################################################################
 ################################################################# OPERATORS #######################################################################

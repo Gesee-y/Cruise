@@ -99,6 +99,8 @@ proc newECSWorld*(max_entities:int=1000000):ECSWorld =
   w.sparse_gens = newSeqofCap[uint32](max_entities)
   w.events = initEventManager()
 
+  w.entities.setLen(1) # We create a zero entities representing an invalid entity
+
   return w
 
 ####################################################################################################################################################
