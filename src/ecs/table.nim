@@ -195,7 +195,8 @@ template requireComponent*[T,C](w: var ECSWorld, base: typedesc[T], comps:typede
       let bid = getComponentIdFromRegistry(T)
       let cid = getComponentIdFromRegistry(C)
       REQUIRED_COMPS[bid].add(cid)
-
+    
+    w.registerComponent(C)
     w.archGraph.requiredComps[toComponentId(T)].add(toComponentId(C))
 
 template get*[T](world:ECSWorld,t:typedesc[T], P:static bool= false):untyped =

@@ -97,10 +97,10 @@ proc addComponent*(graph: var ArchetypeGraph,
   else:
     result = graph.createNode(newMask)
 
-  newMask.withoutComponentInPlace(comp)
   var remNode: ArchetypeNode
 
-  if newMask != node.mask:
+  if graph.requiredComps[comp].len > 0:
+    newMask.withoutComponentInPlace(comp)
     if newMask in graph.maskToId:
       remNode = graph.nodes[graph.maskToId[newMask]]
     else:
