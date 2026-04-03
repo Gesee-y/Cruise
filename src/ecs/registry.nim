@@ -37,6 +37,12 @@ proc getComponentIdFromRegistry(T:NimNode): int =
 
   return COMPONENT_ID_REGISTRY[hash]
 
+proc addRequired(m: var ArchetypeMask, comps: seq[int], registry: Table[int, seq[int]]) {.compileTime.} =
+  for c in comps:
+    if not m.hasComponent(c):
+      m.withComponentInPlace(c)
+      m.addRequired(registry[c], registry)
+
 proc getRequiredComps(id:int): seq[int] {.compileTime.} =
   if id notin REQUIRED_COMPS:
     return @[]

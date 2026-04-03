@@ -23,6 +23,11 @@ type
     lastMask: ArchetypeMask
     lastNode: ArchetypeNode
 
+proc addRequired(m: var ArchetypeMask, comps: seq[int], registry: ptr array[MAX_COMPONENTS, seq[int]]) =
+  for c in comps:
+    if not m.hasComponent(c):
+      m.withComponentInPlace(c)
+      m.addRequired(registry[c], registry)
 
 template hasEdge(node: ArchetypeNode, comp: int): bool =
   let idx = comp shr 6
@@ -50,6 +55,13 @@ template setRemoveEdgePtr(node: ArchetypeNode, comp: int, target: ArchetypeNode)
 proc setRequired(g: var ArchetypeGraph, comp: int, req: int) =
   g.requiredComps[comp].add(req)
 
+proc isValidMask(g: ArchetypeGraph, m: ArchetypeMask): bool =
+  for i in m.getComponents:
+    for j in g.requiredComps[i]:
+      if not m.hasComponent(j): return false
+
+  return true
+
 proc initArchetypeGraph*(): ArchetypeGraph =
   var emptyMask: ArchetypeMask
   new(result)
@@ -75,6 +87,9 @@ proc createNode(graph: var ArchetypeGraph, mask: ArchetypeMask, id:uint16=graph.
     lastEdge: -1,
     lastRemEdge: -1,
   )
+
+  if not graph.isValidMask(newMask): 
+      raise newException(ValueError, "Cannot create node because of all components requirement aren't fullfiled.")
   
   if id.int >= graph.nodes.len:
     graph.nodes.setLen(id+1)
@@ -89,8 +104,8 @@ proc addComponent*(graph: var ArchetypeGraph,
     return node.getEdge(comp)
   
   var newMask = node.mask.withComponent(comp)
-  for r in graph.requiredComps[comp]:
-    newMask.withComponentInPlace(r)
+  var registry = addr graph.requiredComps
+  newMask.addRequired(graph.requiredComps[comp], registry)
   
   if newMask in graph.maskToId:
     result = graph.nodes[graph.maskToId[newMask]]
@@ -134,6 +149,8 @@ proc removeComponent*(graph: var ArchetypeGraph,
   if newMask in graph.maskToId:
     result = graph.nodes[graph.maskToId[newMask]]
   else:
+    if not graph.isValidMask(newMask): 
+      raise newException(ValueError, "Cannot remove components because some still require it.")
     result = graph.createNode(newMask)
   
   node.setRemoveEdgePtr(comp, result)
