@@ -27,11 +27,6 @@ type
                       ## If `gen` does not match the world's stored generation for this entity,
                       ## the handle is considered stale.
 
-type
-  DWEntity = object
-    handle:DenseHandle
-    w:ECSWorld
-
 ## A safe, public handle to a Sparse Entity.
 ##
 ## Sparse entities are stored using a hash map or set-like structure.
@@ -41,10 +36,6 @@ type
     id   : uint       ## The unique identifier of the entity in sparse storage.
     gen  : uint32     ## The generation counter for validity checks.
     archID : uint16 ## A bitmask representing the set of components currently owned by this entity.
-
-  SWEntity = object
-    handle:SparseHandle
-    w:ECSWorld
 
   ## A type class (concept-like alias) encompassing various raw Entity forms.
   ##

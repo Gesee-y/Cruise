@@ -87,6 +87,8 @@ type
     blockCount:int
     queryCache*: Table[QueryKey, QueryCacheEntry]
 
+include "entity_wrappers.nim"
+
 proc newECSWorld*(max_entities:int=1000000):ECSWorld =
   var w:ECSWorld
   new(w)
@@ -98,8 +100,6 @@ proc newECSWorld*(max_entities:int=1000000):ECSWorld =
   w.generations = newSeqofCap[uint32](max_entities)
   w.sparse_gens = newSeqofCap[uint32](max_entities)
   w.events = initEventManager()
-
-  w.entities.setLen(1) # We create a zero entities representing an invalid entity
 
   return w
 
@@ -120,9 +120,6 @@ proc getArchetype*(w:ECSWorld, e:SomeEntity):ArchetypeNode =
   return w.archGraph.nodes[e.archetypeId]
 proc getArchetype*(w:ECSWorld, d:DenseHandle):ArchetypeNode =
   return w.getArchetype(d.obj)
-
-proc makeId(info:(uint, Range)):uint =
-  return ((info[0]).uint shl BLK_SHIFT) or ((info[1].e-1) mod DEFAULT_BLK_SIZE).uint
 
 proc makeId(idx,bid:int|uint):uint =
   return (bid.uint shl BLK_SHIFT) or idx.uint
@@ -149,6 +146,7 @@ proc getCommandBuffer*(w: var ECSWorld, id:int):CommandBuffer =
 
 proc isAlive*(w:ECSWorld, d:DenseHandle):bool =
   return d.gen == w.generations[d.obj.widx]
+
 
 {.pop.}
 
@@ -189,12 +187,23 @@ template registerComponent*(world:var ECSWorld, t:typed, P:static bool=false):in
   registerComponent(world.registry, t, P)
 
 template get*[T](world:ECSWorld,t:typedesc[T], P:static bool= false):untyped =
-  let id = world.getComponentId(t)
+  let id = toComponentId(t)
   getValue[T](world.registry.entries[id], P)
 
 template get*[T](world:ECSWorld, t:typedesc[T], i:untyped, P:static bool= false):untyped =
-  let id = world.getComponentId(t)
+  let id = toComponentId(t)
   getValue[T](world.registry.entries[id], P)[i]
+
+template get*[T](ent:DWEntity | SWEntity, t:typedesc[T], P:static bool= false):untyped =
+  get[T](ent.w, t, ent.handle, P)
+
+template set*[T](world:var ECSWorld, i:untyped, v: T, P:static bool= false):untyped =
+  let id = toComponentId(T)
+  var f = getValue[T](world.registry.entries[id], P)
+  f[i] = v
+
+template set*[T](ent:var DWEntity | var SWEntity, v: T, P:static bool= false):untyped =
+  set(ent.w, ent.handle, v, P)
 
 proc resize(world: var ECSWorld, n:int) =
   for entry in world.registry.entries:
