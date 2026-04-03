@@ -20,13 +20,13 @@ const
   ## Initial capacity of the sparse storage.
   INITIAL_SPARSE_SIZE = 10000
 
-type 
+type
   Range = object
-    s,e:int
+    s, e: int
 
   ArchetypeMask = array[MAX_COMPONENT_LAYER, uint]
 
-template check(code:untyped, msg:string) =
+template check(code: untyped, msg: string) =
   when not defined(danger):
     doAssert code, msg
 
@@ -34,37 +34,47 @@ template onDanger(code) =
   when not defined(danger):
     code
 
-include "hibitset.nim"
+import types
+export types
+import hibitset
+export hibitset
 
 type
   ## Represent an independent filter that can be used narrow queries
   QueryFilter* = object
 
     # Dense Query
-    dLayer:HibitsetType
+    dLayer: HibitsetType
 
     # Sparse Query
-    sLayer:HibitsetType
+    sLayer: HibitsetType
 
-include "fragment.nim"
-include "entity.nim"
-include "commands.nim"
-include "mask.nim"
-include "registry.nim"
+import fragment
+export fragment
+import entity
+export entity
+import commands
+export commands
+import mask
+export mask
+import registry
+export registry
 
 
 type
   TableRange* = object
-    r:Range
-    block_idx:int
+    r: Range
+    block_idx: int
 
   TablePartition* = ref object
-    zones:seq[TableRange]
-    components:seq[int]
-    fill_index:int
+    zones: seq[TableRange]
+    components: seq[int]
+    fill_index: int
 
-include "archetypes.nim"
-include "events.nim"
+import archetypes
+export archetypes
+import events
+export events
 
 type
   QueryKey* = tuple[incl: ArchetypeMask, excl: ArchetypeMask]
@@ -73,22 +83,22 @@ type
     nodes*: seq[ArchetypeNode]
 
   ECSWorld* = ref object
-    registry:ComponentRegistry
-    entities:seq[Entity]
-    commandBufs*:seq[CommandBuffer]
+    registry: ComponentRegistry
+    entities: seq[Entity]
+    commandBufs*: seq[CommandBuffer]
     events*: EventManager
-    handles:seq[ptr Entity]
-    generations:seq[uint32]
-    sparse_gens:seq[uint32]
-    free_entities:seq[int]
-    archGraph:ArchetypeGraph
-    free_list:seq[uint]
-    max_index:int
-    blockCount:int
+    handles*: seq[ptr Entity]
+    generations: seq[uint32]
+    sparse_gens: seq[uint32]
+    free_entities: seq[int]
+    archGraph: ArchetypeGraph
+    free_list: seq[uint]
+    max_index: int
+    blockCount: int
     queryCache*: Table[QueryKey, QueryCacheEntry]
 
-proc newECSWorld*(max_entities:int=1000000):ECSWorld =
-  var w:ECSWorld
+proc newECSWorld*(max_entities: int = 1000000): ECSWorld =
+  var w: ECSWorld
   new(w)
   #new(w.registry)
   w.archGraph = initArchetypeGraph()
@@ -107,50 +117,51 @@ proc newECSWorld*(max_entities:int=1000000):ECSWorld =
 
 {.push inline.}
 
-proc isEmpty(t:TableRange | ptr TableRange):bool = t.r.s == t.r.e
-proc isFull(t:TableRange | ptr TableRange):bool = t.r.e - t.r.s == DEFAULT_BLK_SIZE
+proc isEmpty(t: TableRange | ptr TableRange): bool = t.r.s == t.r.e
+proc isFull(t: TableRange | ptr TableRange): bool = t.r.e - t.r.s == DEFAULT_BLK_SIZE
 
-proc getComponentId*(world:ECSWorld, t:typedesc):int =
+proc getComponentId*(world: ECSWorld, t: typedesc): int =
   check($t in world.registry.cmap, "Component type '" & $t & "' is not registered. Call registerComponent first.")
   return world.registry.cmap[$t]
 
-proc getArchetype*(w:ECSWorld, e:SomeEntity):ArchetypeNode =
+proc getArchetype*(w: ECSWorld, e: SomeEntity): ArchetypeNode =
   return w.archGraph.nodes[e.archetypeId]
-proc getArchetype*(w:ECSWorld, d:DenseHandle):ArchetypeNode =
+proc getArchetype*(w: ECSWorld, d: DenseHandle): ArchetypeNode =
   return w.getArchetype(d.obj)
 
-proc makeId(info:(uint, Range)):uint =
-  return ((info[0]).uint shl BLK_SHIFT) or ((info[1].e-1) mod DEFAULT_BLK_SIZE).uint
+proc makeId(info: (uint, Range)): uint =
+  return ((info[0]).uint shl BLK_SHIFT) or ((info[
+      1].e-1) mod DEFAULT_BLK_SIZE).uint
 
-proc makeId(idx,bid:int|uint):uint =
+proc makeId(idx, bid: int|uint): uint =
   return (bid.uint shl BLK_SHIFT) or idx.uint
 
-proc makeId(i:int):uint =
+proc makeId(i: int): uint =
   let bid = i.uint div DEFAULT_BLK_SIZE
   let idx = i.uint mod DEFAULT_BLK_SIZE
 
   return (bid shl BLK_SHIFT) or idx
 
-proc makeId(i:uint):uint =
+proc makeId(i: uint): uint =
   let bid = i div DEFAULT_BLK_SIZE.uint
   let idx = i mod DEFAULT_BLK_SIZE.uint
 
   return (bid shl BLK_SHIFT) or idx
 
-proc newCommandBuffer*(w: var ECSWorld):int =
+proc newCommandBuffer*(w: var ECSWorld): int =
   let c = initCommandBuffer()
   w.commandBufs.add(c)
   return w.commandBufs.len-1
 
-proc getCommandBuffer*(w: var ECSWorld, id:int):CommandBuffer =
+proc getCommandBuffer*(w: var ECSWorld, id: int): CommandBuffer =
   return w.commandBufs[id]
 
-proc isAlive*(w:ECSWorld, d:DenseHandle):bool =
+proc isAlive*(w: ECSWorld, d: DenseHandle): bool =
   return d.gen == w.generations[d.obj.widx]
 
 {.pop.}
 
-template getStableEntity(world:ECSWorld):int =
+template getStableEntity(world: ECSWorld): int =
   if world.free_entities.len > 0:
     world.free_entities.pop()
   else:
@@ -159,7 +170,7 @@ template getStableEntity(world:ECSWorld):int =
     world.generations.setLen(id + 1)
     id
 
-proc getStableEntities(world:ECSWorld, n:int):seq[int] =
+proc getStableEntities(world: ECSWorld, n: int): seq[int] =
   result.setLen(n)
   let free_len = world.free_entities.len
   let start = max(0, free_len-n)
@@ -177,33 +188,34 @@ proc getStableEntities(world:ECSWorld, n:int):seq[int] =
     let L = world.entities.len
     world.entities.setLen(L+(n-free_len))
     world.generations.setLen(L+(n-free_len))
-    
+
     var c = 0
     for i in L..<world.entities.len:
       result[free_len+c] = i
       inc c
 
-template registerComponent*(world:var ECSWorld, t:typed, P:static bool=false):int =
+template registerComponent*(world: var ECSWorld, t: typed,
+    P: static bool = false): int =
   registerComponent(world.registry, t, P)
 
-template get*[T](world:ECSWorld,t:typedesc[T], P:static bool= false):untyped =
-  let id = world.getComponentId(t)
-  getValue[T](world.registry.entries[id], P)
+template get*[T](world: ECSWorld, t: typedesc[T],
+    P: static bool = false): untyped =
+  getValue[T](world.registry.entries[toComponentId(t)], P)
 
-template get*[T](world:ECSWorld, t:typedesc[T], i:untyped, P:static bool= false):untyped =
-  let id = world.getComponentId(t)
-  getValue[T](world.registry.entries[id], P)[i]
+template get*[T](world: ECSWorld, t: typedesc[T], i: untyped,
+    P: static bool = false): untyped =
+  getValue[T](world.registry.entries[toComponentId(t)], P)[i]
 
-proc resize(world: var ECSWorld, n:int) =
+proc resize(world: var ECSWorld, n: int) =
   for entry in world.registry.entries:
     entry.resizeOp(entry.rawPointer, n)
 
-proc upsize(world: var ECSWorld, n:int) =
+proc upsize(world: var ECSWorld, n: int) =
   for entry in world.registry.entries:
     entry.resizeOp(entry.rawPointer, world.blockCount + n)
 
-proc getComponentsFromSig(sig:ArchetypeMask):seq[int] =
-  var res:seq[int]
+proc getComponentsFromSig(sig: ArchetypeMask): seq[int] =
+  var res: seq[int]
   for i in 0..<sig.len:
     var s = sig[i]
     while s != 0:
@@ -212,10 +224,16 @@ proc getComponentsFromSig(sig:ArchetypeMask):seq[int] =
 
   return res
 
-include "dense.nim"
-include "sparse.nim"
-include "query.nim"
-include "operations.nim"
+import dense
+export dense
+import sparse
+export sparse
+import query
+export query
+import operations
+export operations
+
+
 
 proc process(world: var ECSWorld, cb: var CommandBuffer) =
   if cb.map.activeSignatures.len == 0: return
@@ -226,13 +244,13 @@ proc process(world: var ECSWorld, cb: var CommandBuffer) =
 
   for sig in cb.map.activeSignatures:
     let targetKey = genKey or CommandKey(sig)
-    
+
     var idx = int(sig) and (MAP_CAPACITY - 1)
     while cb.map.entries[idx].key != targetKey:
       idx = (idx + 1) and (MAP_CAPACITY - 1)
-    
+
     let batch = addr(cb.map.entries[idx])
-    
+
     let dataPtr = batch.data
     var ents = newSeqofCap[DenseHandle](batch.count)
 
@@ -254,10 +272,10 @@ proc process(world: var ECSWorld, cb: var CommandBuffer) =
     while cb.map.entries[idx].key != targetKey:
       idx = (idx + 1) and (MAP_CAPACITY - 1)
     cb.map.entries[idx].count = 0
-  
+
   cb.map.activeSignatures.setLen(0)
-  
-  if cb.map.currentGeneration == 255: 
+
+  if cb.map.currentGeneration == 255:
     # Rare case : total reset
     for i in 0..<MAP_CAPACITY:
       if cb.map.entries[i].key != 0:
@@ -266,7 +284,7 @@ proc process(world: var ECSWorld, cb: var CommandBuffer) =
   else:
     inc cb.map.currentGeneration
 
-proc flush*(w:var ECSWorld) =
+proc flush*(w: var ECSWorld) =
   for i in 0..<w.commandBufs.len:
     w.process(w.commandBufs[i])
 

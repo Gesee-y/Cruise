@@ -2,30 +2,36 @@
 ######################################################## SPARSE ECS LOGICS ############################################################
 #######################################################################################################################################
 
+import types, macros
+
 ## Activates a set of components for a single sparse entity index.
 ## This marks the entity as owning those components without allocating dense storage.
-template activateComponentsSparse(table: var ECSWorld, i:int|uint, components:untyped) =
+template activateComponentsSparse*(table: var ECSWorld, i: int|uint,
+    components: untyped) =
   for id in components:
     let entry = addr table.registry.entries[id]
     entry.activateSparseBitOp(entry.rawPointer, i.uint)
 
 ## Batch version of sparse activation.
 ## Efficiently activates the same set of components for multiple entity indices.
-template activateComponentsSparse(table: var ECSWorld, idxs:openArray, components:untyped) =
+template activateComponentsSparse*(table: var ECSWorld, idxs: openArray,
+    components: untyped) =
   for id in components:
     let entry = table.registry.entries[id]
     entry.activateSparseBitBatchOp(entry.rawPointer, idxs)
 
 ## Deactivates a set of components for a single sparse entity index.
 ## This does NOT reclaim entity IDs, only clears component ownership.
-template deactivateComponentsSparse(table: var ECSWorld, i:int|uint, components:untyped) =
+template deactivateComponentsSparse*(table: var ECSWorld, i: int|uint,
+    components: untyped) =
   for id in components:
     let entry = table.registry.entries[id]
     entry.deactivateSparseBitOp(entry.rawPointer, i.uint)
 
 ## Deactivates components described by an archetype mask.
 ## Uses bit iteration for fast traversal of active component IDs.
-template deactivateComponentsSparse(table: var ECSWorld, i:int|uint, components:ArchetypeMask) =
+template deactivateComponentsSparse*(table: var ECSWorld, i: int|uint,
+    components: ArchetypeMask) =
   for m in components:
     var mask = m
     while mask != 0:
@@ -79,7 +85,7 @@ macro allocateSparseEntity*(
         `@newBlockCode`
 
         ## Push remaining slots of the new block into the free list.
-        let count  = UINT_BITS - 1
+        let count = UINT_BITS - 1
         let curLen = `@table`.free_list.len
         `@table`.free_list.setLen(curLen + count)
         for i in 0..<count:
@@ -109,7 +115,7 @@ macro allocateSparseEntities*(
   comps: varargs[typed]
 ): seq[Range] =
   let toActivateId = genSym(nskVar, "toActivate")
-  let masksId      = genSym(nskVar, "masks")
+  let masksId = genSym(nskVar, "masks")
   let baseOffsetId = genSym(nskLet, "baseOffset")
 
   ## activateSparseBit(seq[uint]) — batch typed activation, no vtable.
@@ -133,10 +139,10 @@ macro allocateSparseEntities*(
 
   return quote("@") do:
     block:
-      var res          = newSeqOfCap[Range](`@count` shr BIT_DIVIDER + 1)
-      var free_cursor  = `@table`.free_list.len - 1
-      var `@toActivateId`   = newSeqOfCap[uint](`@count`)
-      var n            = `@count`
+      var res = newSeqOfCap[Range](`@count` shr BIT_DIVIDER + 1)
+      var free_cursor = `@table`.free_list.len - 1
+      var `@toActivateId` = newSeqOfCap[uint](`@count`)
+      var n = `@count`
 
       ## --- reuse recycled slots first --------------------------------------
       while n > 0 and free_cursor >= 0:
@@ -158,7 +164,7 @@ macro allocateSparseEntities*(
 
       while n > 0:
         let toAdd = min(n, UINT_BITS)
-        let m     = `@table`.max_index
+        let m = `@table`.max_index
         res.add(Range(s: m, e: m + toAdd))
 
         let mask = if toAdd == UINT_BITS: high(uint)
@@ -188,7 +194,8 @@ macro allocateSparseEntities*(
 ## Overrides component values from entity j into entity i
 ## for all components present in the archetype mask.
 ## Used during entity migration or structural transformations.
-template overrideComponents(table: var ECSWorld, i,j:int|uint, components:ArchetypeMask) =
+template overrideComponents*(table: var ECSWorld, i, j: int|uint,
+    components: ArchetypeMask) =
   for m in components:
     var mask = m
     while mask != 0:
@@ -198,7 +205,8 @@ template overrideComponents(table: var ECSWorld, i,j:int|uint, components:Archet
       mask = mask and (mask - 1)
 
 ## Batch deactivation of sparse components for multiple entity indices.
-template deactivateComponentsSparse(table: var ECSWorld, idxs:openArray, components:untyped) =
+template deactivateComponentsSparse*(table: var ECSWorld, idxs: openArray,
+    components: untyped) =
   for id in components:
     let entry = table.registry.entries[id]
     entry.deactivateSparseBitBatchOp(entry.rawPointer, idxs)
@@ -206,7 +214,7 @@ template deactivateComponentsSparse(table: var ECSWorld, idxs:openArray, compone
 
 ## Deletes a sparse entity row.
 ## The entity ID is recycled and all components are deactivated.
-template deleteSparseRow(table: var ECSWorld, i:uint, components:untyped) =
+template deleteSparseRow*(table: var ECSWorld, i: uint, components: untyped) =
   table.free_list.add(i)
   deactivateComponentsSparse(table, i, components)
 
@@ -215,7 +223,7 @@ template deleteSparseRow(table: var ECSWorld, i:uint, components:untyped) =
 ## Zero vtable — direct castTo per type.
 macro activateSparseTyped*(
   table: ECSWorld,
-  i:     uint,
+  i: uint,
   comps: varargs[typed]
 ): untyped =
 
@@ -235,7 +243,7 @@ macro activateSparseTyped*(
 ## One castTo + activateSparseBit(openArray) per component — no vtable.
 macro activateSparseTypedBatch*(
   table: ECSWorld,
-  ids:   seq[uint],
+  ids: seq[uint],
   comps: varargs[typed]
 ): untyped =
 
@@ -254,7 +262,7 @@ macro activateSparseTypedBatch*(
 ## Typed single deactivation.
 macro deactivateSparseTyped*(
   table: ECSWorld,
-  i:     uint,
+  i: uint,
   comps: varargs[typed]
 ): untyped =
 
@@ -273,7 +281,7 @@ macro deactivateSparseTyped*(
 ## Typed batch deactivation.
 macro deactivateSparseTypedBatch*(
   table: ECSWorld,
-  ids:   seq[uint],
+  ids: seq[uint],
   comps: varargs[typed]
 ): untyped =
 

@@ -197,3 +197,6 @@ proc newNullPluginNode*():NullPluginNode =
   return v
 
 include "operations.nim"
+
+proc update*(p:var Plugin) =
+  pmap(update, p)

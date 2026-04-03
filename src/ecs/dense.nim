@@ -2,6 +2,8 @@
 ###################################################### DENSE ECS LOGICS ###############################################################
 #######################################################################################################################################
 
+import types, macros
+
 ## Ensures that an archetype has an associated table partition.
 ## If none exists, a new partition is created and attached to the archetype node.
 proc createPartition(table: var ECSWorld, arch: ArchetypeNode): TablePartition =
@@ -29,9 +31,10 @@ macro allocateNewBlocks(
   var code = newNimNode(nnkStmtList)
   for c in comps[0][0]:
     code.add quote("@") do:
-      var fr = castTo(`@table`.registry.entries[toComponentId(`@c`)].rawPointer, `@c`, DEFAULT_BLK_SIZE)
+      var fr = castTo(`@table`.registry.entries[toComponentId(`@c`)].rawPointer,
+          `@c`, DEFAULT_BLK_SIZE)
       fr.newBlockAt(`@table`.blockCount)
-  
+
   return quote("@") do:
     check(`@count` >= 0, "Allocation count cannot be negative")
     var n = `@count`
@@ -39,20 +42,20 @@ macro allocateNewBlocks(
     var bc = `@table`.blockCount
     let pl = `@partition`.zones.len
     var c = `@current`
-    
+
     `@partition`.zones.setLen(pl + s + 1)
 
     for i in 0..s:
       var trange: TableRange
       let e = min(n, DEFAULT_BLK_SIZE)
-      
+
       ## Register allocated range
       `@res`[c] = ((bc.uint, Range(s: 0, e: e)))
       trange.r.s = 0
       trange.r.e = e
       trange.block_idx = bc
       `@partition`.zones[pl + i] = trange
-      
+
       ## Advance fill index if the block is fully occupied
       if n >= DEFAULT_BLK_SIZE:
         `@partition`.fill_index += 1
@@ -100,7 +103,7 @@ macro allocateEntities(
 
         partition.zones[partition.fill_index].r.e = r
         res[current] = ((id.uint, Range(s: e, e: r)))
-        
+
         if r >= DEFAULT_BLK_SIZE:
           partition.fill_index += 1
 
@@ -118,7 +121,7 @@ macro allocateEntities(
 macro allocateEntity(
   table,
   archNode: untyped,
-  comps:varargs[typed]
+  comps: varargs[typed]
 ): (uint, int, uint16) =
   var code = newNimNode(nnkStmtList)
   for c in comps[0]:
@@ -146,7 +149,7 @@ macro allocateEntity(
     let e = zone.r.e
 
     zone.r.e += 1
-      
+
     if isFull(zone):
       partition.fill_index += 1
 
@@ -157,7 +160,7 @@ macro allocateEntity(
 template deleteRow(table: var ECSWorld, i: uint, arch: uint16): uint =
   check(arch.int < table.archGraph.nodes.len, "Archetype ID out of bounds")
   let partition = addr table.archGraph.nodes[arch].partition
-  
+
   if partition.zones.len <= partition.fill_index or
      isEmpty(addr partition.zones[partition.fill_index]):
     partition.fill_index -= 1
@@ -188,7 +191,7 @@ template changePartition(
 ): (int, uint, uint) =
   check(oldArch.int < table.archGraph.nodes.len, "Old archetype ID out of bounds")
   check(not newArch.isNil, "Target ArchetypeNode is nil")
-  
+
   let oldPartition = addr table.archGraph.nodes[oldArch].partition
   let newPartition = createPartition(table, newArch)
   let oldComponents = addr oldPartition.components
@@ -259,7 +262,7 @@ template changePartition(
         i.uint,
         (blast.uint shl BLK_SHIFT) or last.uint
       )
-  
+
   newZone.r.e += 1
   if isFull(newZone):
     newPartition.fill_index += 1
@@ -273,7 +276,7 @@ template changePartition(
   ids: var openArray[DenseHandle],
   oldArch: uint16,
   newArch: ArchetypeNode
-):(seq[uint], seq[uint]) =
+): (seq[uint], seq[uint]) =
   check(ids.len > 0, "Batch change with empty handles")
 
   let oldPartition = table.archGraph.nodes[oldArch].partition
@@ -286,8 +289,8 @@ template changePartition(
   var ofil = oldPartition.fill_index
   var c = 0
   var toSwap = newSeq[uint](m)
-  var toAdd  = newSeq[uint](m)
-  
+  var toAdd = newSeq[uint](m)
+
   ## Collect entities to remove from old partition
   while toSwap.len < ids.len:
     check(ofil >= 0, "Source partition underflow during batch move")
@@ -356,7 +359,7 @@ template changePartition(
     var e = ids[i].obj
     let s = toSwap[i]
     let a = toAdd[i]
-    
+
     table.handles[a.toIdx] = e
     table.handles[e.id.toIdx] = table.handles[s.toIdx]
     table.handles[s.toIdx].id = e.id

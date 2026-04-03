@@ -124,7 +124,7 @@ NOTIF_WINDOW_EVENT.connect do(win: CWindow, ev: WindowEvent):
   if ev.kind == WINDOW_CLOSE:
     running = false
 
-var ren:  CSDLRenderer = initSDLRenderer(win.handle, true)
+var ren: CSDLRenderer = initSDLRenderer(win.handle, true)
 var t = 0.0f
 
 while running:

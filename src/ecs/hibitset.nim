@@ -1,13 +1,12 @@
-########################################################################################################################################
+####################################################################################################################################################
 ######################################################### CRUISE HIBITSETS #############################################################
-########################################################################################################################################
-
-import std/[bitops, times, strformat]
+####################################################################################################################################################
+##
 ## Hierarchical BitSets (HiBitSet) for Nim — 3-Level Implementation
 ##
 ## This module provides two implementations of 3-level hierarchical bitsets:
-##   - HiBitSet:       Dense implementation with fixed memory allocation.
-##   - SparseHiBitSet: Sparse implementation using sparse sets; only allocates non-zero blocks.
+##   - ``HiBitSet``:       Dense implementation with fixed memory allocation.
+##   - ``SparseHiBitSet``: Sparse implementation using sparse sets; only allocates non-zero blocks.
 ##
 ## Both use a 3-level hierarchy:
 ##   layer2  →  summarises 64 blocks of layer1  (top)
@@ -17,34 +16,53 @@ import std/[bitops, times, strformat]
 ## Maximum addressable index (native, 64-bit):
 ##   64 * 64 * 64 = 262 144 blocks of 64 bits  →  ~16 million bits per L2 block
 ##   Practically unlimited with dynamic growth.
+##
+## Usage example
+## =============
+##
+## Dense variant
+## -------------
+## .. code-block:: nim
+##   import cruise/ecs/hibitset
+##
+##   var bs = newHiBitSet(4096)
+##   bs.set(42)
+##   assert bs.get(42) == true
+##   assert bs.get(43) == false
+##
+##   for idx in bs:
+##     echo "bit ", idx, " is set"      # → bit 42 is set
+##
+##   bs.unset(42)
+##   assert bs.card == 0
+##
+## Sparse variant
+## --------------
+## .. code-block:: nim
+##   var sbs = newSparseHiBitSet()
+##   sbs.set(10_000_000)              # Only 3 blocks allocated, not 10M bits
+##   for idx in sbs:
+##     echo idx                        # → 10000000
+##   echo sbs.memoryUsage, " bytes"   # Very small footprint
 
-when defined(js):
-  const
-    L0_BITS*  = 32
-    L0_SHIFT* = 5
-    L0_MASK*  = 31
-  type BitBlock* = uint32
-else:
-  const
-    L0_BITS*  = 64
-    L0_SHIFT* = 6
-    L0_MASK*  = 63
-  type BitBlock* = uint64
+import std/[bitops]
+import ./types
+export types
+
 
 # ============================================================================
-# Dense HiBitSet — 3-level
+# Dense HiBitSet
 # ============================================================================
-
-type
-  HiBitSet* = object
-    ## Dense 3-level hierarchical bitset.
-    ## Memory usage: O(capacity / 8) bytes, allocated up front.
-    layer0: seq[BitBlock]   ## Bottom  — actual bits
-    layer1: seq[BitBlock]   ## Middle  — one bit per layer0 block
-    layer2: seq[BitBlock]   ## Top     — one bit per layer1 block
 
 proc newHiBitSet*(capacity: int = 4096): HiBitSet =
-  ## Creates a new dense HiBitSet able to hold `capacity` bits.
+  ## Creates a new dense HiBitSet able to hold ``capacity`` bits.
+  ##
+  ## Example
+  ## -------
+  ## .. code-block:: nim
+  ##   var bs = newHiBitSet(1024)     # room for 1 024 bits
+  ##   bs.set(511)
+  ##   assert bs[511]
   let l0Size = (capacity + L0_BITS - 1)  shr L0_SHIFT
   let l1Size = (l0Size   + L0_BITS - 1)  shr L0_SHIFT
   let l2Size = (l1Size   + L0_BITS - 1)  shr L0_SHIFT
@@ -72,7 +90,7 @@ template ensureCapacity(h: var HiBitSet, idx: int) =
 # ---------- bit manipulation ----------
 
 template set*(h: var HiBitSet, idx: int) =
-  ## Sets the bit at `idx` to 1. Grows automatically.
+  ## Sets the bit at ``idx`` to 1. Grows automatically.
   ## Time complexity: O(1)
   h.ensureCapacity(idx)
   let l0Idx  = idx   shr L0_SHIFT
@@ -86,7 +104,7 @@ template set*(h: var HiBitSet, idx: int) =
   h.layer2[l2Idx] = h.layer2[l2Idx] or (BitBlock(1) shl (l1Idx and L0_MASK))
 
 template unset*(h: var HiBitSet, idx: int) =
-  ## Sets the bit at `idx` to 0.
+  ## Sets the bit at ``idx`` to 0.
   ## Propagates the clearing up through layer1 / layer2 when a block empties.
   ## Time complexity: O(1)
   if idx < h.len:
@@ -146,14 +164,14 @@ proc unsetBatch*(h: var HiBitSet, idxs: openArray[uint|int]) =
     h.unset(idx.int)
 
 proc get*(h: HiBitSet, idx: int): bool {.inline.} =
-  ## Returns true if the bit at `idx` is set. Time complexity: O(1)
+  ## Returns true if the bit at ``idx`` is set. Time complexity: O(1)
   if idx >= h.len: return false
   let l0Idx  = idx shr L0_SHIFT
   let bitPos = idx and L0_MASK
   (h.layer0[l0Idx] and (BitBlock(1) shl bitPos)) != 0
 
 proc getL0*(h: HiBitSet, idx: int): BitBlock {.inline.} =
-  ## Returns the raw block at layer0 index `idx`.
+  ## Returns the raw block at layer0 index ``idx``.
   if idx >= h.layer0.len: return 0
   h.layer0[idx]
 
@@ -175,7 +193,6 @@ proc clear*(h: var HiBitSet) =
 
 template rebuildL1L2(res: var HiBitSet) =
   ## Recomputes layer1 and layer2 from scratch based on layer0.
-  ## Used after bulk operations that set layer0 directly.
   for l1Idx in 0..<res.layer1.len: res.layer1[l1Idx] = 0
   for l2Idx in 0..<res.layer2.len: res.layer2[l2Idx] = 0
   for l0Idx in 0..<res.layer0.len:
@@ -259,7 +276,7 @@ template `xor`*(a, b: var HiBitSet): HiBitSet =
   res
 
 template andNot*(a, b: HiBitSet): HiBitSet =
-  ## AND NOT — bits in `a` that are not in `b`.
+  ## AND NOT — bits in ``a`` that are not in ``b``.
   var res = newHiBitSet()
   res.layer0.setLen(a.layer0.len)
   res.layer1.setLen(a.layer1.len)
@@ -299,8 +316,12 @@ template `noti`*(a: var HiBitSet) =
 iterator items*(h: HiBitSet): int =
   ## Iterates over all set bit indices using trailing-zero-count skipping.
   ##
-  ## Example:
-  ##   for idx in bitset:
+  ## Example
+  ## -------
+  ## .. code-block:: nim
+  ##   var bs = newHiBitSet()
+  ##   bs.set(10); bs.set(42); bs.set(100)
+  ##   for idx in bs:
   ##     echo "bit ", idx, " is set"
   for l2Idx in 0..<h.layer2.len:
     var l2Block = h.layer2[l2Idx]
@@ -360,38 +381,15 @@ proc `$`*(h: HiBitSet): string =
 # Sparse HiBitSet — 3-level
 # ============================================================================
 
-type
-  SparseHiBitSet* = object
-    ## Sparse 3-level hierarchical bitset.
-    ## Uses the sparse-set technique at every level so only non-zero blocks
-    ## consume memory.  O(1) insert / delete / lookup without hashing.
-    ##
-    ## Memory per set bit: ~3 * sizeof(uint64) amortised.
-
-    # Layer 0 — actual bits
-    layer0Dense:    seq[BitBlock]
-    layer0Sparse:   seq[int]
-    layer0DenseIdx: seq[int]
-    layer0Count:    int
-
-    # Layer 1 — one bit per layer0 block
-    layer1Dense:    seq[BitBlock]
-    layer1Sparse:   seq[int]
-    layer1DenseIdx: seq[int]
-    layer1Count:    int
-
-    # Layer 2 — one bit per layer1 block  (new)
-    layer2Dense:    seq[BitBlock]
-    layer2Sparse:   seq[int]
-    layer2DenseIdx: seq[int]
-    layer2Count:    int
-
 proc newSparseHiBitSet*(initialCapacity: int = 64): SparseHiBitSet =
   ## Creates a new sparse 3-level HiBitSet.
   ##
-  ## Example:
+  ## Example
+  ## -------
+  ## .. code-block:: nim
   ##   var bs = newSparseHiBitSet()
   ##   bs.set(10_000_000)   # only 3 blocks allocated, not 10 M bits
+  ##   echo bs.memoryUsage  # → ~72 bytes
   result.layer0Dense    = newSeq[BitBlock](initialCapacity)
   result.layer0Sparse   = newSeq[int](initialCapacity)
   result.layer0DenseIdx = newSeq[int](initialCapacity)
@@ -542,7 +540,7 @@ proc setL0Block*(h: var SparseHiBitSet, l0Idx: int, value: BitBlock) {.inline.} 
 # ---------- bit set / unset ----------
 
 proc set*(h: var SparseHiBitSet, idx: int) {.inline.} =
-  ## Sets the bit at `idx` to 1. Allocates a block only if the block is new.
+  ## Sets the bit at ``idx`` to 1. Allocates a block only if the block is new.
   ## Time complexity: O(1)
   let l0Idx  = idx shr L0_SHIFT
   let bitPos = idx and L0_MASK
@@ -576,7 +574,7 @@ proc setBatch*(h: var SparseHiBitSet, idxs: openArray[uint|int]) =
       lastL0Idx = l0Idx
 
 proc unset*(h: var SparseHiBitSet, idx: int) {.inline.} =
-  ## Sets the bit at `idx` to 0. Deallocates blocks that become empty.
+  ## Sets the bit at ``idx`` to 0. Deallocates blocks that become empty.
   ## Time complexity: O(1)
   let l0Idx  = idx shr L0_SHIFT
   let bitPos = idx and L0_MASK
@@ -600,7 +598,7 @@ proc unsetBatch*(h: var SparseHiBitSet, idxs: openArray[uint|int]) =
   for idx in idxs: h.unset(idx.int)
 
 proc get*(h: SparseHiBitSet, idx: int): bool {.inline.} =
-  ## Returns true if the bit at `idx` is set. Time complexity: O(1)
+  ## Returns true if the bit at ``idx`` is set. Time complexity: O(1)
   let l0Idx  = idx shr L0_SHIFT
   let bitPos = idx and L0_MASK
   if not h.hasL0(l0Idx): return false
@@ -680,7 +678,7 @@ proc `xor`*(a, b: SparseHiBitSet): SparseHiBitSet =
 
 proc `not`*(a: SparseHiBitSet): SparseHiBitSet =
   ## NOT — inverts all bits up to the highest allocated block.
-  ## Warning: the result may be dense even when `a` is sparse.
+  ## Warning: the result may be dense even when ``a`` is sparse.
   result = newSparseHiBitSet()
   if a.layer0Count == 0: return
 
@@ -698,7 +696,7 @@ proc `not`*(a: SparseHiBitSet): SparseHiBitSet =
       result.setL2(l2Idx, result.getL2(l2Idx) or (BitBlock(1) shl (l1Idx and L0_MASK)))
 
 proc andNot*(a, b: SparseHiBitSet): SparseHiBitSet =
-  ## AND NOT — bits in `a` that are not in `b`.
+  ## AND NOT — bits in ``a`` that are not in ``b``.
   result = newSparseHiBitSet()
   for i in 0..<a.layer0Count:
     let l0Idx = a.layer0DenseIdx[i]
@@ -715,7 +713,9 @@ proc andNot*(a, b: SparseHiBitSet): SparseHiBitSet =
 iterator items*(h: SparseHiBitSet): int =
   ## Iterates over all set bit indices. Visits only allocated blocks.
   ##
-  ## Example:
+  ## Example
+  ## -------
+  ## .. code-block:: nim
   ##   var bs = newSparseHiBitSet()
   ##   bs.set(10_000_000)
   ##   for idx in bs:   # visits only idx=10_000_000
@@ -780,5 +780,3 @@ proc `$`*(h: SparseHiBitSet): string =
     result.add($idx)
     first = false
   result.add("]")
-
-type HiBitSetType = HiBitSet
