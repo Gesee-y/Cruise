@@ -53,7 +53,7 @@ macro allocateSparseEntity*(
     newBlockCode.add quote("@") do:
       block:
         let rawp = `@table`.registry.entries[toComponentId(`@c`)].rawPointer
-        var fr = castTo(rawp, typeof(`@c`), DEFAULT_BLK_SIZE)
+        var fr = castTo(rawp, `@c`, DEFAULT_BLK_SIZE)
         fr.newSparseBlock(`@table`.max_index, 1'u)
 
   ## activateSparseBit per component — runs on both paths.
@@ -63,7 +63,7 @@ macro allocateSparseEntity*(
       block:
         let toAct = `@table`.free_list[^1]
         let rawp = `@table`.registry.entries[toComponentId(`@c`)].rawPointer
-        var fr = castTo(rawp, typeof(`@c`), DEFAULT_BLK_SIZE)
+        var fr = castTo(rawp, `@c`, DEFAULT_BLK_SIZE)
         fr.activateSparseBit(toAct)
 
   return quote("@") do:
@@ -119,7 +119,7 @@ macro allocateSparseEntities*(
     activateBatchCode.add quote("@") do:
       block:
         let rawp = `@table`.registry.entries[toComponentId(`@c`)].rawPointer
-        var fr = castTo(rawp, typeof(`@c`), DEFAULT_BLK_SIZE)
+        var fr = castTo(rawp, `@c`, DEFAULT_BLK_SIZE)
         fr.activateSparseBit(`@toActivateId`)
 
   ## newSparseBlocks(offset, masks) — typed bulk block allocation.
@@ -128,7 +128,7 @@ macro allocateSparseEntities*(
     newBlocksCode.add quote("@") do:
       block:
         let rawp = `@table`.registry.entries[toComponentId(`@c`)].rawPointer
-        var fr = castTo(rawp, typeof(`@c`), DEFAULT_BLK_SIZE)
+        var fr = castTo(rawp, `@c`, DEFAULT_BLK_SIZE)
         fr.newSparseBlocks(`@baseOffsetId`, `@masksId`)
 
   return quote("@") do:
@@ -224,7 +224,7 @@ macro activateSparseTyped*(
     code.add quote("@") do:
       block:
         let rawp = `@table`.registry.entries[toComponentId(`@c`)].rawPointer
-        var fr = castTo(rawp, typeof(`@c`), DEFAULT_BLK_SIZE)
+        var fr = castTo(rawp, `@c`, DEFAULT_BLK_SIZE)
         fr.activateSparseBit(`@i`)
 
   return quote("@") do:
@@ -244,7 +244,7 @@ macro activateSparseTypedBatch*(
     code.add quote("@") do:
       block:
         let rawp = `@table`.registry.entries[toComponentId(`@c`)].rawPointer
-        var fr = castTo(rawp, typeof(`@c`), DEFAULT_BLK_SIZE)
+        var fr = castTo(rawp, `@c`, DEFAULT_BLK_SIZE)
         fr.activateSparseBit(`@ids`)
 
   return quote("@") do:
@@ -263,7 +263,7 @@ macro deactivateSparseTyped*(
     code.add quote("@") do:
       block:
         let rawp = `@table`.registry.entries[toComponentId(`@c`)].rawPointer
-        var fr = castTo(rawp, typeof(`@c`), DEFAULT_BLK_SIZE)
+        var fr = castTo(rawp, `@c`, DEFAULT_BLK_SIZE)
         fr.deactivateSparseBit(`@i`)
 
   return quote("@") do:
@@ -282,7 +282,7 @@ macro deactivateSparseTypedBatch*(
     code.add quote("@") do:
       block:
         let rawp = `@table`.registry.entries[toComponentId(`@c`)].rawPointer
-        var fr = castTo(rawp, typeof(`@c`), DEFAULT_BLK_SIZE)
+        var fr = castTo(rawp, `@c`, DEFAULT_BLK_SIZE)
         fr.deactivateSparseBit(`@ids`)
 
   return quote("@") do:

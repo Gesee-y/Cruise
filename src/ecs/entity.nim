@@ -8,10 +8,10 @@
 ## It contains the raw IDs required to locate the entity's component data in memory.
 type
   Entity* = object
-    id*:uint             ## The packed entity ID. This usually combines the Block ID and the local index
+    id:uint             ## The packed entity ID. This usually combines the Block ID and the local index
                         ## within that block to form a unique memory address for the entity's row.
-    archetypeId*:uint16  ## Identifies which Archetype (table of components) this entity currently belongs to.
-    widx*:int            ## The "World Index". A stable ID referencing this entity's slot in the main entities list,
+    archetypeId:uint16  ## Identifies which Archetype (table of components) this entity currently belongs to.
+    widx:int            ## The "World Index". A stable ID referencing this entity's slot in the main entities list,
                         ## used for handle lookup and recycling.
 
 ## A safe, public handle to a Dense Entity.
@@ -22,8 +22,8 @@ type
 ## has been deleted (stale handle).
 type
   DenseHandle* = object
-    obj* : ptr Entity  ## Pointer to the underlying `Entity` metadata structure.
-    gen* : uint32      ## The generation counter. Used to verify that the entity is still alive.
+    obj : ptr Entity  ## Pointer to the underlying `Entity` metadata structure.
+    gen : uint32      ## The generation counter. Used to verify that the entity is still alive.
                       ## If `gen` does not match the world's stored generation for this entity,
                       ## the handle is considered stale.
 

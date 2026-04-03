@@ -6,7 +6,7 @@ type
   PluginResource* = object
     data*: pointer
     readRequests: BitSet  # sys ids who read this resource
-    writeRequests: BitSet # sys ids who write this resource
+    writeRequests: Bitset # sys ids who write this resource
     dirty: bool
     cachedGraph: DiGraph
 
@@ -24,6 +24,7 @@ proc addResource*[T](manager: var PResourceManager, obj: T): int =
   let id = manager.resources.len
   manager.resources.add(newPluginResource(obj))
   manager.dirty = true
+
   return id
 
 proc getResource*[T](manager: PResourceManager, id: int): T =

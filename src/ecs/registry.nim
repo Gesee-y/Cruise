@@ -9,7 +9,9 @@
 ## through a table of function pointers so higher-level systems (ECS, archetypes,
 ## schedulers) can manipulate components without knowing their concrete type.
 
+var NEXT_COMPONENT_ID {.compileTime.} = 0
 var NEXT_ARCHETYPE_ID {.compileTime.} = 0
+var COMPONENT_ID_REGISTRY {.compileTime.} = initTable[int, int]()
 var ARCHETYPE_ID_REGISTRY {.compileTime.} = initTable[ArchetypeMask, int]()
 var ARCHETYPE_ID_TO_MASK {.compileTime.} = initTable[int, ArchetypeMask]()
 
@@ -19,16 +21,19 @@ static:
   ARCHETYPE_ID_TO_MASK[NEXT_ARCHETYPE_ID] = r
   inc NEXT_ARCHETYPE_ID
 
-macro toComponentId*(T:typed): int =
-  let ti = T.getTypeInst
-  var name: string 
-  if ti.kind == nnkBracketExpr and ti.len > 1 and ti[0].repr == "typeDesc":
-    name = ti[1].repr
-  else:
-    name = ti.repr
-  let hash = name.hash.int
+macro toComponentId(T:typedesc): int =
+  let str = T.getTypeInst.repr
+  let hash = T.getTypeInst.repr.hash.int
   let maxComp = MAX_COMPONENT_LAYER*UINT_BITS
-  let id = abs(hash) mod maxComp
+
+  if hash notin COMPONENT_ID_REGISTRY:
+    if NEXT_COMPONENT_ID < maxComp:
+      COMPONENT_ID_REGISTRY[hash] = NEXT_COMPONENT_ID
+      inc NEXT_COMPONENT_ID
+    else:
+      error "Failed to add " & str & ". Can't have more than " & $maxComp & " component."
+
+  let id = COMPONENT_ID_REGISTRY[hash]
   return quote do: `id`
 
 macro toArchetypeID(comps: static openArray[int]): int =
