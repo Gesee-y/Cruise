@@ -78,14 +78,14 @@ proc toSoATuple(T: NimNode, N: int): NimNode =
     if v.kind == nnkBracketExpr:
       if v[0].strVal == "array":
         v[0] = ident v[0].strVal
-        
+
         if v[1].kind == nnkBracketExpr:
           var temp = newNimNode(nnkInfix)
           temp.add(ident "..")
           temp.add(v[1][1])
           temp.add(v[1][2])
           v[1] = temp
-        
+
         v[2] = ident v[2].strVal
         brack.add(v)
     else:
@@ -430,15 +430,16 @@ template getBlock[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B],
   ## Get the dense block from a packed ID.
   f.blocks[(i shr BLK_SHIFT) and BLK_MASK]
 
-template activateSparseBit[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: int|uint) =
+template activateSparseBit[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S,
+    B], i: int|uint) =
   ## Mark a sparse index as active.
   let bid = i shr BIT_DIVIDER
   if bid.int >= f.toSparse.len or f.toSparse[bid] == 0:
     f.newSparseBlock(i.int, 0'u)
   f.sparseMask.set(i.int)
 
-template activateSparseBit[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B],
-    idxs: openArray[uint]) =
+template activateSparseBit[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S,
+    B], idxs: openArray[uint]) =
   ## Mark multiple sparse indices as active.
   ## Optimized to allocate blocks first then set bits in batch.
   for i in idxs:
@@ -447,7 +448,8 @@ template activateSparseBit[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B]
       f.newSparseBlock(i.int, 0'u)
   f.sparseMask.setBatch(idxs)
 
-template deactivateSparseBit[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: int|uint) =
+template deactivateSparseBit[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S,
+    B], i: int|uint) =
   ## Deactivate a sparse index.
   f.sparseMask.unset(i.int)
   let bid = i.int shr BIT_DIVIDER

@@ -5,20 +5,20 @@
 import tables, bitops, typetraits, hashes, sequtils, math
 
 const
-  MAX_COMPONENT_LAYER = 4
-  PARTITION_ZONE_CAP = 10
-  EVENT_ACTIVE = false
-  UINT_BITS = sizeof(uint)*8
-  BIT_DIVIDER = floor(log(UINT_BITS.float, 2.0)).int
-  BIT_REMAINDER = UINT_BITS-1
+  MAX_COMPONENT_LAYER* = 4
+  PARTITION_ZONE_CAP* = 10
+  EVENT_ACTIVE* = false
+  UINT_BITS* = sizeof(uint)*8
+  BIT_DIVIDER* = floor(log(UINT_BITS.float, 2.0)).int
+  BIT_REMAINDER* = UINT_BITS-1
   ## Bit shift used to extract block indices from packed IDs.
-  BLK_SHIFT = sizeof(uint)*4
+  BLK_SHIFT* = sizeof(uint)*4
   ## Mask used to extract local indices from packed IDs.
-  BLK_MASK = (1 shl BLK_SHIFT) - 1
+  BLK_MASK* = (1 shl BLK_SHIFT) - 1
   ## Default size (in elements) of a dense block.
-  DEFAULT_BLK_SIZE = UINT_BITS*UINT_BITS
+  DEFAULT_BLK_SIZE* = UINT_BITS*UINT_BITS
   ## Initial capacity of the sparse storage.
-  INITIAL_SPARSE_SIZE = 10000
+  INITIAL_SPARSE_SIZE* = 10000
 
 type 
   Range = object
@@ -98,6 +98,7 @@ proc newECSWorld*(max_entities:int=1000000):ECSWorld =
   w.generations = newSeqofCap[uint32](max_entities)
   w.sparse_gens = newSeqofCap[uint32](max_entities)
   w.events = initEventManager()
+  w.registry.entries.setLen(MAX_COMPONENT_LAYER * UINT_BITS)
 
   return w
 
@@ -119,19 +120,19 @@ proc getArchetype*(w:ECSWorld, e:SomeEntity):ArchetypeNode =
 proc getArchetype*(w:ECSWorld, d:DenseHandle):ArchetypeNode =
   return w.getArchetype(d.obj)
 
-proc makeId(info:(uint, Range)):uint =
+proc makeId*(info:(uint, Range)):uint =
   return ((info[0]).uint shl BLK_SHIFT) or ((info[1].e-1) mod DEFAULT_BLK_SIZE).uint
 
-proc makeId(idx,bid:int|uint):uint =
+proc makeId*(idx,bid:int|uint):uint =
   return (bid.uint shl BLK_SHIFT) or idx.uint
 
-proc makeId(i:int):uint =
+proc makeId*(i:int):uint =
   let bid = i.uint div DEFAULT_BLK_SIZE
   let idx = i.uint mod DEFAULT_BLK_SIZE
 
   return (bid shl BLK_SHIFT) or idx
 
-proc makeId(i:uint):uint =
+proc makeId*(i:uint):uint =
   let bid = i div DEFAULT_BLK_SIZE.uint
   let idx = i mod DEFAULT_BLK_SIZE.uint
 

@@ -52,10 +52,10 @@ template sdlOnAllocate*(data: var SDLData): AllocateCallback =
       desc = streamingTextureDesc(int(res.desc.width), int(res.desc.height))
     else:
       desc = renderTargetDesc(int(res.desc.width), int(res.desc.height))
-    let key  = data.pool.allocTransient(desc, res.name)
+    let key = data.pool.allocTransient(desc, res.name)
     data.rgTextures[res.name] = SDLTextureEntry(key: key, desc: desc)
     res.backingPtr = data.pool.rawPtr(key)
-  
+
   onAlloc
 
 template sdlOnRelease*(data: var SDLData): ReleaseCallback =
@@ -73,13 +73,14 @@ template sdlOnRelease*(data: var SDLData): ReleaseCallback =
   onRelease
 
 template sdlOnAlias*(data: var SDLData): AliasCallback =
-  let onAlias = proc (canonical: var RenderResource, alias: var RenderResource) =
+  let onAlias = proc (canonical: var RenderResource,
+      alias: var RenderResource) =
     alias.backingPtr = canonical.backingPtr
     if canonical.name in data.rgTextures:
       let canonEntry = data.rgTextures[canonical.name]
       data.rgTextures[alias.name] = canonEntry
       data.pool.addRef(canonEntry.key)
-  
+
   onAlias
 
 template sdlOnTransition*(data: var SDLData): TransitionCallback =
@@ -105,25 +106,25 @@ proc sdlExecuteAll*(ren: var CSDLRenderer, cb: var CommandBuffer) =
 # ===========================================================================
 
 type SDLRenderGraph* = object
-  rg*:  RenderGraph
-  ren*: ptr CSDLRenderer   ## borrowed reference — must outlive the graph
+  rg*: RenderGraph
+  ren*: ptr CSDLRenderer ## borrowed reference — must outlive the graph
 
 proc initSDLRenderGraph*(ren: var CSDLRenderer): SDLRenderGraph =
   ## Build a render graph pre-wired to the given CSDLRenderer's backend.
   let data = addr ren.data
   result.rg = initRenderGraph(
-    onAllocate   = sdlOnAllocate(data[]),
-    onRelease    = sdlOnRelease(data[]),
+    onAllocate = sdlOnAllocate(data[]),
+    onRelease = sdlOnRelease(data[]),
     onTransition = sdlOnTransition(data[]),
-    onAlias      = sdlOnAlias(data[])
+    onAlias = sdlOnAlias(data[])
   )
   result.ren = addr ren
 
 proc addRenderPass*(srg: var SDLRenderGraph,
-                    pass:   RenderPassNode,
-                    reads:  seq[int] = @[],
+                    pass: RenderPassNode,
+                    reads: seq[int] = @[],
                     writes: seq[int] = @[],
-                    deps:   seq[int] = @[]): int =
+                    deps: seq[int] = @[]): int =
   srg.rg.addRenderPass(pass, reads, writes, deps)
 
 proc addRenderResource*(srg: var SDLRenderGraph,
@@ -149,14 +150,16 @@ proc teardown*(srg: var SDLRenderGraph) =
 # creating a second SDL texture. Graph `onRelease` skips destroying the pool slot
 # for bound names (you keep ownership via `releaseTexture`).
 
-proc bindRenderGraphTexture*(ren: var CSDLRenderer, resourceName: string, key: TextureKey) =
+proc bindRenderGraphTexture*(ren: var CSDLRenderer, resourceName: string,
+    key: TextureKey) =
   let desc = ren.data.pool.desc(key)
   ren.data.rgTextures[resourceName] = SDLTextureEntry(key: key, desc: desc)
   ren.data.externalGraphTextures.incl(resourceName)
 
 proc lookupGraphTexture*(ren: CSDLRenderer, resourceName: string): TextureKey =
   if not tables.contains(ren.data.rgTextures, resourceName):
-    raise newException(KeyError, "lookupGraphTexture: unknown resource \"" & resourceName & "\"")
+    raise newException(KeyError, "lookupGraphTexture: unknown resource \"" &
+        resourceName & "\"")
   ren.data.rgTextures[resourceName].key
 
 proc tryLookupGraphTexture*(ren: CSDLRenderer, resourceName: string): Option[TextureKey] =
@@ -168,9 +171,10 @@ proc tryLookupGraphTexture*(ren: CSDLRenderer, resourceName: string): Option[Tex
 # Renderer lifecycle
 # ===========================================================================
 
-proc initSDLRendererFromWindow*(window: ptr SDL_Window, vsync: bool = true): CSDLRenderer =
+proc initSDLRendererFromWindow*(window: ptr SDL_Window,
+    vsync: bool = true): CSDLRenderer =
   ## Crée un renderer à partir d'une fenêtre SDL3 existante.
-  
+
   if window == nil:
     raise newException(ValueError, "La fenêtre fournie est nil")
 
@@ -200,11 +204,11 @@ proc initSDLRendererFromWindow*(window: ptr SDL_Window, vsync: bool = true): CSD
 
   result = ren
 
-proc initSDLRenderer*(title:     string  = "SDL3 Renderer",
-                       width:     int     = 1280,
-                       height:    int     = 720,
-                       vsync:     bool    = true,
-                       highDpi:   bool    = false): CSDLRenderer =
+proc initSDLRenderer*(title: string = "SDL3 Renderer",
+                       width: int = 1280,
+                       height: int = 720,
+                       vsync: bool = true,
+                       highDpi: bool = false): CSDLRenderer =
   ## Initialize SDL3, create window and renderer, return a fully ready CSDLRenderer.
   if not SDL_Init(SDL_INIT_VIDEO or SDL_INIT_EVENTS):
     raise newException(IOError, "SDL_Init failed: " & $SDL_GetError())
@@ -216,41 +220,7 @@ proc initSDLRenderer*(title:     string  = "SDL3 Renderer",
   if window == nil:
     raise newException(IOError, "SDL_CreateWindow failed: " & $SDL_GetError())
 
-  return initSDLRenderer(window, vsync)
-
-proc initSDLRenderer*(win: ptr SDL_Window,
-                       width:     int     = 1280,
-                       height:    int     = 720,
-                       vsync:     bool    = true,
-                       highDpi:   bool    = false): CSDLRenderer =
-  ## Initialize SDL3, create window and renderer, return a fully ready CSDLRenderer.
-  if not SDL_Init(SDL_INIT_VIDEO or SDL_INIT_EVENTS):
-    raise newException(IOError, "SDL_Init failed: " & $SDL_GetError())
-
-  var flags = SDL_WINDOW_RESIZABLE
-  if highDpi: flags = flags or SDL_WINDOW_HIGH_PIXEL_DENSITY
-
-  let window = SDL_CreateWindow(title.cstring, cint(width), cint(height), flags)
-  if window == nil:
-    raise newException(IOError, "SDL_CreateWindow failed: " & $SDL_GetError())
-
-  let sdlRen = SDL_CreateRenderer(window, nil)
-  if sdlRen == nil:
-    raise newException(IOError, "SDL_CreateRenderer failed: " & $SDL_GetError())
-
-  discard SDL_SetRenderVSync(sdlRen, if vsync: 1 else: 0)
-
-  var data = initSDLData(window, sdlRen, width, height)
-
-  var ren = initCRenderer[SDLData](data)
-
-  ren.data.scrTypeId = registerType[SDLData, uint32](ren)
-  ren.executeAll = sdlExecuteAll
-
-  discard createResource[SDLData, uint32](ren, ren.data.scrTypeId, 0u32)
-  ren.data.screenKey = TextureKey(0)
-
-  result = ren
+  return initSDLRendererFromWindow(window, vsync)
 
 
 # ---------------------------------------------------------------------------
@@ -316,8 +286,8 @@ proc setViewport*(ren: var CSDLRenderer, x, y, w, h: float32) =
 # Texture management
 # ===========================================================================
 
-proc loadTexture*(ren:   var CSDLRenderer,
-                  path:  string,
+proc loadTexture*(ren: var CSDLRenderer,
+                  path: string,
                   sampler = defaultSampler()): TextureKey =
   ## Load an image file and register it as a persistent texture.
   ## Requires SDL3_image (sdl3_image_nim) — add it to your nimble deps.
@@ -326,14 +296,16 @@ proc loadTexture*(ren:   var CSDLRenderer,
     raw = IMG_Load(path.cstring)
     if raw == nil:
       echo "WARN loadTexture IMG_Load failed, fallback BMP: ", SDL_GetError()
-  
-  raw = SDL_LoadBMP(path.cstring)   # fallback: BMP without SDL_image
+
+  raw = SDL_LoadBMP(path.cstring) # fallback: BMP without SDL_image
   if raw == nil:
-    raise newException(IOError, "loadTexture: " & path & " — " & $SDL_GetError())
+    raise newException(IOError, "loadTexture: " & path & " — " &
+        $SDL_GetError())
   let tex = SDL_CreateTextureFromSurface(ren.data.renderer, raw)
   SDL_DestroySurface(raw)
   if tex == nil:
-    raise newException(IOError, "SDL_CreateTextureFromSurface failed: " & $SDL_GetError())
+    raise newException(IOError, "SDL_CreateTextureFromSurface failed: " &
+        $SDL_GetError())
   var w, h: cfloat
   discard SDL_GetTextureSize(tex, addr w, addr h)
   let desc = SDLTextureDesc(width: int(w), height: int(h),
@@ -342,14 +314,14 @@ proc loadTexture*(ren:   var CSDLRenderer,
   result = ren.data.pool.registerExternalPersistent(cast[pointer](tex), desc, path)
   applySampler(ren.data.renderer, tex, sampler)
 
-proc createRenderTarget*(ren:     var CSDLRenderer,
+proc createRenderTarget*(ren: var CSDLRenderer,
                           width, height: int,
                           sampler = defaultSampler()): TextureKey =
   ## Allocate an off-screen render target texture.
   let desc = renderTargetDesc(width, height, sampler)
   ren.data.pool.allocTransient(desc, "rt_" & $width & "x" & $height)
 
-proc createStreamingTexture*(ren:     var CSDLRenderer,
+proc createStreamingTexture*(ren: var CSDLRenderer,
                           width, height: int,
                           sampler = defaultSampler()): TextureKey =
   ## Allocate an off-screen render target texture.
@@ -369,15 +341,15 @@ proc textureSize*(ren: CSDLRenderer, key: TextureKey): tuple[w, h: int] =
 # ===========================================================================
 
 proc DrawCircleAdv*[R](
-    ren:      var R,
-    center:   FPoint,
-    radius:   float32,
-    color:    SDLRGBA,
-    filled:   bool    = true,
-    segments: int     = 0,
+    ren: var R,
+    center: FPoint,
+    radius: float32,
+    color: SDLRGBA,
+    filled: bool = true,
+    segments: int = 0,
     thickness: float32 = 1.0,
-    priority: uint32  = 0,
-    pass:     string   = "render"
+    priority: uint32 = 0,
+    pass: string = "render"
 ) =
   addCommand[DrawCircleAdvCmd, R](ren.commandBuffer,
     0u32, priority, 0u32,
@@ -387,14 +359,14 @@ proc DrawCircleAdv*[R](
   )
 
 proc DrawRoundRect*[R](
-    ren:        var R,
-    rect:       FRect,
-    radius:     float32,
-    color:      SDLRGBA,
-    filled:     bool  = true,
-    cornerSegs: int   = 8,
-    priority:   uint32 = 0,
-    pass:       string  = "render"
+    ren: var R,
+    rect: FRect,
+    radius: float32,
+    color: SDLRGBA,
+    filled: bool = true,
+    cornerSegs: int = 8,
+    priority: uint32 = 0,
+    pass: string = "render"
 ) =
   addCommand[DrawRoundRectCmd, R](ren.commandBuffer,
     0u32, priority, 0u32,
@@ -404,33 +376,34 @@ proc DrawRoundRect*[R](
   )
 
 proc DrawPolygon*[R](
-    ren:      var R,
-    points:   seq[FPoint],
-    color:    SDLRGBA,
-    filled:   bool    = true,
+    ren: var R,
+    points: seq[FPoint],
+    color: SDLRGBA,
+    filled: bool = true,
     thickness: float32 = 1.0,
-    priority: uint32  = 0,
-    pass:     string   = "render"
+    priority: uint32 = 0,
+    pass: string = "render"
 ) =
   addCommand[DrawPolygonCmd, R](ren.commandBuffer,
     0u32, priority, 0u32,
-    DrawPolygonCmd(points: points, color: color, filled: filled, thickness: thickness),
+    DrawPolygonCmd(points: points, color: color, filled: filled,
+        thickness: thickness),
     pass
   )
 
 proc DrawTexturedQuad*[R](
-    ren:       var R,
-    key:       TextureKey,
-    dst:       FRect,
-    src:       FRect     = frect(0, 0, 1, 1),
-    tint:      SDLRGBA   = SDLRGBA.white,
-    angle:     float32   = 0,
-    pivot:     FPoint    = fpoint(0.5, 0.5),
-    flipH:     bool      = false,
-    flipV:     bool      = false,
+    ren: var R,
+    key: TextureKey,
+    dst: FRect,
+    src: FRect = frect(0, 0, 1, 1),
+    tint: SDLRGBA = SDLRGBA.white,
+    angle: float32 = 0,
+    pivot: FPoint = fpoint(0.5, 0.5),
+    flipH: bool = false,
+    flipV: bool = false,
     blendMode: SDLBlendMode = blendAlpha,
-    priority:  uint32    = 0,
-    pass:      string     = "render"
+    priority: uint32 = 0,
+    pass: string = "render"
 ) =
   addCommand[DrawTexturedQuadCmd, R](ren.commandBuffer,
     0u32, priority, uint32(key) - 1,
@@ -441,32 +414,33 @@ proc DrawTexturedQuad*[R](
   )
 
 proc DrawGeometry*[R](
-    ren:      var R,
+    ren: var R,
     vertices: seq[Vertex],
-    indices:  seq[uint32],
-    key:      TextureKey    = InvalidTextureKey,
-    blend:    SDLBlendMode  = blendAlpha,
-    priority: uint32        = 0,
-    pass:     string         = "render"
+    indices: seq[uint32],
+    key: TextureKey = InvalidTextureKey,
+    blend: SDLBlendMode = blendAlpha,
+    priority: uint32 = 0,
+    pass: string = "render"
 ) =
   addCommand[DrawGeometryCmd, R](ren.commandBuffer,
     0u32, priority, 0u32,
-    DrawGeometryCmd(vertices: vertices, indices: indices, texKey: key, blend: blend),
+    DrawGeometryCmd(vertices: vertices, indices: indices, texKey: key,
+        blend: blend),
     pass
   )
 
 proc DrawTexturedQuad3D*[R](
-    ren:        var R,
-    key:        TextureKey,
-    mvp:        Mat4,
-    world:      array[4, SdlVec3f],
-    uv:         array[4, FPoint],
-    viewportW:  float32,
-    viewportH:  float32,
-    tint:       SDLRGBA     = SDLRGBA.white,
-    blend:      SDLBlendMode = blendAlpha,
-    priority:   uint32      = 0,
-    pass:       string      = "render"
+    ren: var R,
+    key: TextureKey,
+    mvp: Mat4,
+    world: array[4, SdlVec3f],
+    uv: array[4, FPoint],
+    viewportW: float32,
+    viewportH: float32,
+    tint: SDLRGBA = SDLRGBA.white,
+    blend: SDLBlendMode = blendAlpha,
+    priority: uint32 = 0,
+    pass: string = "render"
 ) =
   ## Perspective quad in 3D → projected with `mvp`, drawn as a six-index triangle pair.
   let verts = texturedQuadVertices3d(mvp, world, uv, viewportW, viewportH, tint)
@@ -478,16 +452,16 @@ proc DrawTexturedQuad3D*[R](
   )
 
 proc BlitTexture*[R](
-    ren:      var R,
-    src:      TextureKey,
-    dst:      TextureKey       = InvalidTextureKey,
-    srcRect:  FRect            = frect(0, 0, 1, 1),
-    dstRect:  FRect            = frect(0, 0, 0, 0),   ## 0,0 = full target
-    blend:    SDLBlendMode     = blendAlpha,
-    tint:     SDLRGBA          = SDLRGBA.white,
-    alpha:    float32          = 1.0,
-    priority: uint32           = 0,
-    pass:     string            = "composite"
+    ren: var R,
+    src: TextureKey,
+    dst: TextureKey = InvalidTextureKey,
+    srcRect: FRect = frect(0, 0, 1, 1),
+    dstRect: FRect = frect(0, 0, 0, 0), ## 0,0 = full target
+    blend: SDLBlendMode = blendAlpha,
+    tint: SDLRGBA = SDLRGBA.white,
+    alpha: float32 = 1.0,
+    priority: uint32 = 0,
+    pass: string = "composite"
 ) =
   addCommand[BlitTextureCmd, R](ren.commandBuffer,
     0u32, priority, 0u32,
@@ -497,11 +471,11 @@ proc BlitTexture*[R](
   )
 
 proc AddPostProcess*[R](
-    ren:      var R,
-    target:   TextureKey,
-    effect:   PostProcessEffect,
+    ren: var R,
+    target: TextureKey,
+    effect: PostProcessEffect,
     priority: uint32 = 0,
-    pass:     string  = "postprocess"
+    pass: string = "postprocess"
 ) =
   addCommand[PostProcessCmd, R](ren.commandBuffer,
     0u32, priority, 0u32,
@@ -510,12 +484,12 @@ proc AddPostProcess*[R](
   )
 
 proc PostProcessRT*[R](
-    ren:      var R,
-    src:      TextureKey,            ## render target (accessTarget)
-    dst:      TextureKey,            ## streaming texture (accessStreaming)
-    effects:  seq[PostProcessEffect],
+    ren: var R,
+    src: TextureKey, ## render target (accessTarget)
+    dst: TextureKey, ## streaming texture (accessStreaming)
+    effects: seq[PostProcessEffect],
     priority: uint32 = 0,
-    pass:     string  = "postprocess"
+    pass: string = "postprocess"
 ) =
   addCommand[PostProcessRTCmd, R](ren.commandBuffer,
     0u32, priority, 0u32,
@@ -523,10 +497,10 @@ proc PostProcessRT*[R](
     pass)
 
 proc ClearTarget*[R](
-    ren:    var R,
+    ren: var R,
     target: TextureKey,
-    color:  SDLRGBA  = SDLRGBA.black,
-    pass:   string    = "render"
+    color: SDLRGBA = SDLRGBA.black,
+    pass: string = "render"
 ) =
   addCommand[ClearTargetCmd, R](ren.commandBuffer,
     0u32, 0u32, 0u32,
@@ -535,9 +509,9 @@ proc ClearTarget*[R](
   )
 
 proc PushRenderTarget*[R](
-    ren:    var R,
+    ren: var R,
     target: TextureKey,
-    pass:   string = "render"
+    pass: string = "render"
 ) =
   addCommand[PushTargetCmd, R](ren.commandBuffer,
     0u32, 0u32, 0u32,
@@ -565,8 +539,8 @@ type
     case kind*: EventKind
     of evKeyDown, evKeyUp:
       scancode*: int
-      sym*:      int
-      mods*:     uint16
+      sym*: int
+      mods*: uint16
     of evMouseMove:
       mx*, my*: float32
       dx*, dy*: float32
@@ -592,13 +566,13 @@ proc pollEvents*(ren: var CSDLRenderer): seq[InputEvent] =
     of uint32(SDL_EVENT_KEY_DOWN):
       result.add InputEvent(kind: evKeyDown,
         scancode: int(e.key.scancode),
-        sym:      int(e.key.key),
-        mods:     uint16(e.key.mod_field))
+        sym: int(e.key.key),
+        mods: uint16(e.key.mod_field))
     of uint32(SDL_EVENT_KEY_UP):
       result.add InputEvent(kind: evKeyUp,
         scancode: int(e.key.scancode),
-        sym:      int(e.key.key),
-        mods:     uint16(e.key.mod_field))
+        sym: int(e.key.key),
+        mods: uint16(e.key.mod_field))
     of uint32(SDL_EVENT_MOUSE_MOTION):
       result.add InputEvent(kind: evMouseMove,
         mx: e.motion.x, my: e.motion.y,
@@ -626,7 +600,7 @@ proc pollEvents*(ren: var CSDLRenderer): seq[InputEvent] =
 
 proc createSSAATarget*(ren: var CSDLRenderer,
                         outputW, outputH: int,
-                        scale:  int = 2): tuple[hiRes, loRes: TextureKey] =
+                        scale: int = 2): tuple[hiRes, loRes: TextureKey] =
   ## Create a 2× (or N×) render target for SSAA, plus the output target.
   ## Workflow:
   ##   1. Render scene onto `hiRes`
@@ -645,9 +619,9 @@ proc createSSAATarget*(ren: var CSDLRenderer,
 proc setAnisotropy*(ren: var CSDLRenderer, key: TextureKey, level: uint8) =
   ## Apply SDL3 anisotropy hint to a texture.
   ## SDL3 maps this through hints — effectiveness depends on the GPU driver.
-  let raw  = ren.data.pool.rawPtr(key)
+  let raw = ren.data.pool.rawPtr(key)
   if raw == nil: return
-  let tex  = cast[ptr SDL_Texture](raw)
+  let tex = cast[ptr SDL_Texture](raw)
   discard SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_LINEAR_enumval)
   discard SDL_SetHint("SDL_HINT_RENDER_SCALE_QUALITY",
                       if level >= 8: "2".cstring else: "1".cstring)
@@ -660,12 +634,12 @@ proc drawDebugStats*(ren: var CSDLRenderer, x, y: float32) =
   ## Print frame stats as simple text using SDL_RenderDebugText (SDL3.1+).
   let s = ren.data.stats
   let lines = [
-    "Frame: "     & $int(s.frameTimeMs)     & " ms",
+    "Frame: " & $int(s.frameTimeMs) & " ms",
     "DrawCalls: " & $s.drawCalls,
     "Triangles: " & $s.triangleCount,
-    "Batches: "   & $s.batchedPrimitives,
-    "RTSwitch: "  & $s.renderTargetSwitches,
-    "PostFX: "    & $s.postProcessPasses,
+    "Batches: " & $s.batchedPrimitives,
+    "RTSwitch: " & $s.renderTargetSwitches,
+    "PostFX: " & $s.postProcessPasses,
   ]
   var iy = y
   for line in lines:
