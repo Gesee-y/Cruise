@@ -19,6 +19,8 @@ type
     status*:PluginStatus
     lasterr*:CatchableError
     deps:Table[string, PluginNode]
+    res:Table[string, pointer]
+    plugin:pointer
 
   EffectivePluginNode = concept node
     awake(node)
@@ -27,7 +29,7 @@ type
     getCapability(node)
     getObject(node)
 
-  Plugin* = object
+  Plugin* = ref object
     idtonode*:seq[PluginNode]
     res_manager*: PResourceManager
     graph:DiGraph
@@ -66,6 +68,55 @@ macro gameLogic*(name, logic:untyped) =
       `logic`
 
     makeAsKey(`name`)
+
+macro newSystem*(plugin: untyped, nameAndResources: untyped): untyped =
+  var res = newStmtList()
+
+  # Parse system name and optional resource list
+  var sysName: NimNode
+  var readReqs: seq[NimNode] = @[]
+  var writeReqs: seq[NimNode] = @[]
+
+  if nameAndResources.kind == nnkBracketExpr:
+    # system_name[R1, var R2, ...]
+    sysName = nameAndResources[0]
+    for i in 1..<nameAndResources.len:
+      let param = nameAndResources[i]
+      if param.kind == nnkVarTy:
+        writeReqs.add(param[0])
+      else:
+        readReqs.add(param)
+  else:
+    # plain system_name
+    sysName = nameAndResources
+
+  let typeDef = quote do:
+    type `sysName` = ref object of PluginNode
+  
+  res.add(typeDef)
+
+  # Generate: makeAsKey(system_name)
+  res.add(newCall(ident"makeAsKey", sysName))
+
+  # Generate: let id = addSystem(plugin, system_name)
+  let idSym = genSym(nskLet, "id")
+  res.add(quote do:
+    let `idSym` = addSystem(`plugin`, `sysName`())
+  )
+
+  # Generate read/write requests
+  for r in readReqs:
+    res.add(quote do:
+      addReadRequest[`r`](`plugin`.res_manager, `idSym`)
+    )
+  for w in writeReqs:
+    res.add(quote do:
+      addWriteRequest[`w`](`plugin`.res_manager, `idSym`)
+    )
+
+  # Return value is the id
+  res.add(idSym)
+  return res
 
 macro newSystem*(plugin: untyped, nameAndResources: untyped, body: untyped): untyped =
   var res = newStmtList()

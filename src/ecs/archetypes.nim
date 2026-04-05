@@ -88,7 +88,7 @@ proc createNode(graph: var ArchetypeGraph, mask: ArchetypeMask, id:uint16=graph.
     lastRemEdge: -1,
   )
 
-  if not graph.isValidMask(newMask): 
+  if not graph.isValidMask(mask): 
       raise newException(ValueError, "Cannot create node because of all components requirement aren't fullfiled.")
   
   if id.int >= graph.nodes.len:

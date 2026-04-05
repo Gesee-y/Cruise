@@ -35,15 +35,12 @@ template hasAllDepsInitialized*(s:typed):untyped =
       break
   res
 
-
-#template hasdeaddeps(s:typed):untyped = any(isnothing, values(_getdata(s.deps)))
 template getDependency*[T](n:typed):untyped = 
   let d = $T
   if not n.deps.hasKey(d): 
     raise newException(OSError, "Dependency $n not found in node")
 
   T(n.deps[d])
-#add_status_callback(f, p::CRPluginNode) = connect(f, p.status)
 
 template getNodeid*(n:typed, s:string):untyped =
   var res = -1
@@ -64,13 +61,14 @@ template addSystem*(p:var Plugin, obj):int =
   if id < 0:
     id = add_vertex(p.graph)
 
-    while id >= p.idtonode.len:
-      p.idtonode.add(nil)
+    if id >= p.idtonode.len:
+      p.idtonode.setLen(id+1)
     
     p.idtonode[id] = obj
 
     obj.id = id
     p.dirty = true
+    obj.plugin = cast[pointer](p)
 
   if id > p.res_manager.maxRequestId:
     p.res_manager.maxRequestId = id
@@ -104,6 +102,24 @@ proc remDependency*(p:var Plugin, start:int, to:int) =
   if rem_edge(p.graph, start, to):
     p.idtonode[to].deps.del(p.idtonode[start].asKey)
     p.dirty = true
+
+proc getReadResource*[T](node: PluginNode): T =
+  let id = node.plugin.res_manager.getId(T)
+  let res = node.plugin.res_manager.resources[id]
+  if res.readRequests.contains(node.id):
+    raise newException(ValueError, "Can't access resources as read.")
+
+  return cast[T](res.rawPointer)
+
+proc getWriteResource*[T](node: PluginNode): var T =
+  let id = node.plugin.res_manager.getId(T)
+  let res = node.plugin.res_manager.resources[id]
+  if res.writeRequests.contains(node.id):
+    raise newException(ValueError, "Can't access resources as write.")
+
+  var resul = cast[T](res.rawPointer)
+
+  return resul
 
 proc mergePlugin*(p1:var Plugin, p2:var Plugin) =
   var
