@@ -22,6 +22,7 @@ type
     lru_active: bool
     lastMask: ArchetypeMask
     lastNode: ArchetypeNode
+    version: int
 
 proc addRequired(m: var ArchetypeMask, comps: seq[int], registry: ptr array[MAX_COMPONENTS, seq[int]]) =
   for c in comps:
@@ -96,6 +97,7 @@ proc createNode(graph: var ArchetypeGraph, mask: ArchetypeMask, id:uint16=graph.
 
   graph.nodes[id] = result
   graph.maskToId[mask] = id
+  graph.version += 1
 
 proc addComponent*(graph: var ArchetypeGraph, 
                    node: ArchetypeNode, 

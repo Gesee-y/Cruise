@@ -53,7 +53,7 @@ type
 ################################################################### MASK ITERATOR ##################################################################
 ####################################################################################################################################################
 
-proc newQueryFilter(): QueryFilter =
+proc newQueryFilter*(): QueryFilter =
   var q: QueryFilter
   when HibitsetType is HiBitSet:
     q.dLayer = newHiBitSet()
@@ -201,9 +201,13 @@ proc buildQuerySignature(world: ECSWorld, components: seq[QueryComponent]): Quer
         # If you need the entity to exist to be checked for modification:
         result.includeMask[layer] = result.includeMask[layer] or (1.uint shl bitPos)
 
-proc addFilter(qs: var QuerySignature, qf:QueryFilter) =
+proc addFilter*(qs: var QuerySignature, qf:QueryFilter) =
   ## Adds a new filter to the query
   qs.filters.add(addr qf)
+
+proc addFilter*(qs: var QuerySignature, qf:ptr QueryFilter) =
+  ## Adds a new filter to the query
+  qs.filters.add(qf)
 
 template clear*(qf: QueryFilter) = 
   qf.dLayer.clear()
@@ -231,12 +235,14 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator)
   
   template cacheEntry: untyped = world.queryCache[key]
   
-  if cacheEntry.version < world.archGraph.nodes.len:
-    for i in cacheEntry.version ..< world.archGraph.nodes.len:
+  if cacheEntry.version < world.archGraph.version:
+    for i in 0..<world.archGraph.nodes.len:
       let archNode = world.archGraph.nodes[i]
-      if matchesArchetype(sig, archNode.mask):
-        cacheEntry.nodes.add(archNode)
-    cacheEntry.version = world.archGraph.nodes.len
+      if not archNode.isNil:
+        if matchesArchetype(sig, archNode.mask) and not (i.uint16 in cacheEntry.archs):
+          cacheEntry.nodes.add(archNode)
+          cacheEntry.archs.incl(i.uint16)
+    cacheEntry.version = world.archGraph.version
 
   for archNode in cacheEntry.nodes:
     

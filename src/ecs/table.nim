@@ -41,10 +41,10 @@ type
   QueryFilter* = object
 
     # Dense Query
-    dLayer:HibitsetType
+    dLayer*:HibitsetType
 
     # Sparse Query
-    sLayer:HibitsetType
+    sLayer*:HibitsetType
 
 include "fragment.nim"
 include "entity.nim"
@@ -71,6 +71,7 @@ type
   QueryCacheEntry* = object
     version*: int
     nodes*: seq[ArchetypeNode]
+    archs: set[uint16]
 
   ECSWorld* = ref object
     registry:ComponentRegistry
@@ -81,7 +82,7 @@ type
     generations:seq[uint32]
     sparse_gens:seq[uint32]
     free_entities:seq[int]
-    archGraph:ArchetypeGraph
+    archGraph*:ArchetypeGraph
     free_list:seq[uint]
     max_index:int
     blockCount:int
@@ -113,6 +114,9 @@ proc isEmpty(t:TableRange | ptr TableRange):bool = t.r.s == t.r.e
 proc isFull(t:TableRange | ptr TableRange):bool = t.r.e - t.r.s == DEFAULT_BLK_SIZE
 
 proc getDHandle*(w: ECSWorld, i:int | uint): DenseHandle = DenseHandle(obj: addr w.entities[i], gen: w.generations[i])
+proc getDHandleFromID*(w: ECSWorld, i:int | uint): DenseHandle = 
+  var e = w.handles[i.toIdx].widx
+  w.getDHandle(e)
 
 proc getComponentId*(world:ECSWorld, t:typedesc):int =
   check($t in world.registry.cmap, "Component type '" & $t & "' is not registered. Call registerComponent first.")
@@ -123,7 +127,7 @@ proc getArchetype*(w:ECSWorld, e:SomeEntity):ArchetypeNode =
 proc getArchetype*(w:ECSWorld, d:DenseHandle):ArchetypeNode =
   return w.getArchetype(d.obj)
 
-proc makeId(idx,bid:int|uint):uint =
+proc makeId*(idx,bid:int|uint):uint =
   return (bid.uint shl BLK_SHIFT) or idx.uint
 
 proc makeId(i:int):uint =
@@ -209,7 +213,8 @@ template get*[T](world:ECSWorld,t:typedesc[T], P:static bool= false):untyped =
 
 template get*[T](world:ECSWorld, t:typedesc[T], i:untyped, P:static bool= false):untyped =
   let id = toComponentId(t)
-  getValue[T](world.registry.entries[id], P)[i]
+  let f = getValue[T](world.registry.entries[id], P)
+  f[i]
 
 template get*[T](ent:DWEntity | SWEntity, t:typedesc[T], P:static bool= false):untyped =
   get[T](ent.w, t, ent.handle, P)

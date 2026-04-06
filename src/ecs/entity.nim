@@ -33,7 +33,7 @@ type
 ## This allows for flexible addition/removal of components at the cost of iteration speed.
 type
   SparseHandle* = object
-    id   : uint       ## The unique identifier of the entity in sparse storage.
+    id*   : uint       ## The unique identifier of the entity in sparse storage.
     gen  : uint32     ## The generation counter for validity checks.
     archID : uint16
 

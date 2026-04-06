@@ -1,5 +1,5 @@
 import std/[unittest]
-include "../../src/ecs/table.nim"
+import "../../src/ecs/table.nim"
 include "../../src/ecs/plugins/scenetree.nim"
 
 type Position = object
@@ -14,33 +14,33 @@ suite "SceneTree extended torture":
     var world = newECSWorld()
     discard world.registerComponent(Position)
 
-    let r = world.createEntity(0)
+    let r = world.createEntity(Position)
     var tree = initSceneTree(r)
     world.setUp(tree)
 
     check tree.getRoot != nil
-    check tree.getRoot.id.id == r.obj.id.toIdx
+    check tree.getRoot.id.id == r.wid.uint
 
   test "parent pointer wiring":
     var world = newECSWorld()
     discard world.registerComponent(Position)
 
-    let r = world.createEntity(0)
-    let a = world.createEntity(0)
+    let r = world.createEntity(Position)
+    let a = world.createEntity(Position)
 
     var tree = initSceneTree(r)
     world.setUp(tree)
     tree.addChild(a)
 
-    let n = tree.dGetNode(a.obj.id.toIdx)
+    let n = tree.dGetNode(a.wid.uint)
     check tree.getParent(n).id == tree.getRoot.id
 
   test "dense + sparse hierarchy":
     var world = newECSWorld()
     discard world.registerComponent(Position)
 
-    let r = world.createEntity(0)
-    let s = world.createSparseEntity(world.getComponentId(Position))
+    let r = world.createEntity(Position)
+    let s = world.createSparseEntity(Position)
 
     var tree = initSceneTree(r)
     world.setUp(tree)
@@ -54,9 +54,9 @@ suite "SceneTree extended torture":
     var world = newECSWorld()
     discard world.registerComponent(Position)
 
-    let r = world.createEntity(0)
-    let a = world.createEntity(0)
-    let b = world.createEntity(0)
+    let r = world.createEntity(Position)
+    let a = world.createEntity(Position)
+    let b = world.createEntity(Position)
 
     var tree = initSceneTree(r)
     world.setUp(tree)
@@ -65,26 +65,26 @@ suite "SceneTree extended torture":
 
     world.deleteEntity(a)
 
-    check tree.dGetNode(a.obj.id.toIdx) == nil
-    check tree.dGetNode(b.obj.id.toIdx) == nil
+    check tree.dGetNode(a.wid.uint) == nil
+    check tree.dGetNode(b.wid.uint) == nil
 
   test "overrideNodes keeps hierarchy":
     var world = newECSWorld()
     discard world.registerComponent(Position)
 
-    let r = world.createEntity(0)
-    let a = world.createEntity(0)
+    let r = world.createEntity(Position)
+    let a = world.createEntity(Position)
 
     var tree = initSceneTree(r)
     world.setUp(tree)
     tree.addChild(a)
 
-    let old = a.obj.id.toIdx
-    let b = world.createEntity(0)
+    let old = a.wid
+    let b = world.createEntity(Position)
 
-    tree.overrideNodes(old.uint, b.obj.id.toIdx.uint)
+    tree.overrideNodes(old.uint, b.wid.uint)
 
-    let n = tree.dGetNode(a.obj.id.toIdx)
+    let n = tree.dGetNode(a.wid.uint)
     check n != nil
     check tree.getParent(n).id == tree.getRoot.id
 
@@ -92,8 +92,8 @@ suite "SceneTree extended torture":
     var world = newECSWorld()
     discard world.registerComponent(Position)
 
-    let r = world.createEntity(0)
-    let a = world.createEntity(0)
+    let r = world.createEntity(Position)
+    let a = world.createEntity(Position)
 
     var tree = initSceneTree(r)
     world.setUp(tree)
@@ -101,25 +101,25 @@ suite "SceneTree extended torture":
 
     world.deleteEntity(a)
 
-    let b = world.createEntity(0)
+    let b = world.createEntity(Position)
     tree.addChild(b)
 
     let root = tree.getRoot
-    check root.children.dLayer.get(b.obj.id.toIdx.int)
+    check root.children.dLayer.get(b.wid.int)
 
   test "densify keeps parent":
     var world = newECSWorld()
     let pid = world.registerComponent(Position)
 
-    let r = world.createEntity(0)
-    var s = world.createSparseEntity(pid)
+    let r = world.createEntity(Position)
+    var s = world.createSparseEntity(Position)
 
     var tree = initSceneTree(r)
     world.setUp(tree)
     tree.addChild(s)
 
     var d = world.makeDense(s)
-    let n = tree.dGetNode(d.obj.id.toIdx)
+    let n = tree.dGetNode(d.wid.uint)
     check n != nil
     check tree.getParent(n).id == tree.getRoot.id
 
@@ -127,8 +127,8 @@ suite "SceneTree extended torture":
     var world = newECSWorld()
     discard world.registerComponent(Position)
 
-    let r = world.createEntity(0)
-    var a = world.createEntity(0)
+    let r = world.createEntity(Position)
+    var a = world.createEntity(Position)
 
     var tree = initSceneTree(r)
     world.setUp(tree)
@@ -144,21 +144,21 @@ suite "SceneTree extended torture":
     var world = newECSWorld()
     discard world.registerComponent(Position)
 
-    let r = world.createEntity(0)
-    let a = world.createEntity(0)
-    let b = world.createEntity(0)
+    let r = world.createEntity(Position)
+    let a = world.createEntity(Position)
+    let b = world.createEntity(Position)
 
     var tree = initSceneTree(r)
     world.setUp(tree)
     tree.addChild(a)
     tree.addChild(b)
     var ents = @[a,b]
-    var arch = world.archGraph.findArchetype(@[])
+    var arch = world.archGraph.findArchetype([])
     
     world.migrateEntity(ents, arch)
 
-    let na = tree.dGetNode(a.obj.id.toIdx)
-    let nb = tree.dGetNode(b.obj.id.toIdx)
+    let na = tree.dGetNode(a.wid.uint)
+    let nb = tree.dGetNode(b.wid.uint)
 
     check tree.getParent(na).id == tree.getRoot.id
     check tree.getParent(nb).id == tree.getRoot.id

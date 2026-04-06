@@ -4,10 +4,21 @@
 
 ## Activates a set of components for a single sparse entity index.
 ## This marks the entity as owning those components without allocating dense storage.
-template activateComponentsSparse(table: var ECSWorld, i:int|uint, components:untyped) =
+template activateComponentsSparse(table: var ECSWorld, i:int|uint, components:openArray) =
   for id in components:
     let entry = addr table.registry.entries[id]
     entry.activateSparseBitOp(entry.rawPointer, i.uint)
+
+## Deactivates components described by an archetype mask.
+## Uses bit iteration for fast traversal of active component IDs.
+template activateComponentsSparse(table: var ECSWorld, i:int|uint, components:ArchetypeMask) =
+  for m in components:
+    var mask = m
+    while mask != 0:
+      let id = countTrailingZeroBits(mask)
+      let entry = table.registry.entries[id]
+      entry.activateSparseBitOp(entry.rawPointer, i.uint)
+      mask = mask and (mask - 1)
 
 ## Batch version of sparse activation.
 ## Efficiently activates the same set of components for multiple entity indices.

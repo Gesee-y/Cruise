@@ -17,8 +17,12 @@ type
 macro createEntity*(world: ECSWorld, comps:varargs[typed]):DenseHandle =
   let enable_event=EVENT_ACTIVE
   var (compIds, components) = getComponentsMetadata(comps)
+  var regis = newNimNode(nnkStmtList)
+  for c in comps:
+    regis.add quote("@") do: discard `@world`.registerComponent(`@c`)
 
   return quote("@") do:
+    `@regis`
     # Acquire a stable internal ID (widx) for the entity record.
     let pid = getStableEntity(`@world`)
     let arch = `@world`.archGraph.findArchetype(`@compIds`)
@@ -295,13 +299,16 @@ proc removeComponent*(dw:var DWEntity, components:varargs[int]) =
 ## which calls allocateSparseEntity → vtable chain.
 macro createSparseEntity*(world: ECSWorld, comps: varargs[typed]): SparseHandle =
   var compIds = newNimNode(nnkBracket)
+  var regis = newNimNode(nnkStmtList)
   for c in comps:
     compIds.add quote("@") do: toComponentId(`@c`)
+    regis.add quote("@") do: discard `@world`.registerComponent(`@c`)
   if compIds.len == 0:
     compIds = quote("@") do: array[0, int](`@compIds`)
 
   return quote("@") do:
     block:
+      `@regis`
       let archNode = `@world`.archGraph.findArchetype(`@compIds`)
       let id       = allocateSparseEntity(`@world`, `@comps`)
 

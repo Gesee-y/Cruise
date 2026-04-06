@@ -76,7 +76,9 @@ proc toSoATuple(T: NimNode, N: int): NimNode =
     brack.add(intl)
 
     if v.kind == nnkBracketExpr:
-      if v[0].strVal == "array":
+      if v[0].strVal == "distinct":
+        brack.add ident(v.getTypeInst.strVal)
+      elif v[0].strVal == "array":
         v[0] = ident v[0].strVal
         
         if v[1].kind == nnkBracketExpr:
@@ -88,6 +90,13 @@ proc toSoATuple(T: NimNode, N: int): NimNode =
         
         v[2] = ident v[2].strVal
         brack.add(v)
+      elif v[0].strVal == "set":
+        v[0] = ident(v[0].strVal)
+        if v[1].kind == nnkEnumTy:
+          v[1] = ident(v[1].getTypeInst.strVal)
+
+        brack.add(v)
+
     elif v.kind == nnkEnumTy or v.kind == nnkObjectTy:
       brack.add(ident(v.getTypeInst.strVal))
     else:
@@ -116,6 +125,7 @@ macro castTo*(obj: untyped, Ty: typedesc, N: static int,
   let T = Ty.getTypeInst()[1]
   let ty = toSoATuple(Ty.getType[1], N)
   let sy = toSoATuple(Ty.getType[1], sizeof(uint)*8)
+
   return quote("@") do:
     cast[SoAFragmentArray[`@N`, `@P`, `@ty`, `@sy`, `@T`]](`@obj`)
 
