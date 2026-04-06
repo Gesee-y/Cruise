@@ -112,7 +112,7 @@ proc newECSWorld*(max_entities:int=1000000):ECSWorld =
 proc isEmpty(t:TableRange | ptr TableRange):bool = t.r.s == t.r.e
 proc isFull(t:TableRange | ptr TableRange):bool = t.r.e - t.r.s == DEFAULT_BLK_SIZE
 
-proc getDHandle*(w: ECSWorld, i:int): DenseHandle = DenseHandle(obj: addr w.entities[i], gen: w.generations[i])
+proc getDHandle*(w: ECSWorld, i:int | uint): DenseHandle = DenseHandle(obj: addr w.entities[i], gen: w.generations[i])
 
 proc getComponentId*(world:ECSWorld, t:typedesc):int =
   check($t in world.registry.cmap, "Component type '" & $t & "' is not registered. Call registerComponent first.")
@@ -188,16 +188,20 @@ proc getStableEntities(world:ECSWorld, n:int):seq[int] =
 template registerComponent*(world:var ECSWorld, t:typed, P:static bool=false):int =
   registerComponent(world.registry, t, P)
 
-template requireComponent*[T,C](w: var ECSWorld, base: typedesc[T], comps:typedesc[C]) =
-  if T == C: return
+macro requireComponent*(w: var ECSWorld, base: typedesc, comps:typedesc) =
+  if base.repr == comps.repr: return
   else:
-    static:
-      let bid = getComponentIdFromRegistry(T)
-      let cid = getComponentIdFromRegistry(C)
-      REQUIRED_COMPS[bid].add(cid)
-    
-    w.registerComponent(C)
-    w.archGraph.requiredComps[toComponentId(T)].add(toComponentId(C))
+    let bid = getComponentIdFromRegistry(base)
+    let cid = getComponentIdFromRegistry(comps)
+
+    if bid notin REQUIRED_COMPS:
+      REQUIRED_COMPS[bid] = newSeq[int]()
+
+    REQUIRED_COMPS[bid].add(cid)
+
+  return quote("@") do:    
+    discard `@w`.registerComponent(`@comps`)
+    `@w`.archGraph.requiredComps[toComponentId(`@base`)].add(toComponentId(`@comps`))
 
 template get*[T](world:ECSWorld,t:typedesc[T], P:static bool= false):untyped =
   let id = toComponentId(t)

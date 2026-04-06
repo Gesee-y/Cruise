@@ -301,8 +301,6 @@ func motorIdentity3*(): Motor3D {.inline.} =
 ## Semantic field aliases for all PGA types.
 ## Instead of writing p.e20 you write p.x — intent is immediately clear.
 ##
-## Import this alongside pga_typed.nim.
-##
 ## Convention recap:
 ##   Point2D  : w=e12  x=e20   y=e01
 ##   Point3D  : w=e123 x=e032  y=e013  z=e021

@@ -101,3 +101,6 @@ template `==`*(d1,d2:SparseHandle):bool = (d1.id == d2.id) and (d1.gen == d2.gen
 ##
 ## Useful for debugging and logging. Displays the Entity ID and its current Archetype ID.
 proc `$`*(e:SomeEntity):string = "e" & $e.id & " arch " & $e.archetypeId
+
+proc wid*(d:DenseHandle): int = d.obj.widx
+proc id*(d:DenseHandle): uint = d.obj.id

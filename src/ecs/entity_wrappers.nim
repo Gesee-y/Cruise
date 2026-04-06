@@ -57,7 +57,7 @@ proc `$`*(sw:SWEntity):string = "sw:" & $sw.handle.id & " g:" & $sw.handle.gen
 
 ## Checks if a `DWEntity` has a specific component by ID.
 proc hasComponent*(dw: DWEntity, comp: ComponentId | int): bool =
-  return dw.w.getArchetype(dw.handle).mask.hasComponent(comp)
+  return dw.w.archGraph.nodes[dw.handle.obj.archetypeId].mask.hasComponent(comp)
 
 ## Checks if a `SWEntity` has a specific component by ID.
 proc hasComponent*(sw: SWEntity, comp: ComponentId | int): bool =
@@ -70,3 +70,10 @@ proc hasComponent*[T](dw: DWEntity): bool =
 ## Checks if a `SWEntity` has a specific component type.
 proc hasComponent*[T](sw: SWEntity): bool =
   return sw.hasComponent(sw.w.getComponentId(T))
+
+## Checks if a `DWEntity` has a specific component type.
+proc hasComponent*[T](hw: DWEntity | SWEntity, t:typedesc[T]): bool =
+  return hw.hasComponent(hw.w.getComponentId(T))
+
+proc wid*(d:DWEntity): int = d.handle.obj.widx
+proc id*(d:DWEntity): uint = d.handle.obj.id

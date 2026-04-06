@@ -88,6 +88,8 @@ proc toSoATuple(T: NimNode, N: int): NimNode =
         
         v[2] = ident v[2].strVal
         brack.add(v)
+    elif v.kind == nnkEnumTy or v.kind == nnkObjectTy:
+      brack.add(ident(v.getTypeInst.strVal))
     else:
       brack.add(ident(v.strVal))
 
@@ -97,7 +99,15 @@ proc toSoATuple(T: NimNode, N: int): NimNode =
 
   return res
 
-macro castTo(obj: untyped, Ty: typedesc, N: static int,
+macro toFragmentTy*(Ty: typedesc, N: static int = DEFAULT_BLK_SIZE,
+    P: static bool = false): untyped = 
+  let T = Ty.getTypeInst()[1]
+  let ty = toSoATuple(Ty.getType[1], N)
+  let sy = toSoATuple(Ty.getType[1], sizeof(uint)*8)
+  return quote("@") do:
+    SoAFragmentArray[`@N`, `@P`, `@ty`, `@sy`, `@T`]
+
+macro castTo*(obj: untyped, Ty: typedesc, N: static int,
     P: static bool = false): untyped =
   ## Cast an existing value to a `SoAFragmentArray` of the given type.
   ##
@@ -416,14 +426,17 @@ proc newBlockAt[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: int) =
   new(blk)
   f.blocks[i] = blk
 
-proc getBlockIdx[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B], i: int): int =
+proc getBlockId*[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B], i: int|uint): uint =
   ## Compute the block index for a linear index.
-  return i div N
+  return (i.uint shr BLK_SHIFT)
+
+proc getIdInBlock*[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B], i: int|uint): uint =
+  return i.uint and BLK_MASK
 
 proc getBlock[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B],
     i: int): ref SoAFragment[N, P, T, B] =
   ## Get the dense block containing a given linear index.
-  return f.blocks[getBlockIdx(f, i)]
+  return f.blocks[getBlockId(f, i)]
 
 template getBlock[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B],
     i: uint): ref SoAFragment[N, P, T, B] =
@@ -465,7 +478,7 @@ proc deactivateSparseBit[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B],
     if f.sparseMask.hasL0(bid) and f.sparseMask.getL0(bid) == 0'u.BitBlock:
       f.freeSparseBlock(bid)
 
-template `[]=`[N, P, T, B](blk: var SoAFragment[N, P, T, B] | ref SoAFragment[N,
+template `[]=`*[N, P, T, B](blk: var SoAFragment[N, P, T, B] | ref SoAFragment[N,
     P, T, B], i: int|uint, v: untyped) =
   ## Write a value into a fragment slot.
   when T is tuple[]:
@@ -478,7 +491,7 @@ template `[]=`[N, P, T, B](blk: var SoAFragment[N, P, T, B] | ref SoAFragment[N,
     else:
       toObjectMod(B, blk.data, i.uint, v)
 
-template `[]`[N: static int, P: static bool, T, B](blk: var SoAFragment[N, P, T,
+template `[]`*[N: static int, P: static bool, T, B](blk: SoAFragment[N, P, T,
     B] | ref SoAFragment[N, P, T, B], i: int|uint): untyped =
   ## Read a value from a fragment slot.
   when T is tuple[]:
@@ -492,11 +505,7 @@ template `[]`[N: static int, P: static bool, T, B](blk: var SoAFragment[N, P, T,
     else:
       toObject(B, blk.data, i)
 
-proc `[]`[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B], i: int): B =
-  ## Read a value from the fragment array using a linear index.
-  return f.blocks[i div N][i mod N]
-
-template `[]`[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B],
+template `[]`*[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B],
     i: uint): untyped =
   ## Read a value using a packed (block,index) ID.
   let blk = (i shr BLK_SHIFT) and BLK_MASK
@@ -506,7 +515,7 @@ template `[]`[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B],
       "is out of bound. The component only has " & $(f.blocks.len) & "blocks")
   f.blocks[blk][idx]
 
-template `[]=`[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: uint, v: untyped) =
+template `[]=`*[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: uint, v: untyped) =
   ## Write a value using a packed (block,index) ID.
   let blk: uint = (i shr BLK_SHIFT) and BLK_MASK
   let idx = i and BLK_MASK
@@ -518,7 +527,7 @@ template `[]=`[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: uint, v
   when P: setChanged(f, i)
   f.blocks[blk][idx] = v
 
-template `[]=`[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: int, v: untyped) =
+template `[]=`*[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: int, v: untyped) =
   f[i.uint] = v
 
 proc len[N, P, T, B](blk: SoAFragment[N, P, T, B]): int =
@@ -556,10 +565,10 @@ proc resize[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], n: int) =
   f.blocks.setLen(n)
   f.blkTicks.setLen(n)
 
-proc clearDenseChanges[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B]) =
+proc clearDenseChanges*[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B]) =
   ## Clear all dense change tracking state.
   f.changeFilter.dLayer.clear()
 
-proc clearSparseChanges[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B]) =
+proc clearSparseChanges*[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B]) =
   ## Clear all sparse change tracking state.
   f.changeFilter.sLayer.clear()
