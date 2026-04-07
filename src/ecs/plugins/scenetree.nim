@@ -278,15 +278,17 @@ proc deleteNode*(tree: var SceneTree, s:SparseHandle) =
   tree.toSFilter[s.getId] = 0
 
 template setUp*(world:var ECSWorld, tree:var SceneTree) =
+  world.addResource(tree)
   discard world.events.onDenseEntityDestroyed(
     proc (ev:DenseEntityDestroyedEvent) =
+      let w = cast[ECSWorld](ev.w)
+      var tr = getResource[SceneTree](w)
       let id = ev.entity.wid
-      if tree.isRoot(ev.entity):
-        tree.reset()
+      if tr.isRoot(ev.entity):
+        tr.reset()
         return
-      dDestroyNode(tree, id.uint)
-      tree.overrideNodes(id.uint, ev.last)
-      tree.toDFilter[id] = 0
+      dDestroyNode(tr, id.uint)
+      tr.toDFilter[id] = 0
   )
 
   discard world.events.onSparseEntityDestroyed(

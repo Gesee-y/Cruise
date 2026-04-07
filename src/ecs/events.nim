@@ -16,6 +16,7 @@ type
   DenseEntityDestroyedEvent* = object
     entity*: DenseHandle
     last*: uint
+    w*: pointer
 
   ## Event emitted when one or more components are added to a dense entity.
   DenseComponentAddedEvent* = object
@@ -268,10 +269,11 @@ proc emitDenseEntityCreated*(em: var EventManager, entity: DenseHandle) =
     entity: entity,
   ))
 
-proc emitDenseEntityDestroyed*(em: var EventManager, entity: DenseHandle, last:uint) =
+proc emitDenseEntityDestroyed*(em: var EventManager, entity: DenseHandle, last:uint, world: pointer) =
   em.denseEntityDestroyed.trigger(DenseEntityDestroyedEvent(
     entity: entity,
-    last: last
+    last: last,
+    w: world
   ))
 
 proc emitDenseComponentAdded*(em: var EventManager, entity: DenseHandle, componentIds: openArray[int]) =

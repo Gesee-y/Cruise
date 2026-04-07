@@ -87,6 +87,7 @@ type
     max_index:int
     blockCount:int
     queryCache*: Table[QueryKey, QueryCacheEntry]
+    resources*: Table[string, pointer]
 
 include "entity_wrappers.nim"
 
@@ -109,6 +110,12 @@ proc newECSWorld*(max_entities:int=1000000):ECSWorld =
 ####################################################################################################################################################
 
 {.push inline.}
+
+proc addResource*[T](w: var ECSWorld, r:T) =
+  w.resources[$T] = cast[pointer](r)
+
+proc getResource*[T](w: ECSWorld): T =
+  cast[T](w.resources[$T])
 
 proc isEmpty(t:TableRange | ptr TableRange):bool = t.r.s == t.r.e
 proc isFull(t:TableRange | ptr TableRange):bool = t.r.e - t.r.s == DEFAULT_BLK_SIZE

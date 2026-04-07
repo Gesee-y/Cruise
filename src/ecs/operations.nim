@@ -108,7 +108,7 @@ template deleteEntity*(world:var ECSWorld, d:DenseHandle) =
   # Remove the entity's data row from its archetype block.
   # Returns the index of the last row that was swapped into the deleted position ('l').
   let l = deleteRow(world, e.id, e.archetypeId)
-  world.events.emitDenseEntityDestroyed(d, l)
+  world.events.emitDenseEntityDestroyed(d, l, cast[pointer](world))
   
   # Update the handle lookup table.
   # The handle at the deleted entity's position now points to the entity that was moved.
