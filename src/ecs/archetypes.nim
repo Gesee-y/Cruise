@@ -5,7 +5,7 @@
 type
   ArchetypeNode* = ref object
     id: uint16
-    mask: ArchetypeMask
+    mask*: ArchetypeMask
     partition: TablePartition
     edges: array[MAX_COMPONENTS, ArchetypeNode]
     removeEdges: array[MAX_COMPONENTS, ArchetypeNode]
@@ -16,7 +16,7 @@ type
   
   ArchetypeGraph* = ref object
     root: ArchetypeNode
-    nodes: seq[ArchetypeNode]
+    nodes*: seq[ArchetypeNode]
     maskToId: Table[ArchetypeMask, uint16]
     requiredComps: array[MAX_COMPONENTS, seq[int]]
     lru_active: bool

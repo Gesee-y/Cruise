@@ -10,7 +10,7 @@ type
   Entity* = object
     id:uint             ## The packed entity ID. This usually combines the Block ID and the local index
                         ## within that block to form a unique memory address for the entity's row.
-    archetypeId:uint16  ## Identifies which Archetype (table of components) this entity currently belongs to.
+    archetypeId*:uint16  ## Identifies which Archetype (table of components) this entity currently belongs to.
     widx:int            ## The "World Index". A stable ID referencing this entity's slot in the main entities list,
                         ## used for handle lookup and recycling.
 

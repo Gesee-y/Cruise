@@ -59,7 +59,7 @@ proc getRequiredCompsNode(id:int): seq[NimNode] {.compileTime.} =
 
   return res
 
-macro toComponentId(T:typedesc): int =
+macro toComponentId*(T:typedesc): int =
   let id = getComponentIdFromRegistry(T)
   ID_TO_COMPONENT[id] = T
 

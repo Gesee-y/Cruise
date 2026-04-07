@@ -78,7 +78,7 @@ type
     entities:seq[Entity]
     commandBufs*:seq[CommandBuffer]
     events*: EventManager
-    handles:seq[ptr Entity]
+    handles*:seq[ptr Entity]
     generations:seq[uint32]
     sparse_gens:seq[uint32]
     free_entities:seq[int]
