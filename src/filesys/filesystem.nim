@@ -328,3 +328,4 @@ proc printTree*(node: FileNode, indent: int = 0) =
   of fnFile:
     echo prefix & lastPathPart(node.name)
 
+include "hotreload.nim"
