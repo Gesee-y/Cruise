@@ -50,6 +50,10 @@ let c = a.cross(b)
 
 - **Event System**: Cruise provides you 2 event system, a lightweight synchronous one that can be use for simple cases, and a complex one leveraging the full powers of reactive programming such as merging, filtering, delays, throttling,  etc.
 
+- **File System**: Easy to use file management system for editors and file watching enable hot reload independently of the OS.
+
+- **Asset Pipeline**: Generic and easy to extend asset pipeline, featuring image loading, texture compression, serialization and more.
+
 - **Optional ECS**: Cruise provides a high performances, optional ECS based on a fragmented storage. Allowing to mimick archetypes and sparse sets in the same structure without losing the best of both.
 
 - **Temporary storage**: To easily share data among your systems, it also support TTL (Time To Live) for data and provides events and serialization support

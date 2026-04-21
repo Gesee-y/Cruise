@@ -9,8 +9,6 @@
 ##   2. Main thread calls poll() with a timeout longer than DELAY_MS.
 ##   3. Join the mutation thread and assert on collected events.
 ##
-## Compile & run:
-##   nim c --threads:on -r hotreload_test.nim
 
 import unittest, os, times, strutils, sequtils
 include "../../src/filesys/filesystem.nim"   # pulls in filesystem.nim transitively
