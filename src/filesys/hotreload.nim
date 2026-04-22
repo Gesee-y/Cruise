@@ -167,7 +167,6 @@ when defined(windows):
     # Re-arm before doing any work so we don't miss the next event.
     while waitForSingleObject(w.implData.notifyHandle, ms) != WAIT_TIMEOUT_VAL.DWORD:
       discard findNextChangeNotification(w.implData.notifyHandle)
-    #if status == WAIT_TIMEOUT_VAL.DWORD: return
 
     # Rebuild the tree from disk — this is the source of truth.
     let diff = w.tree[].diffTree()
@@ -216,28 +215,26 @@ elif defined(macosx) or defined(bsd):
 
   proc pollImpl(w: Watcher; timeout: int): seq[WatchEvent] =
     let ready = w.implData.selector.select(timeout)
-    for key in ready:
-      let path  = w.implData.fdMap.getOrDefault(key.fd, "")
-      if path.len == 0: continue
-      let isDir = dirExists(path)
+    if ready.len == 0: return result
+    # Rebuild the tree from disk — this is the source of truth.
+    let diff = w.tree[].diffTree()
+    w.tree[].updateTree(diff)
 
-      if Event.VnodeDelete in key.events or Event.VnodeRevoke in key.events:
-        result.add(WatchEvent(kind: wekDeleted, path: path, isDir: isDir))
-        w.implData.selector.unregister(key.fd)
-        w.implData.fdMap.del(key.fd)
-        if isDir: w.tree[].deleteDir(relativePath(path, w.implData.rootPath))
-        else:     w.tree[].deleteFile(relativePath(path, w.implData.rootPath))
+    # Created files / deleted files.
+    for p in diff.createdFiles:
+        result.add(WatchEvent(kind: wekCreated, path: p, isDir: false))
+    for p in diff.deletedFiles:
+      result.add(WatchEvent(kind: wekDeleted, path: p, isDir: false))
 
-      elif Event.VnodeRename in key.events:
-        result.add(WatchEvent(kind: wekRenamed, path: path, isDir: isDir))
+    # Created dirs / deleted dirs.
+    for p in diff.createdDirs:
+      result.add(WatchEvent(kind: wekCreated, path: p, isDir: true))
+    for p in diff.deletedDirs:
+      result.add(WatchEvent(kind: wekDeleted, path: p, isDir: true))
 
-      elif Event.VnodeWrite  in key.events or
-           Event.VnodeExtend in key.events or
-           Event.VnodeAttrib in key.events:
-        result.add(WatchEvent(kind: wekModified, path: path, isDir: isDir))
-        let node = w.tree[].getFile(relativePath(path, w.implData.rootPath))
-        if node != nil:
-          node.lastModified = getLastModificationTime(path)
+    # Modified files: present in both snapshots but mtime changed on disk.
+    for p in diff.modifiedFiles:
+      result.add(WatchEvent(kind: wekModified, path: p, isDir: false))
 
   proc closeImpl(w: Watcher) =
     w.implData.selector.close()
