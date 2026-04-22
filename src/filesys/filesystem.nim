@@ -37,6 +37,18 @@ type
     oldModTime*: Time
     newModTime*: Time
 
+  TreeDiff* = object
+    ## Summary of what changed between the tree and disk after updateTree.
+    createdFiles*:  seq[string]
+    createdDirs*:  seq[string]
+    
+    deletedFiles*:  seq[string]
+    deletedDirs*:  seq[string]
+    
+    modifiedFiles*: seq[string]  
+    modifiedDirs*: seq[string]  
+    
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -267,6 +279,11 @@ proc deleteFile*(tree: var FileTree, relPath: string) =
   for d in tree.allDirs:
     d.files.keepItIf(it.name != absPath)
 
+proc deleteFile*(tree: var FileTree, node: FileNode) =
+  if node.kind != fnFile: return
+  let relStart = tree.root.name.len
+  tree.deleteFile(node.name[relStart..^1])
+
 proc deleteDir*(tree: var FileTree, relPath: string) =
   ## Recursively deletes a directory at *relPath* from disk and removes all
   ## descendant nodes from the tree.
@@ -278,6 +295,11 @@ proc deleteDir*(tree: var FileTree, relPath: string) =
   for d in tree.allDirs:
     d.dirs.keepItIf(not it.name.startsWith(absPath))
     d.files.keepItIf(not it.name.startsWith(absPath))
+
+proc deleteDir*(tree: var FileTree, node: FileNode) =
+  if node.kind != fnDir: return
+  let relStart = tree.root.name.len
+  tree.deleteDir(node.name[relStart..^1])
 
 # ---------------------------------------------------------------------------
 # Hot-reload / change detection
@@ -308,10 +330,108 @@ proc detectChanges*(tree: var FileTree,
       node.lastModified = current
 
 proc refresh*(tree: var FileTree) =
-  ## Fully rebuilds the tree from disk.
-  ## Useful when external processes may have added or removed files that
-  ## `detectChanges` cannot see (it only tracks already-known nodes).
-  tree = newFileTree(tree.root.name)
+  var stack: seq[string]
+  var dirsToDelete, filesToDelete: seq[FileNode]
+  let relStart = tree.root.name.len
+  stack.add(tree.root.name)
+
+  while stack.len > 0:
+    let currentPath = stack.pop()
+    for kind, entryAbs in walkDir(currentPath):
+      let entry = entryAbs[relStart..^1]
+      let modTime =
+        try: getLastModificationTime(entry)
+        except OSError: fromUnix(0)
+
+      case kind
+      of pcFile:
+        if tree.getFile(entry) == nil:
+          tree.createFile(entry)
+
+      of pcDir:
+        if tree.getDir(entry) == nil:
+          tree.createDir(entry)
+
+        stack.add(entryAbs)
+      else:
+        discard
+
+    for node in tree.allDirs:
+      if not dirExists(node.name):
+        dirsToDelete.add(node)
+
+    for dir in dirsToDelete:
+      tree.deleteDir(dir)
+        
+    for node in tree.allFiles:
+      if not fileExists(node.name):
+        filesToDelete.add(node)
+
+    for file in filesToDelete:
+      tree.deleteFile(file)
+        
+proc diffTree*(tree: var FileTree): TreeDiff =
+  ## Incrementally syncs the tree with the real disk state.
+  ##
+  ## Unlike refresh(), this does a single walk and only touches changed nodes:
+  ##   - New files/dirs on disk  -> added to the tree, reported in created
+  ##   - Missing files/dirs      -> removed from the tree, reported in deleted
+  ##   - Files with changed mtime -> node updated in place, reported in modified
+  ##
+  ## This is the right proc to call after an OS file-watch event fires.
+  inc tree.generation
+  let gen = tree.generation
+ 
+  var stack: seq[string]
+  stack.add(tree.root.name)
+ 
+  while stack.len > 0:
+    let currentPath = stack.pop()
+ 
+    for kind, entry in walkDir(currentPath):
+      let modTime =
+        try: getLastModificationTime(entry)
+        except OSError: fromUnix(0)
+ 
+      case kind
+      of pcFile:
+        var found: FileNode = nil
+        for n in tree.allFiles:
+          if n.name == entry:
+            found = n
+            break
+ 
+        if found == nil:
+          result.createdFiles.add(entry)
+        else:
+          found.gen = gen
+          if found.lastModified != modTime:
+            result.modifiedFiles.add(entry)
+            found.lastModified = modTime
+ 
+      of pcDir:
+        var found: FileNode = nil
+        for n in tree.allDirs:
+          if n.name == entry:
+            found = n
+            break
+ 
+        if found == nil:
+          result.createdDirs.add(entry)
+          stack.add(entry)
+        else:
+          found.gen = gen
+          stack.add(entry)
+ 
+      else: discard
+ 
+  # Nodes not visited this generation have disappeared from disk.
+  for node in tree.allFiles:
+    if node.gen < gen:
+      result.deletedFiles.add(node.name)
+  for node in tree.allDirs:
+    if node.gen < gen:
+      result.deletedDirs.add(node.name)
 
 # ---------------------------------------------------------------------------
 # Debug / pretty-print

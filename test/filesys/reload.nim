@@ -160,18 +160,20 @@ suite "Watcher — file events":
     var w = newWatcher(tree)
 
     proc mutate() {.thread.} =
-      sleep(DELAY_MS)
-      writeFile(TMP / "a.txt", "modified")
+      for i in 0..2:
+        sleep(DELAY_MS)
+        writeFile(TMP / "a.txt", "modified")
       setLastModificationTime(TMP / "a.txt", getTime())
 
     let evs   = pollWhileMutating(w, mutate)
+    echo evs.len
     let found = evs.filterIt(it.kind == wekModified and
                               it.path.endsWith("a.txt"))
     check found.len >= 1
     w.close()
     teardown()
 
-  #[test "deletes a file -> wekDeleted event":
+  test "deletes a file -> wekDeleted event":
     var (tree, _) = setup()
     var w = newWatcher(tree)
 
@@ -198,7 +200,7 @@ suite "Watcher — file events":
     check tree.getFile("a.txt") == nil
     w.close()
     teardown()
-]#
+
   test "modified file node gets updated lastModified":
     var (tree, _) = setup()
     var w = newWatcher(tree)
