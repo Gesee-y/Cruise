@@ -1,15 +1,3 @@
-## Test suite for hotreload.nim
-##
-## ReadDirectoryChangesW (and inotify/kqueue) are edge-triggered: the OS only
-## delivers an event if the change happens *while* the kernel call is waiting.
-## Mutations must therefore arrive concurrently with poll(), not before it.
-##
-## Pattern used in every event test:
-##   1. Spawn a thread that sleeps DELAY_MS, then mutates the file system.
-##   2. Main thread calls poll() with a timeout longer than DELAY_MS.
-##   3. Join the mutation thread and assert on collected events.
-##
-
 import unittest, os, times, strutils, sequtils
 include "../../src/filesys/filesystem.nim"   # pulls in filesystem.nim transitively
 
@@ -19,8 +7,8 @@ include "../../src/filesys/filesystem.nim"   # pulls in filesystem.nim transitiv
 
 const
   TMP      = "tmp_hr_test"
-  POLL_MS  = 1000  ## poll window — wide enough to catch the mutation
-  DELAY_MS = 100   ## mutation thread delay before acting (must be < POLL_MS)
+  POLL_MS  = 450  ## poll window — wide enough to catch the mutation
+  DELAY_MS = 200   ## mutation thread delay before acting (must be < POLL_MS)
 
 # ---------------------------------------------------------------------------
 # Setup / teardown
@@ -166,7 +154,6 @@ suite "Watcher — file events":
       setLastModificationTime(TMP / "a.txt", getTime())
 
     let evs   = pollWhileMutating(w, mutate)
-    echo evs.len
     let found = evs.filterIt(it.kind == wekModified and
                               it.path.endsWith("a.txt"))
     check found.len >= 1

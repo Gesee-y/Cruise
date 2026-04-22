@@ -28,8 +28,6 @@
 ##   while true:
 ##     w.poll(timeout = 100)
 
-import os, strutils, tables, sequtils
-
 # ---------------------------------------------------------------------------
 # OS-specific implementation types
 # ---------------------------------------------------------------------------
@@ -54,7 +52,7 @@ elif defined(macosx) or defined(bsd):
       rootPath: string
 
 else: # Linux
-  import ioselectors
+  import selectors, tables, posix
 
   const
     IN_CREATE   = 0x00000100'u32
@@ -76,6 +74,10 @@ else: # Linux
       selector: Selector[string]
       wdMap:    Table[cint, string]
       rootPath: string
+
+  const IN_NONBLOCK = 0x00004000'u32
+
+  proc inotify_init1(flags: cint): cint {.importc, header: "<sys/inotify.h>".}
 
   proc inotify_init(): cint {.importc, header: "<sys/inotify.h>".}
   proc inotify_add_watch(fd: cint; path: cstring; mask: uint32): cint {.
@@ -161,26 +163,15 @@ when defined(windows):
     
     let inf = 0xFFFFFFFF'u32
     let ms     = if timeout < 0: DWORD(inf) else: DWORD(timeout)
-    let status = waitForSingleObject(w.implData.notifyHandle, ms)
+    #let status = waitForSingleObject(w.implData.notifyHandle, ms)
     # Re-arm before doing any work so we don't miss the next event.
-    discard findNextChangeNotification(w.implData.notifyHandle)
-    if status == WAIT_TIMEOUT_VAL.DWORD: return
-
-    let prevFiles = w.implData.knownFiles
-    let prevDirs  = w.implData.knownDirs
+    while waitForSingleObject(w.implData.notifyHandle, ms) != WAIT_TIMEOUT_VAL.DWORD:
+      discard findNextChangeNotification(w.implData.notifyHandle)
+    #if status == WAIT_TIMEOUT_VAL.DWORD: return
 
     # Rebuild the tree from disk — this is the source of truth.
     let diff = w.tree[].diffTree()
-    w.tree[].refresh()
-
-    let currFiles = w.tree[].allFiles.mapIt(it.name)
-    let currDirs  = w.tree[].allDirs.mapIt(it.name)
-
-    let currFilesMod = w.tree[].allFiles.mapIt(it.lastModified)
-
-    # Update snapshot for next poll.
-    w.implData.knownFiles = currFiles
-    w.implData.knownDirs  = currDirs
+    w.tree[].updateTree(diff)
 
     # Created files / deleted files.
     for p in diff.createdFiles:
@@ -258,14 +249,16 @@ elif defined(macosx) or defined(bsd):
 else:
 
   proc watchDirInotify(impl: var WatcherImpl; path: string) =
-    let mask = IN_CREATE or IN_DELETE or IN_MODIFY or IN_MOVED_TO or IN_ONLYDIR
+    let mask = IN_CREATE or IN_DELETE or IN_MODIFY or IN_MOVED_TO
     let wd   = inotify_add_watch(impl.inoFd, path.cstring, mask)
     if wd >= 0:
       impl.wdMap[wd] = path
 
   proc newWatcherImpl(rootPath: string; tree: var FileTree): WatcherImpl =
     result.rootPath = rootPath
-    result.inoFd    = inotify_init()
+    result.inoFd = inotify_init1(IN_NONBLOCK.cint)
+    if result.inoFd < 0:
+      result.inoFd = inotify_init()  # fallback si inotify_init1 indisponible
     if result.inoFd < 0:
       raise newException(OSError, "inotify_init failed")
     result.selector = newSelector[string]()
@@ -275,43 +268,28 @@ else:
       watchDirInotify(result, d.name)
 
   proc pollImpl(w: Watcher; timeout: int): seq[WatchEvent] =
-    let ready = w.implData.selector.select(timeout)
-    for key in ready:
-      if Event.Read notin key.events: continue
-      var buf: array[4096, byte]
-      let n = read(w.implData.inoFd, addr buf[0], buf.len)
-      var i = 0
-      while i < n:
-        let ev      = cast[ptr InotifyEvent](addr buf[i])
-        let nameLen = ev.len.int
-        var name    = ""
-        if nameLen > 0:
-          name = $cast[cstring](addr buf[i + sizeof(InotifyEvent)])
-        let dirPath  = w.implData.wdMap.getOrDefault(ev.wd, "")
-        let fullPath = if name.len > 0: dirPath / name else: dirPath
-        let isDir    = (ev.mask and IN_ISDIR) != 0
+    var ready = w.implData.selector.select(timeout)
+    if ready.len == 0: return
 
-        var kind: WatchEventKind
-        if (ev.mask and IN_CREATE) != 0 or (ev.mask and IN_MOVED_TO) != 0:
-          kind = wekCreated
-          if isDir:
-            watchDirInotify(w.implData, fullPath)
-            w.tree[].createDir(relativePath(fullPath, w.implData.rootPath))
-        elif (ev.mask and IN_DELETE) != 0:
-          kind = wekDeleted
-          if isDir: w.tree[].deleteDir(relativePath(fullPath, w.implData.rootPath))
-          else:     w.tree[].deleteFile(relativePath(fullPath, w.implData.rootPath))
-        elif (ev.mask and IN_MODIFY) != 0:
-          kind = wekModified
-          let node = w.tree[].getFile(relativePath(fullPath, w.implData.rootPath))
-          if node != nil:
-            node.lastModified = getLastModificationTime(fullPath)
-        else:
-          i += sizeof(InotifyEvent) + nameLen
-          continue
+    #while true:
+    #  let more = w.implData.selector.select(0)
+    #  if more.len == 0: break
+    #  ready.add(more)
 
-        result.add(WatchEvent(kind: kind, path: fullPath, isDir: isDir))
-        i += sizeof(InotifyEvent) + nameLen
+    # Diff après avoir drainé
+    let diff = w.tree[].diffTree()
+    w.tree[].updateTree(diff)
+
+    for p in diff.createdFiles:
+      result.add(WatchEvent(kind: wekCreated, path: p, isDir: false))
+    for p in diff.deletedFiles:
+      result.add(WatchEvent(kind: wekDeleted, path: p, isDir: false))
+    for p in diff.createdDirs:
+      result.add(WatchEvent(kind: wekCreated, path: p, isDir: true))
+    for p in diff.deletedDirs:
+      result.add(WatchEvent(kind: wekDeleted, path: p, isDir: true))
+    for p in diff.modifiedFiles:
+      result.add(WatchEvent(kind: wekModified, path: p, isDir: false))
 
   proc closeImpl(w: Watcher) =
     w.implData.selector.close()

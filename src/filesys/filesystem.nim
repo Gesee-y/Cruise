@@ -61,6 +61,10 @@ proc isStale(node: FileNode, currentGen: int): bool =
   ## Returns true when a node was not visited during the last refresh pass.
   node.lastGen < currentGen
 
+proc debugResult(diff: TreeDiff): tuple[cfile, cdir, dfile, ddir, mfile, mdir: int] =
+  return (diff.createdFiles.len, diff.createdDirs.len, 
+    diff.deletedFiles.len, diff.deletedDirs.len,
+    diff.modifiedFiles.len, diff.modifiedDirs.len)
 # ---------------------------------------------------------------------------
 # Construction
 # ---------------------------------------------------------------------------
@@ -370,6 +374,18 @@ proc refresh*(tree: var FileTree) =
     for file in filesToDelete:
       tree.deleteFile(file)
         
+proc updateTree(tree: var FileTree, diff: TreeDiff) =
+  let relStart = tree.root.name.len
+  for p in diff.deletedDirs:
+    tree.deleteDir(p[relStart..^1])
+  for p in diff.createdDirs:
+    tree.createDir(p[relStart..^1])
+
+  for p in diff.deletedFiles:
+    tree.deleteFile(p[relStart..^1])
+  for p in diff.createdFiles:
+    tree.createFile(p[relStart..^1])
+
 proc diffTree*(tree: var FileTree): TreeDiff =
   ## Incrementally syncs the tree with the real disk state.
   ##
@@ -383,6 +399,7 @@ proc diffTree*(tree: var FileTree): TreeDiff =
   let gen = tree.generation
  
   var stack: seq[string]
+  tree.root.gen = gen
   stack.add(tree.root.name)
  
   while stack.len > 0:
@@ -418,7 +435,6 @@ proc diffTree*(tree: var FileTree): TreeDiff =
  
         if found == nil:
           result.createdDirs.add(entry)
-          stack.add(entry)
         else:
           found.gen = gen
           stack.add(entry)
@@ -427,10 +443,10 @@ proc diffTree*(tree: var FileTree): TreeDiff =
  
   # Nodes not visited this generation have disappeared from disk.
   for node in tree.allFiles:
-    if node.gen < gen:
+    if node.gen < gen or not fileExists(node.name):
       result.deletedFiles.add(node.name)
   for node in tree.allDirs:
-    if node.gen < gen:
+    if node.gen < gen or not dirExists(node.name):
       result.deletedDirs.add(node.name)
 
 # ---------------------------------------------------------------------------
