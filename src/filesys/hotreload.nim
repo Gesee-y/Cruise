@@ -408,7 +408,7 @@ elif defined(macosx) or defined(bsd):
     ##   here explicitly once we know their paths.  Because VnodeWrite on a
     ##   directory does not tell us *which* child was added, we walk the
     ##   directory with walkDir and register any fd not yet in fdMap.
-    var wPtr = cast[ptr Watcher](pt)
+    var wPtr = cast[Watcher](pt)
 
     while wPtr[].running:
       let ready = wPtr[].implData.selector.select(100)
