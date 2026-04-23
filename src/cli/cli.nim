@@ -131,3 +131,5 @@ proc startSession() =
     elif last_action == CLIQuit:
       writer.active = false
     last_action = takeChar(writer)
+
+startSession()

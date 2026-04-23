@@ -1,3 +1,17 @@
+## Test suite for hotreload.nim
+##
+## ReadDirectoryChangesW (and inotify/kqueue) are edge-triggered: the OS only
+## delivers an event if the change happens *while* the kernel call is waiting.
+## Mutations must therefore arrive concurrently with poll(), not before it.
+##
+## Pattern used in every event test:
+##   1. Spawn a thread that sleeps DELAY_MS, then mutates the file system.
+##   2. Main thread calls poll() with a timeout longer than DELAY_MS.
+##   3. Join the mutation thread and assert on collected events.
+##
+## Compile & run:
+##   nim c --threads:on -r hotreload_test.nim
+
 import unittest, os, times, strutils, sequtils
 include "../../src/filesys/filesystem.nim"   # pulls in filesystem.nim transitively
 
@@ -7,8 +21,8 @@ include "../../src/filesys/filesystem.nim"   # pulls in filesystem.nim transitiv
 
 const
   TMP      = "tmp_hr_test"
-  POLL_MS  = 450  ## poll window — wide enough to catch the mutation
-  DELAY_MS = 200   ## mutation thread delay before acting (must be < POLL_MS)
+  POLL_MS  = 1000  ## poll window — wide enough to catch the mutation
+  DELAY_MS = 100   ## mutation thread delay before acting (must be < POLL_MS)
 
 # ---------------------------------------------------------------------------
 # Setup / teardown
@@ -31,14 +45,14 @@ proc teardown() =
 # ---------------------------------------------------------------------------
 
 proc pollWhileMutating(w: Watcher; mutate: proc() {.thread.};
-                       ms: int = POLL_MS): seq[WatchEvent] =
+                       ms: int = POLL_MS): seq[FileEvent] =
   ## Collects events by:
   ##   1. Registering a temporary callback on *w*.
   ##   2. Spawning *mutate* in a background thread.
   ##   3. Blocking in poll() for *ms* ms — the mutation arrives mid-poll.
   ##   4. Joining the thread, removing the callback, returning events.
-  var collected: seq[WatchEvent]
-  w.onEvent(proc(ev: WatchEvent) = collected.add(ev))
+  var collected: seq[FileEvent]
+  w.onEvent(proc(ev: FileEvent) = collected.add(ev))
 
   var t: Thread[void]
   createThread(t, mutate)
@@ -71,8 +85,8 @@ suite "Watcher — construction":
   test "no events on idle tree":
     var (tree, _) = setup()
     var w = newWatcher(tree)
-    var collected: seq[WatchEvent]
-    w.onEvent(proc(ev: WatchEvent) = collected.add(ev))
+    var collected: seq[FileEvent]
+    w.onEvent(proc(ev: FileEvent) = collected.add(ev))
     w.poll(timeout = 300)   # nothing mutates — should stay empty
     w.removeCallbacks()
     check collected.len == 0
@@ -88,7 +102,7 @@ suite "Watcher — callbacks":
   test "onEvent registers a callback":
     var (tree, _) = setup()
     var w = newWatcher(tree)
-    w.onEvent(proc(ev: WatchEvent) = discard)
+    w.onEvent(proc(ev: FileEvent) = discard)
     check w.callbacks.len == 1
     w.close()
     teardown()
@@ -97,8 +111,8 @@ suite "Watcher — callbacks":
     var (tree, _) = setup()
     var w    = newWatcher(tree)
     var hits = 0
-    w.onEvent(proc(ev: WatchEvent) = inc hits)
-    w.onEvent(proc(ev: WatchEvent) = inc hits)
+    w.onEvent(proc(ev: FileEvent) = inc hits)
+    w.onEvent(proc(ev: FileEvent) = inc hits)
 
     proc mutate() {.thread.} =
       sleep(DELAY_MS)
@@ -116,7 +130,7 @@ suite "Watcher — callbacks":
   test "removeCallbacks clears all callbacks":
     var (tree, _) = setup()
     var w = newWatcher(tree)
-    w.onEvent(proc(ev: WatchEvent) = discard)
+    w.onEvent(proc(ev: FileEvent) = discard)
     w.removeCallbacks()
     check w.callbacks.len == 0
     w.close()
@@ -128,7 +142,7 @@ suite "Watcher — callbacks":
 
 suite "Watcher — file events":
 
-  test "creates a file -> wekCreated event":
+  test "creates a file -> fekCreated event":
     var (tree, _) = setup()
     var w = newWatcher(tree)
 
@@ -137,30 +151,29 @@ suite "Watcher — file events":
       writeFile(TMP / "new.txt", "hello")
 
     let evs   = pollWhileMutating(w, mutate)
-    let found = evs.filterIt(it.kind == wekCreated and
+    let found = evs.filterIt(it.kind == fekCreated and
                               it.path.endsWith("new.txt"))
     check found.len >= 1
     w.close()
     teardown()
 
-  test "modifies a file -> wekModified event":
+  test "modifies a file -> fekModified event":
     var (tree, _) = setup()
     var w = newWatcher(tree)
 
     proc mutate() {.thread.} =
-      for i in 0..2:
-        sleep(DELAY_MS)
-        writeFile(TMP / "a.txt", "modified")
+      sleep(DELAY_MS)
+      writeFile(TMP / "a.txt", "modified")
       setLastModificationTime(TMP / "a.txt", getTime())
 
     let evs   = pollWhileMutating(w, mutate)
-    let found = evs.filterIt(it.kind == wekModified and
+    let found = evs.filterIt(it.kind == fekModified and
                               it.path.endsWith("a.txt"))
     check found.len >= 1
     w.close()
     teardown()
 
-  test "deletes a file -> wekDeleted event":
+  test "deletes a file -> fekDeleted event":
     var (tree, _) = setup()
     var w = newWatcher(tree)
 
@@ -169,7 +182,7 @@ suite "Watcher — file events":
       os.removeFile(TMP / "a.txt")
 
     let evs   = pollWhileMutating(w, mutate)
-    let found = evs.filterIt(it.kind == wekDeleted and
+    let found = evs.filterIt(it.kind == fekDeleted and
                               it.path.endsWith("a.txt"))
     check found.len >= 1
     w.close()
@@ -210,7 +223,7 @@ suite "Watcher — file events":
 
 suite "Watcher — directory events":
 
-  test "creates a dir -> wekCreated isDir event":
+  test "creates a dir -> fekCreated isDir event":
     var (tree, _) = setup()
     var w = newWatcher(tree)
 
@@ -219,7 +232,7 @@ suite "Watcher — directory events":
       os.createDir(TMP / "newdir")
 
     let evs   = pollWhileMutating(w, mutate)
-    let found = evs.filterIt(it.kind == wekCreated and it.isDir)
+    let found = evs.filterIt(it.kind == fekCreated and it.isDir)
     check found.len >= 1
     w.close()
     teardown()
@@ -237,7 +250,7 @@ suite "Watcher — directory events":
     w.close()
     teardown()
 
-  test "deletes a dir -> wekDeleted isDir event":
+  test "deletes a dir -> fekDeleted isDir event":
     var (tree, _) = setup()
     var w = newWatcher(tree)
 
@@ -246,7 +259,7 @@ suite "Watcher — directory events":
       os.removeDir(TMP / "sub")
 
     let evs   = pollWhileMutating(w, mutate)
-    let found = evs.filterIt(it.kind == wekDeleted and it.isDir)
+    let found = evs.filterIt(it.kind == fekDeleted and it.isDir)
     check found.len >= 1
     w.close()
     teardown()
@@ -274,7 +287,7 @@ suite "Watcher — extension filter":
     var (tree, _) = setup()
     var w = newWatcher(tree, ext = ".png")
     var evPaths: seq[string]
-    w.onEvent(proc(ev: WatchEvent) = evPaths.add(ev.path))
+    w.onEvent(proc(ev: FileEvent) = evPaths.add(ev.path))
 
     proc mutate() {.thread.} =
       sleep(DELAY_MS)
@@ -295,8 +308,8 @@ suite "Watcher — extension filter":
   test "directory events pass through regardless of ext filter":
     var (tree, _) = setup()
     var w = newWatcher(tree, ext = ".png")
-    var dirEvs: seq[WatchEvent]
-    w.onEvent(proc(ev: WatchEvent) =
+    var dirEvs: seq[FileEvent]
+    w.onEvent(proc(ev: FileEvent) =
       if ev.isDir: dirEvs.add(ev))
 
     proc mutate() {.thread.} =
@@ -333,7 +346,7 @@ suite "Watcher — poll driving":
     var (tree, _) = setup()
     var w     = newWatcher(tree)
     var total = 0
-    w.onEvent(proc(ev: WatchEvent) = inc total)
+    w.onEvent(proc(ev: FileEvent) = inc total)
 
     proc mutate1() {.thread.} =
       sleep(DELAY_MS)
