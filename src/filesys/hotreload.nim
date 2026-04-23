@@ -227,11 +227,9 @@ when defined(windows):
   proc getLastError(): DWORD {.importc: "GetLastError", dynlib: "kernel32", stdcall.}
 
   const OPEN_EXISTING = 3'u32
-  const GENERIC_READ  = 0x80000000'u64
-
+ 
   proc newWatcherImpl(rootPath: string): WatcherImpl =
     result.rootPath = rootPath
-    let inf = GENERIC_READ
     result.dirHandle = createFileW(
       newWideCString(result.rootPath.cstring).toWideCString,
       DWORD(FILE_LIST_DIRECTORY),
@@ -264,7 +262,7 @@ when defined(windows):
 
     defer: dealloc(buf)
 
-    while wPtr.running:
+    while not wPtr.isNil and wPtr.running:
       let ok = readDirectoryChangesW(
         wPtr.implData.dirHandle,
         addr buf[0], DWORD(bufSize),
@@ -369,7 +367,7 @@ elif defined(macosx) or defined(bsd):
 
   proc watchNodeKqueue(impl: var WatcherImpl; path: string) =
     ## Registers a single file or directory path with kqueue.
-    let fd = open(path.cstring, 0)
+    let fd = open(path.cstring, 0x8000)
     if fd < 0: return
     impl.selector.registerVnode(fd,
       {Event.VnodeWrite, Event.VnodeDelete,
@@ -410,7 +408,7 @@ elif defined(macosx) or defined(bsd):
     ##   directory with walkDir and register any fd not yet in fdMap.
     var wPtr = cast[Watcher](pt)
 
-    while wPtr[].running:
+    while not wPtr.isNil and wPtr.running:
       let ready = wPtr[].implData.selector.select(100)
       if ready.len == 0: continue
 
@@ -524,7 +522,7 @@ else:
     var pendingMoves: Table[uint32, string]   # cookie → old absolute path
     var wPtr = cast[Watcher](pt)
 
-    while wPtr.running:
+    while not wPtr.isNil and wPtr.running:
       let ready = wPtr.implData.selector.select(100)
       if ready.len == 0: continue
 
@@ -542,9 +540,8 @@ else:
       var i = 0
       while i < n:
         let ev = cast[ptr InotifyEvent](addr buf[i])
-        if ev.len <= 0: return
+        if ev.len <= 0: break
         let dirPath = wPtr.implData.wdMap.getOrDefault(ev.wd, "")
-        echo ev[]
 
         # Read the optional name that follows the fixed header.
         let name =
@@ -629,7 +626,6 @@ else:
       pendingMoves.clear()
 
       if pendingEvents.len > 0:
-        echo pendingEvents
         wPtr.channel.send(pendingEvents)
 
   proc closeImpl(w: Watcher) =

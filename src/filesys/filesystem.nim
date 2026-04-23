@@ -572,8 +572,6 @@ proc diffTree*(tree: var FileTree): TreeDiff =
     if node.gen < gen or not dirExists(node.name):
       result.deletedDirs.add(node.name)
 
-  tree.updateTree(result)
-
 # ---------------------------------------------------------------------------
 # Event queue — surgical tree update
 # ---------------------------------------------------------------------------
@@ -657,20 +655,8 @@ proc applyEvent*(tree: var FileTree; ev: FileEvent): TreeDiff =
       let oldNode = tree.dirsByPath.getOrDefault(ev.oldPath, nil)
       let wasWatched = oldNode != nil and not oldNode.dontWatch
       # Remove the old subtree from both indexes.
-      for node in toSeq(tree.allFiles):
-        if node.name.startsWith(ev.oldPath):
-          tree.unregisterFile(node)
-      for key in toSeq(tree.dirsByPath.keys):
-        if key.startsWith(ev.oldPath):
-          tree.dirsByPath.del(key)
-      for d in tree.dirsByPath.values:
-        d.dirs.keepItIf(not it.name.startsWith(ev.oldPath))
-        d.files.keepItIf(not it.name.startsWith(ev.oldPath))
-      # Register under the new path.
-      tree.createDir(newRel)
-      if wasWatched:
-        result.deletedDirs.add(ev.oldPath)
-        result.createdDirs.add(ev.path)
+      
+      if not oldNode.isNil: oldNode.name = newRel
     else:
       let oldNode = tree.getFile(oldRel)
       let wasWatched = oldNode != nil and not oldNode.dontWatch
