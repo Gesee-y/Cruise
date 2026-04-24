@@ -36,11 +36,11 @@ import Cruise/src/filesys/filesystem
 var tree = newFileTree("assets")
 var w    = newWatcher(tree)
 
-w.onEvent(proc(ev: WatchEvent) =
+w.onEvent(proc(ev: FileEvent) =
   case ev.kind
-  of wekCreated:  echo "created  ", ev.path
-  of wekModified: echo "modified ", ev.path
-  of wekDeleted:  echo "deleted  ", ev.path)
+  of fekCreated:  echo "created  ", ev.path
+  of fekModified: echo "modified ", ev.path
+  of fekDeleted:  echo "deleted  ", ev.path)
 
 # In your game loop:
 while true:
