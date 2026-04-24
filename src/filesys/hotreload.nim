@@ -71,61 +71,13 @@ import times
 # ---------------------------------------------------------------------------
 
 when defined(windows):
-  import winlean
-
-  type
-    WatcherImpl = object
-      ## Holds the OVERLAPPED handle and the buffer used by
-      ## ReadDirectoryChangesW.  The watch thread is stored in the Watcher
-      ## itself (see below).
-      rootPath:     string
-      dirHandle:    Handle       ## Handle opened with FILE_FLAG_OVERLAPPED
-      overlapped:   OVERLAPPED
-      ## Rename pairing: when FILE_ACTION_RENAMED_OLD_NAME is seen we park
-      ## the old path here until FILE_ACTION_RENAMED_NEW_NAME arrives.
-      pendingRenameOld: string
+  include "watch_win.nim"
 
 elif defined(macosx) or defined(bsd):
-  import ioselectors, tables
-
-  type
-    WatcherImpl = object
-      selector: Selector[string]
-      fdMap:    Table[int, string]
-      rootPath: string
+  include "watch_macos.nim"
 
 else: # Linux
-  import selectors, tables, posix
-
-  const
-    IN_CREATE      = 0x00000100'u32
-    IN_DELETE      = 0x00000200'u32
-    IN_MODIFY      = 0x00000020'u32
-    IN_MOVED_FROM  = 0x00000040'u32
-    IN_MOVED_TO    = 0x00000080'u32
-    IN_Q_OVERFLOW  = 0xFFFFFFFF'u32
-    IN_ISDIR       = 0x40000000'u32
-    IN_NONBLOCK    = 0x00004000'u32
-
-  type
-    InotifyEvent {.packed.} = object
-      wd:     cint
-      mask:   uint32
-      cookie: uint32
-      len:    uint32
-
-    WatcherImpl = object
-      inoFd:    cint
-      selector: Selector[string]
-      wdMap:    Table[cint, string]  ## watch descriptor → absolute directory path
-      rootPath: string
-
-  proc inotify_init1(flags: cint): cint {.importc, header: "<sys/inotify.h>".}
-  proc inotify_init():              cint {.importc, header: "<sys/inotify.h>".}
-  proc inotify_add_watch(fd: cint; path: cstring; mask: uint32): cint {.
-      importc, header: "<sys/inotify.h>".}
-  proc inotify_rm_watch(fd: cint; wd: cint): cint {.
-      importc, header: "<sys/inotify.h>".}
+  include "watch_linux.nim"
 
 # ---------------------------------------------------------------------------
 # Public types
@@ -167,83 +119,6 @@ proc fire(w: Watcher; ev: FileEvent) =
 # ---------------------------------------------------------------------------
 
 when defined(windows):
-
-  const
-    FILE_LIST_DIRECTORY          = 0x00000001'i32
-    FILE_FLAG_BACKUP_SEMANTICS   = 0x02000000'i32
-    FILE_FLAG_OVERLAPPED         = 0x40000000'i32
-    FILE_NOTIFY_CHANGE_FILE_NAME = 0x00000001'i32
-    FILE_NOTIFY_CHANGE_DIR_NAME  = 0x00000002'i32
-    FILE_NOTIFY_CHANGE_LAST_WRITE= 0x00000010'i32
-
-    FILE_ACTION_ADDED              = 1'u32
-    FILE_ACTION_REMOVED            = 2'u32
-    FILE_ACTION_MODIFIED           = 3'u32
-    FILE_ACTION_RENAMED_OLD_NAME   = 4'u32
-    FILE_ACTION_RENAMED_NEW_NAME   = 5'u32
-
-    ERROR_NOTIFY_ENUM_DIR          = 1022'u32
-    INFINITE_TIMEOUT               = 0xFFFFFFFF'u32
-
-  type
-    FILE_NOTIFY_INFORMATION {.packed.} = object
-      nextEntryOffset: DWORD
-      action:          DWORD
-      fileNameLength:  DWORD
-      ## fileName follows immediately in memory as a variable-length UTF-16LE
-      ## string; we read it via pointer arithmetic.
-
-  proc waitForSingleObject(hHandle: Handle; dwMilliseconds: DWORD): DWORD {.
-      importc: "WaitForSingleObject", dynlib: "kernel32", stdcall.}
-
-  proc readDirectoryChangesW(
-    hDirectory:          Handle,
-    lpBuffer:            pointer,
-    nBufferLength:       DWORD,
-    bWatchSubtree:       WINBOOL,
-    dwNotifyFilter:      DWORD,
-    lpBytesReturned:     ptr DWORD,
-    lpOverlapped:        ptr OVERLAPPED,
-    lpCompletionRoutine: pointer
-  ): WINBOOL {.importc: "ReadDirectoryChangesW", dynlib: "kernel32", stdcall.}
-
-  proc getOverlappedResult(
-    hFile:            Handle,
-    lpOverlapped:     ptr OVERLAPPED,
-    lpNumberOfBytesTransferred: ptr DWORD,
-    bWait:            WINBOOL
-  ): WINBOOL {.importc: "GetOverlappedResult", dynlib: "kernel32", stdcall.}
-
-  proc createEventW(
-    lpEventAttributes: pointer,
-    bManualReset:      WINBOOL,
-    bInitialState:     WINBOOL,
-    lpName:            WideCString
-  ): Handle {.importc: "CreateEventW", dynlib: "kernel32", stdcall.}
-
-  proc cancelIoEx(hFile: Handle, lpOverlapped: ptr OVERLAPPED): WINBOOL {.
-    importc: "CancelIoEx", dynlib: "kernel32", stdcall.}
-
-  proc getLastError(): DWORD {.importc: "GetLastError", dynlib: "kernel32", stdcall.}
-
-  const OPEN_EXISTING = 3'u32
- 
-  proc newWatcherImpl(rootPath: string): WatcherImpl =
-    result.rootPath = rootPath
-    result.dirHandle = createFileW(
-      newWideCString(result.rootPath.cstring).toWideCString,
-      DWORD(FILE_LIST_DIRECTORY),
-      DWORD(1 or 2 or 4),        # FILE_SHARE_READ | WRITE | DELETE
-      nil,
-      OPEN_EXISTING.DWORD,
-      DWORD(FILE_FLAG_BACKUP_SEMANTICS or FILE_FLAG_OVERLAPPED),
-      Handle(0))
-
-    if result.dirHandle == Handle(-1):
-      raiseOSError(osLastError())
-    # Create a manual-reset event for the OVERLAPPED structure.
-    result.overlapped = OVERLAPPED()
-    result.overlapped.hEvent = createEventW(nil, 1.WINBOOL, 0.WINBOOL, nil)
 
   proc watchThreadProc(pt: pointer) {.thread, nimcall.} =
     ## Watch thread for Windows.
@@ -365,23 +240,6 @@ when defined(windows):
 
 elif defined(macosx) or defined(bsd):
 
-  proc watchNodeKqueue(impl: var WatcherImpl; path: string) =
-    ## Registers a single file or directory path with kqueue.
-    let fd = open(path.cstring, 0x8000)
-    if fd < 0: return
-    impl.selector.registerVnode(fd,
-      {Event.VnodeWrite, Event.VnodeDelete,
-       Event.VnodeExtend, Event.VnodeRename, Event.VnodeAttrib},
-      path)
-    impl.fdMap[fd.int] = path
-
-  proc newWatcherImpl(rootPath: string; tree: var FileTree): WatcherImpl =
-    result.rootPath = rootPath
-    result.selector = newSelector[string]()
-    watchNodeKqueue(result, rootPath)
-    for d in tree.allDirs:  watchNodeKqueue(result, d.name)
-    for f in tree.allFiles: watchNodeKqueue(result, f.name)
-
   proc watchThreadProc(pt: pointer) {.thread, nimcall.} =
     ## Watch thread for macOS/BSD.
     ##
@@ -477,27 +335,6 @@ elif defined(macosx) or defined(bsd):
 # ---------------------------------------------------------------------------
 
 else:
-
-  proc watchDirInotify(impl: var WatcherImpl; path: string) =
-    ## Adds a single directory to the inotify watch set.
-    let mask = IN_CREATE or IN_DELETE or IN_MODIFY or
-               IN_MOVED_FROM or IN_MOVED_TO
-    let wd = inotify_add_watch(impl.inoFd, path.cstring, mask)
-    if wd >= 0:
-      impl.wdMap[wd] = path
-
-  proc newWatcherImpl(rootPath: string; tree: var FileTree): WatcherImpl =
-    result.rootPath = rootPath
-    result.inoFd = inotify_init1(IN_NONBLOCK.cint)
-    if result.inoFd < 0:
-      result.inoFd = inotify_init()   # fallback for kernels < 2.6.27
-    if result.inoFd < 0:
-      raise newException(OSError, "inotify_init failed")
-    result.selector = newSelector[string]()
-    result.selector.registerHandle(result.inoFd.int, {Event.Read}, rootPath)
-    watchDirInotify(result, rootPath)
-    for d in tree.allDirs:
-      watchDirInotify(result, d.name)
 
   proc watchThreadProc(pt: pointer) {.thread, nimcall.} =
     ## Watch thread for Linux.
