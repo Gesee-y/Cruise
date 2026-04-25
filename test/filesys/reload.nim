@@ -1,19 +1,5 @@
-## Test suite for hotreload.nim
-##
-## ReadDirectoryChangesW (and inotify/kqueue) are edge-triggered: the OS only
-## delivers an event if the change happens *while* the kernel call is waiting.
-## Mutations must therefore arrive concurrently with poll(), not before it.
-##
-## Pattern used in every event test:
-##   1. Spawn a thread that sleeps DELAY_MS, then mutates the file system.
-##   2. Main thread calls poll() with a timeout longer than DELAY_MS.
-##   3. Join the mutation thread and assert on collected events.
-##
-## Compile & run:
-##   nim c --threads:on -r hotreload_test.nim
-
 import unittest, os, times, strutils, sequtils
-include "../../src/filesys/filesystem.nim"   # pulls in filesystem.nim transitively
+include "../../src/filesys/filesystem.nim"
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -46,11 +32,6 @@ proc teardown() =
 
 proc pollWhileMutating(w: Watcher; mutate: proc() {.thread.};
                        ms: int = POLL_MS): seq[FileEvent] =
-  ## Collects events by:
-  ##   1. Registering a temporary callback on *w*.
-  ##   2. Spawning *mutate* in a background thread.
-  ##   3. Blocking in poll() for *ms* ms — the mutation arrives mid-poll.
-  ##   4. Joining the thread, removing the callback, returning events.
   var collected: seq[FileEvent]
   w.onEvent(proc(ev: FileEvent) = collected.add(ev))
 
