@@ -77,7 +77,7 @@ type
   ECSWorld* = ref object
     registry:ComponentRegistry
     entities:seq[Entity]
-    commandBufs*:seq[CommandBuffer]
+    commandBufs:seq[CommandBuffer]
     evmanager: pointer
     handles*:seq[uint32]
     generations:seq[uint16]
@@ -102,6 +102,7 @@ template newECSWorld*(max_entities:int=1000000):ECSWorld =
   w.entities = newSeqofCap[Entity](max_entities)
   w.handles = newSeqofCap[uint32](max_entities)
   w.free_list = newSeqofCap[uint32](max_entities div 2)
+  w.free_entities = newSeqofCap[uint32](max_entities div 2)
   w.generations = newSeqofCap[uint16](max_entities)
   w.sparse_gens = newSeqofCap[uint16](max_entities)
   
@@ -123,6 +124,12 @@ proc addResource*[T](w: var ECSWorld, r:T) =
   w.resources[$T] = cast[pointer](r)
 
 proc getResource*[T](w: ECSWorld): T =
+  let t = $T
+
+  check(t in w.resources, "Error: Resource of type " & t & " not found.")
+  cast[T](w.resources[$T])
+
+proc unsafeGetResource*[T](w: ECSWorld): T =
   cast[T](w.resources[$T])
 
 proc isEmpty(t:TableRange | ptr TableRange):bool = t.r.s == t.r.e
@@ -242,24 +249,6 @@ template set*[T](world:var ECSWorld, i:untyped, v: T, P:static bool= false):unty
 template set*[T](ent:var DWEntity | var SWEntity, v: T, P:static bool= false):untyped =
   set(ent.w, ent.handle, v, P)
 
-proc resize(world: var ECSWorld, n:int) =
-  for entry in world.registry.entries:
-    entry.resizeOp(entry.rawPointer, n)
-
-proc upsize(world: var ECSWorld, n:int) =
-  for entry in world.registry.entries:
-    entry.resizeOp(entry.rawPointer, world.blockCount + n)
-
-proc getComponentsFromSig(sig:ArchetypeMask):seq[int] =
-  var res:seq[int]
-  for i in 0..<sig.len:
-    var s = sig[i]
-    while s != 0:
-      res.add(countTrailingZeroBits(s))
-      s = s and (s-1)
-
-  return res
-
 include "dense.nim"
 include "sparse.nim"
 include "query.nim"
@@ -276,8 +265,10 @@ proc process(world: var ECSWorld, cb: var CommandBuffer) =
     let targetKey = genKey or CommandKey(sig)
     
     var idx = int(sig) and (MAP_CAPACITY - 1)
-    while cb.map.entries[idx].key != targetKey:
+    var next_idx = (idx + 1) and (MAP_CAPACITY - 1)
+    while cb.map.entries[idx].key != targetKey and next_idx != 0:
       idx = (idx + 1) and (MAP_CAPACITY - 1)
+      next_idx = (idx + 1) and (MAP_CAPACITY - 1)
     
     let batch = addr(cb.map.entries[idx])
     
@@ -330,6 +321,8 @@ proc clearChanges*(w: var ECSWorld) =
   w.clearDenseChanges()
   w.clearSparseChanges()
 
-proc destroy*(w: ECSWorld) =
+proc destroy*(w: var ECSWorld) =
+  var ev = w.events
+  GC_unref(ev)
   for cb in mitems(w.commandBufs):
     cb.destroy()

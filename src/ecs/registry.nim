@@ -338,7 +338,7 @@ template getvalue[B](entry:ComponentEntry, P:static bool=false):untyped =
   ## `SoAFragmentArray`.
   castTo(entry.rawPointer, B, DEFAULT_BLK_SIZE,P)
 
-proc `=destroy`(rg:var ComponentRegistry) {.raises: [].} = 
+proc `=destroy`*(rg:var ComponentRegistry) {.raises: [].} = 
   for entry in rg.entries:
     if not entry.isNil: entry.freeEntry(entry.rawPointer)
 

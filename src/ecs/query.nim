@@ -36,7 +36,7 @@ type
   ## Iterator for dense queries.
   DenseIterator* = object
     r*:HSlice[int, int]
-    m:ptr seq[BitBlock]
+    m:seq[BitBlock]
     masked:bool
 
   ## A cached result object for Sparse queries.
@@ -146,7 +146,7 @@ iterator items*(it: DenseIterator): int =
   ## It return the index of the matching entity in a given block.
 
   if it.masked:
-    for i in (it.r, it.m[]).maskIter:
+    for i in (it.r, it.m).maskIter:
       yield i
   else:
     for i in it.r:
@@ -201,7 +201,7 @@ proc buildQuerySignature(world: ECSWorld, components: seq[QueryComponent]): Quer
         # If you need the entity to exist to be checked for modification:
         result.includeMask[layer] = result.includeMask[layer] or (1.uint shl bitPos)
 
-proc addFilter*(qs: var QuerySignature, qf:QueryFilter) =
+proc addFilter*(qs: var QuerySignature, qf:var QueryFilter) =
   ## Adds a new filter to the query
   qs.filters.add(addr qf)
 
@@ -273,7 +273,7 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator)
           for i in 0..<maskCount:
             res[i] = res[i] and qf.dLayer.getL0(zone.block_idx*sizeof(uint)*8 + i)
         
-        yield (zone.block_idx, DenseIterator(r:zone.r.s..<zone.r.e, m: addr res, masked:masked))
+        yield (zone.block_idx, DenseIterator(r:zone.r.s..<zone.r.e, m: res, masked:masked))
 
 proc denseQueryCache*(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
   ## Computes and caches the result of a Dense query.
@@ -291,11 +291,13 @@ proc denseQueryCache*(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
   
   template cacheEntry: untyped = world.queryCache[key]
   
-  if cacheEntry.version < world.archGraph.nodes.len:
-    for i in cacheEntry.version ..< world.archGraph.nodes.len:
+  if cacheEntry.version < world.archGraph.version:
+    for i in 0..<world.archGraph.nodes.len:
       let archNode = world.archGraph.nodes[i]
-      if matchesArchetype(sig, archNode.mask):
-        cacheEntry.nodes.add(archNode)
+      if not archNode.isNil:
+        if matchesArchetype(sig, archNode.mask) and not (i.uint16 in cacheEntry.archs):
+          cacheEntry.nodes.add(archNode)
+          cacheEntry.archs.incl(i.uint16)
     cacheEntry.version = world.archGraph.nodes.len
 
   for archNode in cacheEntry.nodes:
@@ -358,15 +360,15 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, SparseIterato
     # Iterate through chunks with entities
     let S = sizeof(uint)*8
     let entry = world.registry.entries[includeIds[0]]
-    var res = entry.getSparseMaskOp(entry.rawPointer)[]
+    var res = entry.getSparseMaskOp(entry.rawPointer)
         
     for compId in includeIds[1..^1]:
       let entry = world.registry.entries[compId]
-      res.andi entry.getSparseMaskOp(entry.rawPointer)[]
+      res.andi entry.getSparseMaskOp(entry.rawPointer)
 
     for compId in excludeIds:
       let entry = world.registry.entries[compId]
-      res.andNoti(entry.getSparseMaskOp(entry.rawPointer)[])
+      res.andNoti(entry.getSparseMaskOp(entry.rawPointer))
 
     for compId in sig.modified:
       let entry = world.registry.entries[compId]

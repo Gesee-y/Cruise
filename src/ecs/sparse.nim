@@ -60,6 +60,7 @@ macro allocateSparseEntity*(
 
   ## newSparseBlock call per component type — runs only on fresh block path.
   var newBlockCode = newNimNode(nnkStmtList)
+  let idSym = ident("id")
   for c in comps[0]:
     newBlockCode.add quote("@") do:
       block:
@@ -72,19 +73,18 @@ macro allocateSparseEntity*(
   for c in comps[0]:
     activateCode.add quote("@") do:
       block:
-        let toAct = `@table`.free_list[^1]
         let rawp = `@table`.registry.entries[toComponentId(`@c`)].rawPointer
         var fr = castTo(rawp, `@c`, DEFAULT_BLK_SIZE)
-        fr.activateSparseBit(toAct)
+        fr.activateSparseBit(`@idSym`)
 
   return quote("@") do:
     block:
-      var id: uint32
+      var `@idSym`: uint32
 
       if `@table`.free_list.len > 0:
         ## Reuse a recycled slot — just activate, block already exists.
+        `@idSym` = `@table`.free_list.pop()
         `@activateCode`
-        id = `@table`.free_list.pop()
       else:
         ## No free slot — allocate a new sparse block for every component.
         `@newBlockCode`
@@ -96,14 +96,14 @@ macro allocateSparseEntity*(
         for i in 0..<count:
           `@table`.free_list[curLen + i] = (`@table`.max_index + 1 + i).uint32
 
-        id = `@table`.max_index.uint32
+        `@idSym` = `@table`.max_index.uint32
         `@table`.max_index += UINT_BITS
         `@table`.sparse_gens.setLen(`@table`.max_index)
 
         ## Activate only the first slot of the fresh block.
         `@activateCode`
 
-      id
+      `@idSym`
 
 
 ## Typed batch sparse entity allocation.

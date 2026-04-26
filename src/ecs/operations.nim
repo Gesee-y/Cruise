@@ -74,8 +74,6 @@ macro createEntities*(world: ECSWorld, n: untyped, comps: varargs[typed]): seq[D
 
     # Iterate through the allocation results (Block ID, Range of IDs)
     for (bid, r) in res:
-      let b = (bid shl BLK_SHIFT)
-
       for id in r.s..<r.e:
         # Setup variables for the current entity being processed.
         let pid = pids[current]
@@ -84,7 +82,7 @@ macro createEntities*(world: ECSWorld, n: untyped, comps: varargs[typed]): seq[D
 
         # Map handles and initialize metadata similar to single entity creation.
         `@world`.handles[idx] = pid
-        e.id = makeID(b, id)
+        e.id = makeID(bid, id)
         e.archetypeId = archId
 
         # Create the handle with the specific generation for this PID.
@@ -114,8 +112,8 @@ template deleteEntity*(world: var ECSWorld, d: DenseHandle) =
 
   # Update the handle lookup table.
   # The handle at the deleted entity's position now points to the entity that was moved.
-  world.handles[(e.id and BLK_MASK) + ((e.id shr BLK_SHIFT) and
-      BLK_MASK)*DEFAULT_BLK_SIZE] = world.handles[l]
+  let (bid, id) = e.id.getDenseMeta
+  world.handles[id + bid*DEFAULT_BLK_SIZE] = world.handles[l]
 
   # Update the ID of the moved entity so it matches its new memory location.
   world.entities[world.handles[l]].id = e.id
@@ -331,7 +329,6 @@ macro createSparseEntity*(world: ECSWorld, comps: varargs[
       ev.emitSparseEntityCreated(s)
       s
 
-
 ## createSparseEntities — typed batch, zero vtable.
 macro createSparseEntities*(
   world: ECSWorld,
@@ -419,6 +416,7 @@ macro addComponent*(
 ): untyped =
 
   var addedIds = newNimNode(nnkBracket)
+  var batchIdent = ident("batchIds")
   for c in addedComps:
     addedIds.add quote("@") do: toComponentId(`@c`)
   if addedIds.len == 0:
@@ -426,26 +424,25 @@ macro addComponent*(
 
   ## One typed batch activateSparseBit per component.
   var activateBatchCode = newNimNode(nnkStmtList)
-  for c in addedComps[0]:
+  for c in addedComps:
     activateBatchCode.add quote("@") do:
       block:
         let rawp = `@world`.registry.entries[toComponentId(`@c`)].rawPointer
         var fr = castTo(rawp, `@c`, DEFAULT_BLK_SIZE)
-        fr.activateSparseBit(batchIds)
+        fr.activateSparseBit(`@batchIdent`)
 
   return quote("@") do:
     block addComp:
       if `@entities`.len == 0: break addComp
 
       ## Collect ids once — shared across all per-component passes.
-      var batchIds = newSeqOfCap[uint](`@entities`.len)
-      for i in 0..<`@entities`.len:
-        batchIds.add(`@entities`[i].id)
+      var `@batchIdent` = newSeqOfCap[uint](`@entities`.len)
 
       ## Update archetype node per entity (runtime graph walk).
       var lastArchID = -1
       var lastArch: ArchetypeNode = nil
       for i in 0..<`@entities`.len:
+        `@batchIdent`.add(`@entities`[i].id)
         let archId = `@entities`[i].archID
         if lastArchID != archID.int:
           lastArchId = archID.int
@@ -528,8 +525,8 @@ macro removeComponent*(
       for i in 0..<`@entities`.len:
         batchIds.add(`@entities`[i].id)
 
-      for i in 0..<`@entities`.len:
-        var lastArchID = -1
+      
+      var lastArchID = -1
       var lastArch: ArchetypeNode = nil
       for i in 0..<`@entities`.len:
         let archId = `@entities`[i].archID
@@ -537,8 +534,8 @@ macro removeComponent*(
           lastArchId = archID.int
           lastArch = `@world`.archGraph.nodes[`@entities`[i].archID]
 
-        for cid in `@removedIds`:
-          lastArch = `@world`.archGraph.removeComponent(lastArch, cid)
+          for cid in `@removedIds`:
+            lastArch = `@world`.archGraph.removeComponent(lastArch, cid)
 
         `@entities`[i].archID = lastArch.id
 
@@ -548,7 +545,8 @@ macro removeComponent*(
 ## @param w: The mutable `ECSWorld` instance.
 ## @param s: The `SparseHandle` of the entity to delete.
 proc deleteEntity*(w: var ECSWorld, s: var SparseHandle) =
-  #w.events.emitSparseEntityDestroyed(s)
+  var ev = w.events
+  ev.emitSparseEntityDestroyed(s)
   w.deleteSparseRow(s.id, w.archGraph.nodes[s.archID].componentIds)
   # Increment generation to invalidate handles.
   w.sparse_gens[s.id] += 1
@@ -566,7 +564,7 @@ proc migrateEntity(w: var ECSWorld, s: var SparseHandle,
   let toDeactivate = oldNode.mask and not (newArch.mask)
 
   w.deactivateComponentsSparse(s.id, toDeactivate)
-  s.archID = oldNode.id
+  s.archID = newArch.id
   w.activateComponentsSparse(s.id, toActivate)
 
 proc isAlive*(dw: DWEntity): bool = isAlive(dw.w, dw.handle)

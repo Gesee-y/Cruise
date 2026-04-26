@@ -302,7 +302,7 @@ template changePartition(
       inc c
 
     zone.r.e = r.a
-    ofil -= 1 * (r.a == 0 and toSwap.len < ids.len).int
+    ofil -= 1 * (m > 0).int
 
   oldPartition.fill_index = ofil
 

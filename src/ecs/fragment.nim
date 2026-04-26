@@ -388,7 +388,7 @@ proc newSparseBlock[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B],
     else:
       f.toSparse[i] = f.sparse.len+1
       f.sparse.setLen(f.sparse.len+1)
-      f.sparseTicks.setLen(f.sparse.len+1)
+      f.sparseTicks.setLen(f.sparse.len)
 
   f.sparseMask.setL0Block(i.int, m.BitBlock)
 
@@ -425,7 +425,7 @@ proc freeSparseBlock[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: i
 proc newBlockAt[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: int) =
   ## Allocate a new dense block at a specific index with exponential growth.
   if i >= f.blocks.len:
-    let newCap = max(i + 1, f.blocks.len * 2)
+    let newCap = i + 1
     f.blocks.setLen(newCap)
     f.blkTicks.setLen(newCap)
   var blk: ref SoAFragment[N, P, T, B]
