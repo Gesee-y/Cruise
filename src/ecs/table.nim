@@ -28,11 +28,41 @@ type
 
   ArchetypeMask = array[MAX_COMPONENT_LAYER, uint]
 
-template check(code:untyped, msg:string) =
-  when not defined(danger):
-    doAssert code, msg
+## ── Graduated safety checks ─────────────────────────────────────────────────
+## Three severity levels for different build configurations:
+##
+##  checkWarn      — Debug builds only (no -d:release, no -d:danger).
+##                   Emits a non-fatal warning via debugEcho.
+##                   Use for near-limit situations, suspicious-but-safe state.
+##
+##  check          — Debug + Release (disabled by -d:danger).
+##                   Raises AssertionDefect on violation.
+##                   Use for errors that would silently corrupt ECS state.
+##
+##  checkCritical  — Always active, even under -d:danger.
+##                   Raises Defect. Use for invariant violations that are
+##                   *always* programming errors regardless of build mode
+##                   (null dereference, OOB access, infinite loops, etc.)
 
-template onDanger(code) =
+template checkWarn*(code: untyped, msg: string) =
+  ## Non-fatal warning emitted only in debug (un-optimised) builds.
+  when not defined(release) and not defined(danger):
+    if not (code):
+      debugEcho "[ECS WARN] " & msg
+
+template check*(code: untyped, msg: string) =
+  ## Hard assertion active in debug + release, suppressed by -d:danger.
+  when not defined(danger):
+    doAssert code, "[ECS ERROR] " & msg
+
+template checkCritical*(code: untyped, msg: string) =
+  ## Always-active guard — fires even under -d:danger.
+  ## Use for invariants whose violation is always a programming error.
+  if unlikely(not (code)):
+    raise newException(Defect, "[ECS CRITICAL] " & msg)
+
+template onDanger*(code: untyped) =
+  ## Code that executes only when NOT in -d:danger mode.
   when not defined(danger):
     code
 
@@ -97,6 +127,12 @@ include "events.nim"
 template newECSWorld*(max_entities:int=1000000):ECSWorld =
   var w:ECSWorld
   new(w)
+  checkWarn(max_entities > 0,
+    "newECSWorld: max_entities must be > 0 (got " & $max_entities &
+    "). The world will be created but cannot hold any entities.")
+  checkWarn(max_entities <= 1_000_000_000,
+    "newECSWorld: max_entities=" & $max_entities &
+    " exceeds 1 billion. Initial capacities may cause OOM at startup.")
   #new(w.registry)
   w.archGraph = initArchetypeGraph()
   w.entities = newSeqofCap[Entity](max_entities)
@@ -183,6 +219,9 @@ template getStableEntity(world:ECSWorld):uint32 =
     world.free_entities.pop()
   else:
     let id = world.entities.len.uint32
+    checkWarn(id < high(uint32) - 65535u32,
+      "getStableEntity: entity pool nearing uint32 limit (" & $id &
+      " / " & $high(uint32) & "). Recycle entities to avoid exhaustion.")
     world.entities.setLen(id + 1)
     world.generations.setLen(id + 1)
     id
@@ -266,9 +305,15 @@ proc process(world: var ECSWorld, cb: var CommandBuffer) =
     
     var idx = int(sig) and (MAP_CAPACITY - 1)
     var next_idx = (idx + 1) and (MAP_CAPACITY - 1)
+    var probeCount = 0
     while cb.map.entries[idx].key != targetKey and next_idx != 0:
       idx = (idx + 1) and (MAP_CAPACITY - 1)
       next_idx = (idx + 1) and (MAP_CAPACITY - 1)
+      probeCount += 1
+      check(probeCount < MAP_CAPACITY,
+        "CommandBuffer process: linear probe exhausted all " & $MAP_CAPACITY &
+        " slots for signature=" & $sig &
+        ". BatchMap is full or corrupted. Increase MAP_CAPACITY.")
     
     let batch = addr(cb.map.entries[idx])
     
@@ -290,8 +335,13 @@ proc process(world: var ECSWorld, cb: var CommandBuffer) =
   for sig in cb.map.activeSignatures:
     let targetKey = genKey or CommandKey(sig)
     var idx = int(sig) and (MAP_CAPACITY - 1)
+    var probeCount2 = 0
     while cb.map.entries[idx].key != targetKey:
       idx = (idx + 1) and (MAP_CAPACITY - 1)
+      probeCount2 += 1
+      check(probeCount2 < MAP_CAPACITY,
+        "CommandBuffer flush/cleanup: linear probe exhausted all " & $MAP_CAPACITY &
+        " slots. BatchMap state is corrupted.")
     cb.map.entries[idx].count = 0
   
   cb.map.activeSignatures.setLen(0)

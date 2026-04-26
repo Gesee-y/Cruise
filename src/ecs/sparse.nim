@@ -97,6 +97,10 @@ macro allocateSparseEntity*(
           `@table`.free_list[curLen + i] = (`@table`.max_index + 1 + i).uint32
 
         `@idSym` = `@table`.max_index.uint32
+        checkWarn(`@table`.max_index < int(high(uint32)) - UINT_BITS * 100,
+          "allocateSparseEntity: sparse entity pool nearing uint32 limit " &
+          "(max_index=" & $`@table`.max_index & "). " &
+          "Recycle sparse entities to avoid exhaustion.")
         `@table`.max_index += UINT_BITS
         `@table`.sparse_gens.setLen(`@table`.max_index)
 

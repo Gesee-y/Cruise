@@ -53,7 +53,9 @@ proc resize(entry: ptr BatchEntry) =
   else:
     let size = newCap * sizeof(Payload).uint32
     entry.data = cast[ptr UncheckedArray[Payload]](realloc(entry.data, size))
-    check(entry.data != nil, "Failed to reallocate memory for CommandBuffer BatchEntry")
+    check(entry.data != nil,
+      "CommandBuffer resize: realloc returned nil — out of memory. " &
+      "Requested " & $size & " bytes (" & $newCap & " x " & $sizeof(Payload) & " bytes/Payload).")
   entry.capacity = newCap
 
 proc initBatchMap(): BatchMap =
@@ -115,8 +117,15 @@ proc addCommand(cb: var CommandBuffer, op: range[0..15], arch: uint16,
     else:
 
       var scanIdx = idx
+      var probeSteps = 0
       while true:
         scanIdx = (scanIdx + 1) and mask
+        probeSteps += 1
+        check(probeSteps <= mask,
+          "addCommand: linear probe exhausted all " & $(mask + 1) &
+          " slots (MAP_CAPACITY=" & $MAP_CAPACITY & "). " &
+          "All BatchMap entries are occupied by distinct signatures. " &
+          "Increase MAP_CAPACITY or reduce concurrent deferred operation types.")
         let scanEntry = addr(cb.map.entries[scanIdx])
 
         if scanEntry.key == targetKey:

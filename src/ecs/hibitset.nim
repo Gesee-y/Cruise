@@ -140,7 +140,7 @@ template setBatch*(h: var HiBitSet, idxs: openArray[uint|int]) =
         h.layer2[l2Idx] = h.layer2[l2Idx] or (BitBlock(1) shl (l1Idx and L0_MASK))
         lastL0Idx = l0Idx
 
-proc unsetBatch*(h: var HiBitSet | ptr HiBitSet, idxs: openArray[uint|int]) =
+template unsetBatch*(h: var HiBitSet, idxs: openArray[uint|int]) =
   ## Unsets multiple bits at once.
   for idx in idxs:
     h.unset(idx.int)

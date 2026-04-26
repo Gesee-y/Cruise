@@ -64,6 +64,14 @@ proc isValidMask(g: ArchetypeGraph, m: ArchetypeMask): bool =
   return true
 
 proc createNode(graph: var ArchetypeGraph, mask: ArchetypeMask, id:uint16=graph.nodes.len.uint16): ArchetypeNode {.inline.} =
+  check(graph.nodes.len < int(high(uint16)),
+    "createNode: archetype count has reached the uint16 maximum (" & $high(uint16) &
+    "). Cannot create more archetypes. The ECS supports at most 65 535 distinct " &
+    "component combinations. Review your component composition patterns.")
+  checkWarn(graph.nodes.len < 10000,
+    "createNode: archetype graph now has " & $graph.nodes.len & " nodes. " &
+    "Large archetype counts degrade query performance and increase memory usage. " &
+    "Consider reviewing component composition patterns.")
   result = ArchetypeNode(
     id: id,
     mask: mask,
@@ -136,7 +144,18 @@ proc addComponent*(graph: var ArchetypeGraph,
 
 proc removeComponent*(graph: var ArchetypeGraph, 
                       node: ArchetypeNode, 
-                      comp: int): ArchetypeNode {.inline.} =  
+                      comp: int): ArchetypeNode {.inline.} =
+  check(not node.isNil,
+    "removeComponent: ArchetypeNode is nil. " &
+    "Cannot remove component ID=" & $comp & " from a nil archetype node.")
+  check(comp >= 0 and comp < MAX_COMPONENTS,
+    "removeComponent: component ID=" & $comp &
+    " is out of valid range [0, " & $MAX_COMPONENTS & ").")
+  checkWarn(node.mask.hasComponent(comp),
+    "removeComponent: archetype id=" & $node.id &
+    " does not have component ID=" & $comp &
+    ". Removing a non-existent component is a no-op migration " &
+    "and may indicate a logic error in the calling code.")
   result = node.getRemoveEdge(comp)
   if result != nil:
     node.lastRemEdge = comp

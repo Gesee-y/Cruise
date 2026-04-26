@@ -424,6 +424,15 @@ proc freeSparseBlock[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: i
 
 proc newBlockAt[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: int) =
   ## Allocate a new dense block at a specific index with exponential growth.
+  check(i >= 0,
+    "newBlockAt: block index cannot be negative (got " & $i & ").")
+  checkWarn(i < 65535,
+    "newBlockAt: block index=" & $i & " is unusually large. " &
+    "Verify entity IDs are not corrupted; large indices waste memory.")
+  check(i >= f.blocks.len or f.blocks[i].isNil,
+    "newBlockAt: block at index=" & $i & " already exists and will be overwritten. " &
+    "Double-allocation detected — existing data silently lost. " &
+    "Check for duplicate createEntity calls or archetype graph corruption.")
   if i >= f.blocks.len:
     let newCap = i + 1
     f.blocks.setLen(newCap)

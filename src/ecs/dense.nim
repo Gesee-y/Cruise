@@ -33,7 +33,11 @@ macro allocateNewBlocks(
       fr.newBlockAt(`@table`.blockCount)
   
   return quote("@") do:
-    check(`@count` >= 0, "Allocation count cannot be negative")
+    check(`@count` >= 0,
+      "allocateNewBlocks: count cannot be negative (got " & $`@count` & ").")
+    checkWarn(`@table`.blockCount < 60000,
+      "allocateNewBlocks: dense blockCount=" & $`@table`.blockCount &
+      " is growing very large. Review entity density and archetype fragmentation.")
     var n = `@count`
     let s = n div DEFAULT_BLK_SIZE
     var bc = `@table`.blockCount
@@ -152,14 +156,26 @@ macro allocateEntity(
 ## Deletes a dense entity row.
 ## Performs swap-remove within the archetype partition.
 template deleteRow(table: var ECSWorld, i: uint, arch: uint16): uint =
-  check(arch.int < table.archGraph.nodes.len, "Archetype ID out of bounds")
+  check(arch.int < table.archGraph.nodes.len,
+    "deleteRow: archetypeId=" & $arch & " is out of bounds (nodes.len=" &
+    $table.archGraph.nodes.len & "). Entity archetypeId field is corrupted.")
   let partition = addr table.archGraph.nodes[arch].partition
-  
+  check(not partition[].isNil,
+    "deleteRow: archetype " & $arch & " has no partition. " &
+    "Entity does not belong to this archetype or was never allocated in it.")
+
   if partition.zones.len <= partition.fill_index or
      isEmpty(addr partition.zones[partition.fill_index]):
+    check(partition.fill_index > 0,
+      "deleteRow: fill_index would underflow (currently 0) for archetype " & $arch &
+      ". The partition is empty — possible double-delete or entity count corruption.")
     partition.fill_index -= 1
 
   let zone = addr partition.zones[partition.fill_index]
+  check(zone.r.e > 0,
+    "deleteRow: active zone is empty (r.e=0) for archetype " & $arch &
+    " at fill_index=" & $partition.fill_index &
+    ". Cannot swap-remove from an empty zone.")
 
   let last = zone.r.e - 1
   let bid = zone.block_idx.uint
@@ -183,19 +199,29 @@ template changePartition(
   oldArch: uint16,
   newArch: ArchetypeNode
 ): (int, uint, uint) =
-  check(oldArch.int < table.archGraph.nodes.len, "Old archetype ID out of bounds")
-  check(not newArch.isNil, "Target ArchetypeNode is nil")
+  check(oldArch.int < table.archGraph.nodes.len,
+    "changePartition: source archetypeId=" & $oldArch & " is out of bounds (nodes.len=" &
+    $table.archGraph.nodes.len & ").")
+  check(not newArch.isNil, "changePartition: target ArchetypeNode is nil.")
   
   let oldPartition = addr table.archGraph.nodes[oldArch].partition
+  check(not oldPartition[].isNil,
+    "changePartition: source archetype " & $oldArch & " has no partition. " &
+    "Entity does not exist in this archetype.")
   let newPartition = createPartition(table, newArch)
   let oldComponents = addr oldPartition.components
 
   ## Remove entity from old partition
   if oldPartition.zones.len <= oldPartition.fill_index or
      isEmpty(oldPartition.zones[oldPartition.fill_index]):
+    check(oldPartition.fill_index > 0,
+      "changePartition: source fill_index would underflow for archetype " & $oldArch &
+      ". Source partition is empty — entity may not exist here.")
     oldPartition.fill_index -= 1
 
-  check(oldPartition.fill_index >= 0, "Source partition underflow during move")
+  check(oldPartition.fill_index >= 0,
+    "changePartition: source partition underflow (fill_index=" &
+    $oldPartition.fill_index & ") for archetype " & $oldArch & ".")
   let oldZone = addr oldPartition.zones[oldPartition.fill_index]
   let last = oldZone.r.e - 1
   let blast = oldZone.block_idx
@@ -277,6 +303,9 @@ template changePartition(
   let newPartition = createPartition(table, newArch)
 
   if oldPartition.zones.len <= oldPartition.fill_index:
+    check(oldPartition.fill_index > 0,
+      "changePartition batch: source fill_index would underflow for archetype " & $oldArch &
+      ". Batch is larger than the number of entities in the source partition.")
     oldPartition.fill_index -= 1
 
   var m = ids.len
@@ -287,7 +316,9 @@ template changePartition(
   
   ## Collect entities to remove from old partition
   while toSwap.len < ids.len:
-    check(ofil >= 0, "Source partition underflow during batch move")
+    check(ofil >= 0,
+      "changePartition batch: source partition underflow during batch move. " &
+      "More entities requested (" & $ids.len & ") than available in partition.")
     let zone = addr oldPartition.zones[ofil]
     let r = max(0, zone.r.e - m) ..< zone.r.e
     let bid = zone.block_idx.uint

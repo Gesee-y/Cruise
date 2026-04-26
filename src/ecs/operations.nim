@@ -99,10 +99,16 @@ macro createEntities*(world: ECSWorld, n: untyped, comps: varargs[typed]): seq[D
 ## @param world: The mutable `ECSWorld` instance.
 ## @param d: The `DenseHandle` of the entity to delete.
 template deleteEntity*(world: var ECSWorld, d: DenseHandle) =
+  check(d.widx < world.entities.len.uint32,
+    "deleteEntity: handle widx=" & $d.widx &
+    " is out of bounds for entities array (len=" & $world.entities.len &
+    "). The DenseHandle is corrupted or belongs to a different ECSWorld.")
   let e = d.obj
 
-  check(not e.isNil, "Invalid access. Trying to access nil entity.")
-  check(world.generations[d.wid] == d.gen, "Invalid Entity. Entity is stale (already dead).")
+  check(world.generations[d.wid] == d.gen,
+    "deleteEntity: stale handle detected. Stored gen=" & $world.generations[d.wid] &
+    " but handle gen=" & $d.gen & " (widx=" & $d.widx &
+    "). Entity was already deleted or the slot was recycled.")
 
   # Remove the entity's data row from its archetype block.
   # Returns the index of the last row that was swapped into the deleted position ('l').
@@ -156,11 +162,18 @@ template deleteEntityDefer*(dw: var DWEntity, buffer_id: int) =
 ## @param d: The `DenseHandle` of the entity to migrate.
 ## @param archNode: The target `ArchetypeNode` (destination archetype).
 proc migrateEntity*(world: var ECSWorld, d: DenseHandle, archNode: ArchetypeNode) =
+  check(d.widx < world.entities.len.uint32,
+    "migrateEntity: handle widx=" & $d.widx &
+    " is out of bounds (entities.len=" & $world.entities.len & ").")
   let e = d.obj
-
-  # Validate that the handle points to a living entity.
-  check(not e.isNil, "Invalid access. Trying to access nil entity.")
-  check(world.generations[d.wid] == d.gen, "Invalid Entity. Entity is stale (already dead).")
+  check(world.generations[d.wid] == d.gen,
+    "migrateEntity: stale handle. Stored gen=" & $world.generations[d.wid] &
+    " but handle gen=" & $d.gen & " (widx=" & $d.widx & "). Entity already deleted.")
+  check(not archNode.isNil, "migrateEntity: target ArchetypeNode is nil.")
+  checkWarn(archNode.id != e.archetypeId,
+    "migrateEntity: target archetype id=" & $archNode.id &
+    " is the same as the current archetype id=" & $e.archetypeId &
+    ". Migration is a no-op. Verify addComponent/removeComponent logic.")
 
   # Only perform migration if the target archetype is different from the current one.
   if archNode.id != e.archetypeId:
@@ -203,10 +216,18 @@ proc migrateEntity*(world: var ECSWorld, d: DenseHandle, archNode: ArchetypeNode
 template migrateEntity*(world: var ECSWorld, ents: var openArray[DenseHandle],
     archNode: ArchetypeNode) =
   if ents.len != 0:
-    # Assume all entities in the batch are currently in the same archetype (based on the first one).
+    check(not archNode.isNil, "migrateEntity batch: target ArchetypeNode is nil.")
+    # Assume all entities in the batch share the same source archetype.
     let e = ents[0].obj
     let oldArchId = e.archetypeId
-
+    when not defined(release) and not defined(danger):
+      for batchCheckIdx in 1..<ents.len:
+        let batchEnt = ents[batchCheckIdx].obj
+        if not batchEnt.isNil and batchEnt.archetypeId != oldArchId:
+          debugEcho "[ECS WARN] migrateEntity batch: entity[" & $batchCheckIdx &
+            "] has archetype " & $batchEnt.archetypeId &
+            " but entity[0] has archetype " & $oldArchId &
+            ". Mixed-archetype batches produce undefined behaviour."
     if archNode.id != oldArchId:
       # Perform batch partition change.
       let (ids, toSwap, toAdd) = changePartition(world, ents, oldArchId, archNode)
@@ -254,8 +275,16 @@ template migrateEntityDefer*(dw: var DWEntity, archNode: ArchetypeNode,
 ## @param d: The `DenseHandle` of the entity.
 ## @param components: Variadic list of Component IDs to add.
 proc addComponent*(world: var EcsWorld, d: DenseHandle, components: varargs[int]) =
+  check(components.len > 0,
+    "addComponent: component list is empty — no structural change will occur. " &
+    "Pass at least one component ID.")
   let e = d.obj
   let oldArch = world.archGraph.nodes[e.archetypeId]
+  for cid in components:
+    check(cid >= 0 and cid < MAX_COMPONENTS,
+      "addComponent: component ID=" & $cid &
+      " is out of valid range [0, " & $MAX_COMPONENTS & "). " &
+      "Ensure the component is registered before use.")
   var archNode = oldArch
 
   # Traverse the archetype graph, adding components one by one to find the target node.
@@ -279,8 +308,18 @@ proc addComponent*(dw: var DWEntity, components: varargs[int]) =
 ## @param d: The `DenseHandle` of the entity.
 ## @param components: Variadic list of Component IDs to remove.
 proc removeComponent*(world: var ECSWorld, d: DenseHandle, components: varargs[int]) =
+  check(components.len > 0,
+    "removeComponent: component list is empty — no structural change will occur.")
   let e = d.obj
   let oldArch = world.archGraph.nodes[e.archetypeId]
+  for cid in components:
+    check(cid >= 0 and cid < MAX_COMPONENTS,
+      "removeComponent: component ID=" & $cid &
+      " is out of valid range [0, " & $MAX_COMPONENTS & ").")
+    check(oldArch.mask.hasComponent(cid),
+      "removeComponent: entity (archetypeId=" & $e.archetypeId &
+      ") does not have component ID=" & $cid &
+      ". Removing a non-existent component produces an undefined archetype edge.")
   var archNode = oldArch
 
   # Traverse the archetype graph, removing components one by one to find the target node.
