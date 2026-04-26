@@ -56,7 +56,7 @@ template deactivateComponentsSparse(table: var ECSWorld, i:int|uint, components:
 macro allocateSparseEntity*(
   table: ECSWorld,
   comps: varargs[typed]
-): uint =
+): uint32 =
 
   ## newSparseBlock call per component type — runs only on fresh block path.
   var newBlockCode = newNimNode(nnkStmtList)
@@ -79,7 +79,7 @@ macro allocateSparseEntity*(
 
   return quote("@") do:
     block:
-      var id: uint
+      var id: uint32
 
       if `@table`.free_list.len > 0:
         ## Reuse a recycled slot — just activate, block already exists.
@@ -94,9 +94,9 @@ macro allocateSparseEntity*(
         let curLen = `@table`.free_list.len
         `@table`.free_list.setLen(curLen + count)
         for i in 0..<count:
-          `@table`.free_list[curLen + i] = (`@table`.max_index + 1 + i).uint
+          `@table`.free_list[curLen + i] = (`@table`.max_index + 1 + i).uint32
 
-        id = `@table`.max_index.uint
+        id = `@table`.max_index.uint32
         `@table`.max_index += UINT_BITS
         `@table`.sparse_gens.setLen(`@table`.max_index)
 
@@ -187,7 +187,7 @@ macro allocateSparseEntities*(
             let curLen = `@table`.free_list.len
             `@table`.free_list.setLen(curLen + spare)
             for i in 0..<spare:
-              `@table`.free_list[curLen + i] = (start + i).uint
+              `@table`.free_list[curLen + i] = (start + i).uint32
 
       ## Typed newSparseBlocks — one call per component, no vtable.
       if `@masksId`.len > 0:

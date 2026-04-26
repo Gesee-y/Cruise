@@ -12,8 +12,8 @@ const
 type
   EntityId = uint64
   Payload = object
-    eid: EntityId
-    obj: DenseHandle
+    eid: uint32
+    gen: uint16
     data: pointer
     size: uint32
 

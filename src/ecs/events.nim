@@ -38,9 +38,9 @@ type
     newArchetype*: uint16
 
   DenseEntityMigratedBatchEvent* = object
-    ids*: seq[uint]
-    oldIds*: seq[uint]
-    newIds*: seq[uint]
+    ids*: seq[uint32]
+    oldIds*: seq[uint32]
+    newIds*: seq[uint32]
     oldArchetype*: uint16
     newArchetype*: uint16
 
@@ -100,7 +100,7 @@ type
     freeSlots: seq[int]
 
   ## Central event manager holding all ECS events.
-  EventManager* = object
+  EventManager* = ref object
     denseEntityCreated: EventPool[DenseEntityCreatedEvent]
     denseEntityDestroyed: EventPool[DenseEntityDestroyedEvent]
     denseComponentAdded: EventPool[DenseComponentAddedEvent]
@@ -161,6 +161,7 @@ proc clear*[T](pool: var EventPool[T]) =
 
 ## Initialize a fully populated event manager.
 proc initEventManager*(): EventManager =
+  new(result)
   result.denseEntityCreated = initEventPool[DenseEntityCreatedEvent]()
   result.denseEntityDestroyed = initEventPool[DenseEntityDestroyedEvent]()
   result.denseComponentAdded = initEventPool[DenseComponentAddedEvent]()
@@ -298,7 +299,7 @@ proc emitDenseEntityMigrated*(em: var EventManager, entity: DenseHandle, old,lst
     newArchetype: newArchetype
   ))
 
-proc emitDenseEntityMigratedBatch*(em: var EventManager, ids,old,lst:seq[uint], 
+proc emitDenseEntityMigratedBatch*(em: var EventManager, ids,old,lst:seq[uint32], 
                              oldArchetype, newArchetype: uint16) =
   em.denseEntityMigratedBatch.trigger(DenseEntityMigratedBatchEvent(
     ids: ids,

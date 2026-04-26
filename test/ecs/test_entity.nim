@@ -13,12 +13,12 @@ type
     ax, ay: int
 
 # === WORLD SETUP ===
-proc initWorld(): ECSWorld =
+template initWorld(): ECSWorld =
   var w = newECSWorld()
   discard w.registerComponent(Pos)
   discard w.registerComponent(Vel)
   discard w.registerComponent(Acc)
-  return w
+  w
 
 # ==========================================================
 # ENTITY CREATION
@@ -27,18 +27,18 @@ suite "ECS Entity creation":
 
   test "Create entity with one component":
     var world = initWorld()
-    let e = createEntity(world, 0)
+    let e = createEntity(world, Pos)
 
     let idx = int(e.obj.id and ((1'u shl 32)-1))
-    check world.handles[idx] == e.obj
+    check world.handles[idx] == e.widx
     check e.obj.archetypeID == 1'u
 
   test "Create entity with multiple components":
     var world = initWorld()
-    let e = createEntity(world, 0, 1)
+    let e = createEntity(world, Pos, Vel)
 
     let idx = int(e.obj.id and ((1'u shl 32)-1))
-    check world.handles[idx] == e.obj
+    check world.handles[idx] == e.widx
     check e.obj.archetypeID == 2'u
 
 # ==========================================================
@@ -48,7 +48,7 @@ suite "Component access":
 
   test "Read / write component through entity":
     var world = initWorld()
-    let e = createEntity(world, 0)
+    let e = createEntity(world, Pos)
 
     var pos = castTo(world.registry.entries[0].rawPointer, Pos, DEFAULT_BLK_SIZE)
 
@@ -64,20 +64,20 @@ suite "Entity deletion":
   test "Delete entity swaps correctly":
     var world = initWorld()
 
-    let a = createEntity(world, 0)
-    let b = createEntity(world, 0)
-    let c = createEntity(world, 0)
+    let a = createEntity(world, Pos)
+    let b = createEntity(world, Pos)
+    let c = createEntity(world, Pos)
 
     let bidB = b.obj.id
     deleteEntity(world, b)
 
     let idxC = int(c.obj.id and ((1'u shl 32)-1))
-    check world.handles[idxC] == c.obj
+    check world.handles[idxC] == c.widx
     check c.obj.id == bidB
 
   test "Delete last entity":
     var world = initWorld()
-    let a = createEntity(world, 0)
+    let a = createEntity(world, Pos)
     deleteEntity(world, a)
     check world.archGraph.nodes[a.obj.archetypeID].partition.zones[0].r.e == 0
 
@@ -88,7 +88,7 @@ suite "Add component":
 
   test "Add new component changes archetype and id":
     var world = initWorld()
-    let e = createEntity(world, 0)
+    let e = createEntity(world, Pos)
     let oldId = e.obj.id
 
     addComponent(world, e, 1)
@@ -97,7 +97,7 @@ suite "Add component":
 
   test "Add existing component does nothing":
     var world = initWorld()
-    let e = createEntity(world, 0)
+    let e = createEntity(world, Pos)
     let oldId = e.obj.id
 
     addComponent(world, e, 0)
@@ -111,21 +111,22 @@ suite "Remove component":
 
   test "Remove existing component":
     var world = initWorld()
-    let e = createEntity(world, 0, 1)
+    let e = createEntity(world, Pos, Vel)
     let oldId = e.obj.id
 
-    removeComponent(world, e, 1)
+    removeComponent(world, e, Vel.toComponentID)
     check e.obj.id != oldId
-    check e.obj.archetypeID == 1'u
+    check e.obj.archetypeID == world.archGraph.findArchetype([Pos.toComponentID]).id
 
   test "Remove absent component does nothing":
     var world = initWorld()
-    let e = createEntity(world, 0)
+    let e = createEntity(world, Pos)
     let oldId = e.obj.id
+    let oldArch = e.obj.archetypeID
 
-    removeComponent(world, e, 1)
+    removeComponent(world, e, Vel.toComponentID)
     check e.obj.id == oldId
-    check e.obj.archetypeID == 1'u
+    check e.obj.archetypeID == oldArch
 
 # ==========================================================
 # STRESS TESTS
@@ -134,7 +135,7 @@ suite "Stress tests":
 
   test "Ping-pong archetype":
     var world = initWorld()
-    let e = createEntity(world, 0)
+    let e = createEntity(world, Pos)
 
     for i in 0..<10000:
       addComponent(world, e, 1)
@@ -147,7 +148,7 @@ suite "Stress tests":
     var ents: seq[DenseHandle]
 
     for i in 0..<10000:
-      ents.add(createEntity(world, 0))
+      ents.add(createEntity(world, Pos))
 
     for i in 0..<5000:
       deleteEntity(world, ents[i])
@@ -165,7 +166,7 @@ suite "Query integration":
 
   test "Query reflects add/remove":
     var world = initWorld()
-    let e = createEntity(world, 0)
+    let e = createEntity(world, Pos)
 
     var q1 = query(world, Pos)
     check denseQueryCount(world, q1) == 1

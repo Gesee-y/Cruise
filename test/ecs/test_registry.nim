@@ -23,7 +23,6 @@ const
 
 proc newRegistry(): ComponentRegistry =
   var r: ComponentRegistry
-  new(r)
   r.entries = @[]
   r.cmap = initTable[string,int]()
   r
@@ -69,14 +68,13 @@ suite "ComponentRegistry – core behavior":
 
     let frag = getvalue[Position](entry)
     check frag.blocks[0] != nil
-    check frag.blocks[0].offset == 0
 
   test "New block with offset":
     var reg = newRegistry()
     discard reg.registerComponent(Position)
 
     let entry = reg.getEntry(0)
-    entry.newBlockOp(entry.rawPointer, 0)
+    entry.newBlockAtOp(entry.rawPointer, 0)
     
     let frag = getvalue[Position](entry)
     check frag.blocks.len == 1
@@ -86,7 +84,7 @@ suite "ComponentRegistry – core behavior":
     discard reg.registerComponent(Position)
 
     let entry = reg.getEntry(0)
-    entry.newBlockOp(entry.rawPointer, 0)
+    entry.newBlockAtOp(entry.rawPointer, 0)
 
     var frag = getvalue[Position](entry)
     frag[0] = Position(x: 1, y: 1)
@@ -111,8 +109,8 @@ suite "ComponentRegistry – core behavior":
     let posEntry = reg.getEntry(0)
     let velEntry = reg.getEntry(1)
 
-    posEntry.newBlockOp(posEntry.rawPointer, 0)
-    velEntry.newBlockOp(velEntry.rawPointer, 0)
+    posEntry.newBlockAtOp(posEntry.rawPointer, 0)
+    velEntry.newBlockAtOp(velEntry.rawPointer, 0)
 
     var posFrag = getvalue[Position](posEntry)
     var velFrag = getvalue[Velocity](velEntry)

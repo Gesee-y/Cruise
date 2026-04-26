@@ -15,7 +15,7 @@ suite "Sparse ECS logic":
     var w = newECSWorld()
     let pid = w.registerComponent(Pos)
 
-    let e = w.createSparseEntity(pid)
+    let e = w.createSparseEntity(Pos)
     check e.id == 0
 
     let mask = w.registry.entries[pid].getSparseMaskOp(
@@ -27,7 +27,7 @@ suite "Sparse ECS logic":
     var w = newECSWorld()
     let pid = w.registerComponent(Pos)
 
-    let ents = w.createSparseEntities(10, [pid])
+    let ents = w.createSparseEntities(10, Pos)
     check ents.len == 10
 
     for i,e in ents:
@@ -43,12 +43,12 @@ suite "Sparse ECS logic":
     var w = newECSWorld()
     let pid = w.registerComponent(Pos)
 
-    var e1 = w.createSparseEntity(pid)
-    var e2 = w.createSparseEntity(pid)
+    var e1 = w.createSparseEntity(Pos)
+    var e2 = w.createSparseEntity(Pos)
 
     w.deleteEntity(e1)
 
-    let e3 = w.createSparseEntity(pid)
+    let e3 = w.createSparseEntity(Pos)
     check e3.id == e1.id
 
   test "activate and deactivate sparse component":
@@ -56,8 +56,8 @@ suite "Sparse ECS logic":
     let pid = w.registerComponent(Pos)
     let vid = w.registerComponent(Vel)
 
-    var e = w.createSparseEntity(pid)
-    w.addComponent(e, vid)
+    var e = w.createSparseEntity(Pos)
+    w.addComponent(e, Vel)
 
     var pmask = w.registry.entries[pid].getSparseMaskOp(
       w.registry.entries[pid].rawPointer)
@@ -66,8 +66,7 @@ suite "Sparse ECS logic":
 
     check pmask[][0] == true
     check vmask[][0] == true
-
-    w.removeComponent(e, vid)
+    w.removeComponent(e, Vel)
 
     check vmask[][0] == false
 
@@ -75,7 +74,7 @@ suite "Sparse ECS logic":
     var w = newECSWorld()
     let pid = w.registerComponent(Pos)
 
-    let ents = w.createSparseEntities(64, pid)
+    let ents = w.createSparseEntities(64, Pos)
     let mask = w.registry.entries[pid].getSparseMaskOp(
       w.registry.entries[pid].rawPointer)
 
@@ -86,7 +85,7 @@ suite "Sparse ECS logic":
     let pid = w.registerComponent(Pos)
     let vid = w.registerComponent(Vel)
 
-    let ents = w.createSparseEntities(32, pid)
+    let ents = w.createSparseEntities(32, Pos)
     var ids: seq[uint]
     for e in ents: ids.add(e.id)
 
@@ -102,7 +101,7 @@ suite "Sparse ECS logic":
     var w = newECSWorld()
     let pid = w.registerComponent(Pos)
 
-    let ents = w.createSparseEntities(32, pid)
+    let ents = w.createSparseEntities(32, Pos)
     var ids: seq[uint]
     for e in ents: ids.add(e.id)
 
@@ -118,21 +117,21 @@ suite "Sparse ECS logic":
     var w = newECSWorld()
     let pid = w.registerComponent(Pos)
 
-    var ents = w.createSparseEntities(10, [pid])
+    var ents = w.createSparseEntities(10, Pos)
     for i in 0..<ents.len:
       var e = ents[i]
       w.deleteEntity(e)
 
     check w.free_list.len == 64
 
-    let e = w.createSparseEntity(pid)
+    let e = w.createSparseEntity(Pos)
     check e.id < 10
 
   test "no ghost bits after delete":
     var w = newECSWorld()
     let pid = w.registerComponent(Pos)
 
-    var e = w.createSparseEntity(pid)
+    var e = w.createSparseEntity(Pos)
     w.deleteEntity(e)
 
     let mask = w.registry.entries[pid].getSparseMaskOp(

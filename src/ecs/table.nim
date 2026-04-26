@@ -12,9 +12,11 @@ const
   BIT_DIVIDER = floor(log(UINT_BITS.float, 2.0)).int
   BIT_REMAINDER = UINT_BITS-1
   ## Bit shift used to extract block indices from packed IDs.
-  BLK_SHIFT = sizeof(uint)*4
+  BLK_SHIFT = 20
+  ID_SHIFT = 32 - BLK_SHIFT
   ## Mask used to extract local indices from packed IDs.
   BLK_MASK = (1 shl BLK_SHIFT) - 1
+  ID_MASK = (1 shl ID_SHIFT) - 1
   ## Default size (in elements) of a dense block.
   DEFAULT_BLK_SIZE = UINT_BITS*UINT_BITS
   ## Initial capacity of the sparse storage.
@@ -64,7 +66,6 @@ type
     fill_index:int
 
 include "archetypes.nim"
-include "events.nim"
 
 type
   QueryKey* = tuple[incl: ArchetypeMask, excl: ArchetypeMask]
@@ -77,37 +78,44 @@ type
     registry:ComponentRegistry
     entities:seq[Entity]
     commandBufs*:seq[CommandBuffer]
-    events*: EventManager
-    handles*:seq[ptr Entity]
-    generations:seq[uint32]
-    sparse_gens:seq[uint32]
-    free_entities:seq[int]
+    evmanager: pointer
+    handles*:seq[uint32]
+    generations:seq[uint16]
+    sparse_gens:seq[uint16]
+    free_entities:seq[uint32]
     archGraph*:ArchetypeGraph
-    free_list:seq[uint]
+    free_list:seq[uint32]
     max_index:int
     blockCount:int
     queryCache*: Table[QueryKey, QueryCacheEntry]
     resources*: Table[string, pointer]
 
+include "handles.nim"
 include "entity_wrappers.nim"
+include "events.nim"
 
-proc newECSWorld*(max_entities:int=1000000):ECSWorld =
+template newECSWorld*(max_entities:int=1000000):ECSWorld =
   var w:ECSWorld
   new(w)
   #new(w.registry)
   w.archGraph = initArchetypeGraph()
   w.entities = newSeqofCap[Entity](max_entities)
-  w.handles = newSeqofCap[ptr Entity](max_entities)
-  w.free_list = newSeqofCap[uint](max_entities div 2)
-  w.generations = newSeqofCap[uint32](max_entities)
-  w.sparse_gens = newSeqofCap[uint32](max_entities)
-  w.events = initEventManager()
+  w.handles = newSeqofCap[uint32](max_entities)
+  w.free_list = newSeqofCap[uint32](max_entities div 2)
+  w.generations = newSeqofCap[uint16](max_entities)
+  w.sparse_gens = newSeqofCap[uint16](max_entities)
+  
+  var ev = initEventManager()
+  GC_ref(ev)
+  w.evmanager = cast[pointer](ev)
 
-  return w
+  w
 
 ####################################################################################################################################################
 ####################################################################### OPERATIONS #################################################################
 ####################################################################################################################################################
+
+template events*(w: ECSWorld): EventManager = cast[EventManager](w.evmanager)
 
 {.push inline.}
 
@@ -134,20 +142,20 @@ proc getArchetype*(w:ECSWorld, e:SomeEntity):ArchetypeNode =
 proc getArchetype*(w:ECSWorld, d:DenseHandle):ArchetypeNode =
   return w.getArchetype(d.obj)
 
-proc makeId*(idx,bid:int|uint):uint =
-  return (bid.uint shl BLK_SHIFT) or idx.uint
+template makeId*(bid,idx:untyped):uint32 =
+  (bid.uint32 shl ID_SHIFT) or idx.uint32
 
-proc makeId(i:int):uint =
-  let bid = i.uint div DEFAULT_BLK_SIZE
-  let idx = i.uint mod DEFAULT_BLK_SIZE
+template makeId(i:int):uint32 =
+  let bid = i.uint32 div DEFAULT_BLK_SIZE
+  let idx = i.uint32 mod DEFAULT_BLK_SIZE
 
-  return (bid shl BLK_SHIFT) or idx
+  (bid shl ID_SHIFT) or idx
 
-proc makeId(i:uint):uint =
-  let bid = i div DEFAULT_BLK_SIZE.uint
-  let idx = i mod DEFAULT_BLK_SIZE.uint
+template makeId(i:untyped):uint32 =
+  let bid = i.uint32 div DEFAULT_BLK_SIZE.uint32
+  let idx = i.uint32 mod DEFAULT_BLK_SIZE.uint32
 
-  return (bid shl BLK_SHIFT) or idx
+  (bid shl ID_SHIFT) or idx
 
 proc newCommandBuffer*(w: var ECSWorld):int =
   let c = initCommandBuffer()
@@ -158,21 +166,21 @@ proc getCommandBuffer*(w: var ECSWorld, id:int):CommandBuffer =
   return w.commandBufs[id]
 
 proc isAlive*(w:ECSWorld, d:DenseHandle):bool =
-  return d.gen == w.generations[d.obj.widx]
+  return d.gen == w.generations[d.wid]
 
 
 {.pop.}
 
-template getStableEntity(world:ECSWorld):int =
+template getStableEntity(world:ECSWorld):uint32 =
   if world.free_entities.len > 0:
     world.free_entities.pop()
   else:
-    let id = world.entities.len
+    let id = world.entities.len.uint32
     world.entities.setLen(id + 1)
     world.generations.setLen(id + 1)
     id
 
-proc getStableEntities(world:ECSWorld, n:int):seq[int] =
+proc getStableEntities(world:ECSWorld, n:int):seq[uint32] =
   result.setLen(n)
   let free_len = world.free_entities.len
   let start = max(0, free_len-n)
@@ -183,7 +191,7 @@ proc getStableEntities(world:ECSWorld, n:int):seq[int] =
       for i in 0..<count:
         result[i] = world.free_entities[start + i]
     else:
-      copyMem(addr result[0], addr world.free_entities[start], count * sizeof(int))
+      copyMem(addr result[0], addr world.free_entities[start], count * sizeof(uint32))
     world.free_entities.setLen(start)
 
   if world.free_entities.len == 0:
@@ -193,7 +201,7 @@ proc getStableEntities(world:ECSWorld, n:int):seq[int] =
     
     var c = 0
     for i in L..<world.entities.len:
-      result[free_len+c] = i
+      result[free_len+c] = i.uint32
       inc c
 
 template registerComponent*(world:var ECSWorld, t:typed, P:static bool=false):int =
@@ -277,7 +285,7 @@ proc process(world: var ECSWorld, cb: var CommandBuffer) =
     var ents = newSeqofCap[DenseHandle](batch.count)
 
     for i in 0..<batch.count:
-      ents.add(dataPtr[i].obj)
+      ents.add(DenseHandle(widx:dataPtr[i].eid, gen:dataPtr[i].gen))
 
     case sig.getOp():
       of 0:

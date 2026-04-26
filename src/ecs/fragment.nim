@@ -278,10 +278,12 @@ macro toObjectCopy(T: typedesc, cDst: untyped, idxDst: untyped, cSrc: untyped,
   return quote("@") do:
     `@res`
 
+template getDenseMeta(i):untyped =
+  (i shr ID_SHIFT, i and ID_MASK)
+
 template toIdx(i: uint): untyped =
   ## Convert a packed (block,index) ID into a linear index.
-  let id = i and BLK_MASK
-  let bid = (i shr BLK_SHIFT) and BLK_MASK
+  let (bid, id) = i.getDenseMeta
   id+bid*DEFAULT_BLK_SIZE
 
 template swapVals(b: untyped, i, j: int|uint) =
@@ -295,10 +297,8 @@ template overrideVals[N, P, T, S, B](b: SoAFragmentArray[N, P, T, S, B], i, j: i
   when T is tuple[]:
     discard
   else:
-    let bidi = (i.uint shr BLK_SHIFT) and BLK_MASK
-    let idxi = i.uint and BLK_MASK
-    let bidj = (j.uint shr BLK_SHIFT) and BLK_MASK
-    let idxj = j.uint and BLK_MASK
+    let (bidi, idxi) = i.getDenseMeta
+    let (bidj, idxj) = j.getDenseMeta
     toObjectCopy(B, b.blocks[bidi].data, idxi, b.blocks[bidj].data, idxj)
 
 template overrideVals[N, P, T, B](b: SoAFragment[N, P, T, B] | ref SoAFragment[
@@ -310,8 +310,8 @@ template overrideVals[N, P, T, B](b: SoAFragment[N, P, T, B] | ref SoAFragment[
     toObjectCopy(B, b.data, i, b.data, j)
 
 macro overrideValsBatch[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B],
-    ids: untyped, sw: seq[uint], ad: seq[uint]) =
-  ## Component-Outside, Entity-Inside batch migration.
+    ids: untyped, sw: seq[uint32], ad: seq[uint32]) =
+  
   var res = newNimNode(nnkStmtList)
   let types = T.getTypeImpl() # T is the tuple-of-arrays type
 
@@ -319,16 +319,13 @@ macro overrideValsBatch[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B],
     let fName = types[i][0] # The name is in the first child of the IdentDefs
     var loop = quote do:
       for k in 0..<ids.len:
-        let e = ids[k].obj
+        let e = ids[k]
         let s = sw[k]
         let a = ad[k]
 
-        let bid_a = (a shr BLK_SHIFT) and BLK_MASK
-        let idx_a = a and BLK_MASK
-        let bid_e = (e.id shr BLK_SHIFT) and BLK_MASK
-        let idx_e = e.id and BLK_MASK
-        let bid_s = (s shr BLK_SHIFT) and BLK_MASK
-        let idx_s = s and BLK_MASK
+        let (bid_a, idx_a) = a.getDenseMeta
+        let (bid_e, idx_e) = e.getDenseMeta
+        let (bid_s, idx_s) = s.getDenseMeta
 
         f.blocks[bid_a].data.`fName`[idx_a] = f.blocks[bid_e].data.`fName`[idx_e]
         f.blocks[bid_e].data.`fName`[idx_e] = f.blocks[bid_s].data.`fName`[idx_s]
@@ -343,8 +340,7 @@ template overrideVals(f, archId, ents, ids, toSwap, toAdd: untyped) =
 
 template setChanged[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], id: uint) =
   ## Mark a dense block as modified.
-  let bid = (id shr BLK_SHIFT) and BLK_MASK
-  let i = id and BLK_MASK
+  let (bid, i) = id.getDenseMeta
 
   f.tick += 1
   f.blkTicks[bid] = f.tick
@@ -436,12 +432,12 @@ proc newBlockAt[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: int) =
   new(blk)
   f.blocks[i] = blk
 
-proc getBlockId*[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B], i: int|uint): uint =
+proc getBlockId*[N, P, T, S, B](i: int|uint): uint =
   ## Compute the block index for a linear index.
-  return (i.uint shr BLK_SHIFT)
+  return (i.uint shr ID_SHIFT)
 
-proc getIdInBlock*[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B], i: int|uint): uint =
-  return i.uint and BLK_MASK
+proc getIdInBlock*[N, P, T, S, B](i: int|uint): uint =
+  return i.uint and ID_MASK
 
 proc getBlock[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B],
     i: int): ref SoAFragment[N, P, T, B] =
@@ -451,7 +447,7 @@ proc getBlock[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B],
 template getBlock[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B],
     i: uint): ref SoAFragment[N, P, T, B] =
   ## Get the dense block from a packed ID.
-  f.blocks[(i shr BLK_SHIFT) and BLK_MASK]
+  f.blocks[i.getBlockID]
 
 template activateSparseBit[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: int|uint) =
   ## Mark a sparse index as active.
@@ -518,19 +514,17 @@ template `[]`*[N: static int, P: static bool, T, B](blk: SoAFragment[N, P, T,
 template `[]`*[N, P, T, S, B](f: SoAFragmentArray[N, P, T, S, B],
     i: uint): untyped =
   ## Read a value using a packed (block,index) ID.
-  let blk = (i shr BLK_SHIFT) and BLK_MASK
-  let idx = i and BLK_MASK
+  let (blk, idx) = i.getDenseMeta
 
-  check(blk < f.blocks.len.uint, "Invalid access. " & $blk &
+  check(blk.int < f.blocks.len, "Invalid access. " & $blk &
       "is out of bound. The component only has " & $(f.blocks.len) & "blocks")
   f.blocks[blk][idx]
 
 template `[]=`*[N, P, T, S, B](f: var SoAFragmentArray[N, P, T, S, B], i: uint, v: untyped) =
   ## Write a value using a packed (block,index) ID.
-  let blk: uint = (i shr BLK_SHIFT) and BLK_MASK
-  let idx = i and BLK_MASK
+  let (blk, idx) = i.getDenseMeta
 
-  check(blk < f.blocks.len.uint, "Invalid access. " & $blk &
+  check(blk.int < f.blocks.len, "Invalid access. " & $blk &
       " is out of bound. The component only has " & $(f.blocks.len) & "blocks")
   check(not f.blocks[blk].isNil, "Invalid access. Trying to access nil block at " & $blk)
 

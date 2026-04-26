@@ -310,7 +310,7 @@ template benchmarkWithSetup*(benchmarkName: string, sample, warm,
       code
       let elapsed = cpuTime() - t0
       let allocated = max(0, getOccupiedMem() - m0).float
-      
+
       bench.times.add(elapsed)
       bench.mems.add(allocated)
   

@@ -75,5 +75,5 @@ proc hasComponent*[T](sw: SWEntity): bool =
 proc hasComponent*[T](hw: DWEntity | SWEntity, t:typedesc[T]): bool =
   return hw.hasComponent(hw.w.getComponentId(T))
 
-proc wid*(d:DWEntity): int = d.handle.obj.widx
-proc id*(d:DWEntity): uint = d.handle.obj.id
+proc wid*(d:DWEntity): uint32 = d.handle.wid
+proc id*(d:DWEntity): uint32 = d.handle.obj.id

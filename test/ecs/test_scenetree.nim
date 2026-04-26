@@ -47,7 +47,6 @@ suite "SceneTree extended torture":
     tree.addChild(s)
 
     let root = tree.getRoot
-    echo root.children
     check root.children.sLayer.get(s.id.int)
 
   test "recursive delete":

@@ -34,7 +34,7 @@ test "component order does not create duplicate archetypes":
 
   check a == b
   check a.componentCount == 2
-  check g.nodeCount == 4  # {}, {1}, {2}, {1,2}
+  check g.nodeCount == 2  # {}, {1,2}, The graph create only the immediate node, not the in betweens
 
 test "remove component returns to previous archetype":
   var g = initArchetypeGraph()

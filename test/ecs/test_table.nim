@@ -37,7 +37,7 @@ suite "Dense ECS Allocation Tests":
 
   test "allocateEntities creates correct number of rows":
     var world = initECSWorld()
-    let arch = maskOf(0, 1, 2)
+    let arch = world.archGraph.findArchetype([0, 1, 2])
 
     let res = allocateEntities(world, 100, arch)
     var total = 0

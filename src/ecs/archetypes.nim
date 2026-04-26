@@ -63,22 +63,6 @@ proc isValidMask(g: ArchetypeGraph, m: ArchetypeMask): bool =
 
   return true
 
-proc initArchetypeGraph*(): ArchetypeGraph =
-  var emptyMask: ArchetypeMask
-  new(result)
-  
-  result.root = ArchetypeNode(
-    id: 0,
-    mask: emptyMask,
-    partition: nil,
-    componentIds: @[],
-    lastEdge: -1,
-    lastRemEdge: -1,
-  )
-  
-  result.nodes = @[result.root]
-  result.maskToId[emptyMask] = 0
-
 proc createNode(graph: var ArchetypeGraph, mask: ArchetypeMask, id:uint16=graph.nodes.len.uint16): ArchetypeNode {.inline.} =
   result = ArchetypeNode(
     id: id,
@@ -98,6 +82,18 @@ proc createNode(graph: var ArchetypeGraph, mask: ArchetypeMask, id:uint16=graph.
   graph.nodes[id] = result
   graph.maskToId[mask] = id
   graph.version += 1
+
+macro initArchetypeGraph*(): ArchetypeGraph =
+  return quote("@") do:
+    var emptyMask: ArchetypeMask
+    var res: ArchetypeGraph
+    new(res)
+    
+    for (m, id) in `@ARCHETYPE_ID_REGISTRY`.pairs:
+      discard res.createNode(m, id.uint16)
+    
+    res.root = res.nodes[0]
+    res
 
 proc addComponent*(graph: var ArchetypeGraph, 
                    node: ArchetypeNode, 

@@ -22,21 +22,21 @@ proc initTestWorld(): ECSWorld =
   discard world.registerComponent(Health)
   discard world.registerComponent(Dead)
   
-  #discard world.createEntity(0)
-  #discard world.createEntity(0,1)
-  #discard world.createEntity(0,2)
+  #discard world.createEntity(Position)
+  #discard world.createEntity(Position,1)
+  #discard world.createEntity(Position,2)
   #discard world.createEntity(1,2)
-  #discard world.createEntity(0,1)
+  #discard world.createEntity(Position,1)
   #discard world.createEntity(1,2,3)
-  #discard world.createEntity(0,3)
+  #discard world.createEntity(Position,3)
 
-  #discard world.createSparseEntity(0)
-  #discard world.createSparseEntity(0,1)
-  #discard world.createSparseEntity(0,2)
-  #discard world.createSparseEntity(1,2)
-  #discard world.createSparseEntity(0,1)
-  #discard world.createSparseEntity(1,2,3)
-  #discard world.createSparseEntity(0,3)
+  #discard world.createSparseEntity(Position)
+  #discard world.createSparseEntity(Position,1)
+  #discard world.createSparseEntity(Position,2)
+  #discard world.createSparseEntity(Velocity,2)
+  #discard world.createSparseEntity(Position,1)
+  #discard world.createSparseEntity(Velocity,2,3)
+  #discard world.createSparseEntity(Position,3)
   
   return world
 
@@ -114,16 +114,16 @@ suite "matchesArchetype":
 suite "Dense query basic":
 
   test "dense include":
-    let e1 = world.createEntity(0, 1)
-    let e2 = world.createEntity(0)
-    let e3 = world.createEntity(1)
+    let e1 = world.createEntity(Position, Velocity)
+    let e2 = world.createEntity(Position)
+    let e3 = world.createEntity(Velocity)
 
     let sig = query(world, Position)
     check denseQueryCount(world, sig) == 2
 
   test "dense filter":
     var q = newQueryFilter()
-    let e = world.createEntity(0)
+    let e = world.createEntity(Position)
     q.set(e)
 
     var sig = query(world, Position)
@@ -137,8 +137,8 @@ suite "Dense query basic":
 suite "Dense query change tracking":
 
   test "modified component only":
-    let e1 = world.createEntity(0)
-    let e2 = world.createEntity(0)
+    let e1 = world.createEntity(Position)
+    let e2 = world.createEntity(Position)
     var pos = world.get(Position, true)
     var c = 0
 
@@ -166,9 +166,9 @@ suite "Dense query change tracking":
 suite "Sparse query basic":
 
   test "sparse include":
-    let s1 = world.createSparseEntity(0)
-    let s2 = world.createSparseEntity(0, 1)
-    let s3 = world.createSparseEntity(1)
+    let s1 = world.createSparseEntity(Position)
+    let s2 = world.createSparseEntity(Position, Velocity)
+    let s3 = world.createSparseEntity(Velocity)
 
     let sig = query(world, Position)
     check sparseQueryCount(world, sig) == 2
@@ -180,8 +180,8 @@ suite "Sparse query basic":
 suite "Sparse query change tracking":
 
   test "modified sparse":
-    let s1 = world.createSparseEntity(0)
-    let s2 = world.createSparseEntity(0)
+    let s1 = world.createSparseEntity(Position)
+    let s2 = world.createSparseEntity(Position)
     var pos = world.get(Position, true)
     var c = 0
 
@@ -194,7 +194,7 @@ suite "Sparse query change tracking":
 suite "Dense / Sparse equivalence":
 
   test "same semantic result":
-    var d = world.createEntity(0, 1)
+    var d = world.createEntity(Position, Velocity)
     var s = world.makeSparse(d)
     var c = 0
 

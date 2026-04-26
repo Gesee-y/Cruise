@@ -125,9 +125,6 @@ type
     ## Allocate a dense block at a specific index.
     newBlockAtOp: proc (p:pointer, i:int) {.noSideEffect, nimcall, inline.}
 
-    ## Allocate a dense block at a given offset.
-    newBlockOp: proc (p:pointer, offset:int) {.noSideEffect, nimcall, inline.}
-
     ## Allocate or update a sparse block.
     newSparseBlockOp: proc (p:pointer, offset:int, m:uint) {.noSideEffect, nimcall, inline.}
 
@@ -135,22 +132,20 @@ type
     newSparseBlocksOp: proc (p:pointer, offset:int, m:seq[uint]) {.noSideEffect, nimcall, inline.}
 
     ## Override one value with another (dense/dense or sparse/sparse via packed IDs).
-    overrideValsOp: proc (p:pointer, i:uint, j:uint)  {.noSideEffect, nimcall, inline.}
+    overrideValsOp: proc (p:pointer, i:uint32, j:uint32)  {.noSideEffect, nimcall, inline.}
 
     ## Override a dense value with a sparse value.
-    overrideDSOp: proc (p:pointer, d:DenseHandle, s:SparseHandle)  {.noSideEffect, nimcall, inline.}
+    overrideDSOp: proc (p:pointer, d:uint32, s:uint32)  {.noSideEffect, nimcall, inline.}
 
     ## Override a sparse value with a dense value.
-    overrideSDOp: proc (p:pointer, s:SparseHandle, d:DenseHandle)  {.noSideEffect, nimcall, inline.}
+    overrideSDOp: proc (p:pointer, s:uint32, d:uint32)  {.noSideEffect, nimcall, inline.}
 
     ## Batch override used during archetype transitions.
     overrideValsBatchOp: proc (
       p:pointer,
-      archId:uint16,
-      ents: ptr seq[ptr Entity],
-      ids:openArray[DenseHandle],
-      sw:seq[uint],
-      ad:seq[uint]
+      ids:openArray[uint32],
+      sw:seq[uint32],
+      ad:seq[uint32]
     )
 
     ## Get the per-slot change mask for a dense block.
@@ -254,31 +249,29 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
 
       # --- Override operations ---
 
-      let overv = proc (p:pointer, i,j:uint) {.noSideEffect, nimcall, inline.} =
+      let overv = proc (p:pointer, i,j:uint32) {.noSideEffect, nimcall, inline.} =
         var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,false)
         fr.overrideVals(i, j)
 
-      let overDS = proc (p:pointer, d:DenseHandle,s:SparseHandle) {.noSideEffect, nimcall, inline.} =
+      let overDS = proc (p:pointer, d:uint32,s:uint32) {.noSideEffect, nimcall, inline.} =
         var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,false)
-        let bidi = (d.obj.id shr BLK_SHIFT) and BLK_MASK
-        let idxi = d.obj.id and BLK_MASK
-        let sbid = s.id shr 6
-        let si = s.id and 63
+        let (bidi, idxi) = d.getDenseMeta
+        let sbid = s shr BIT_DIVIDER
+        let si = s and BIT_REMAINDER
         let physIdx = fr.toSparse[sbid] - 1
         toObjectCopy(`B`, fr.blocks[bidi].data, idxi, fr.sparse[physIdx].data, si)
 
-      let overSD = proc (p:pointer,s:SparseHandle, d:DenseHandle) {.noSideEffect, nimcall, inline.} =
+      let overSD = proc (p:pointer,s:uint32, d:uint32) {.noSideEffect, nimcall, inline.} =
         var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,false)
-        let bidi = (d.obj.id shr BLK_SHIFT) and BLK_MASK
-        let idxi = d.obj.id and BLK_MASK
-        let sbid = s.id shr 6
-        let si = s.id and 63
+        let (bidi, idxi) = d.getDenseMeta
+        let sbid = s shr BIT_DIVIDER
+        let si = s and BIT_REMAINDER
         let physIdx = fr.toSparse[sbid] - 1
         toObjectCopy(`B`, fr.sparse[physIdx].data, si, fr.blocks[bidi].data, idxi)
 
-      let overvb = proc (p:pointer, archId:uint16, ents: ptr seq[ptr Entity], ids:openArray[DenseHandle], sw:seq[uint], ad:seq[uint]) =
+      let overvb = proc (p:pointer, ids:openArray[uint32], sw:seq[uint32], ad:seq[uint32]) =
         var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,false)
-        fr.overrideVals(archId, ents, ids, sw, ad)
+        fr.overrideValsBatch(ids, sw, ad)
 
       # --- Change tracking accessors ---
 

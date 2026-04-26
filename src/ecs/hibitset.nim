@@ -125,20 +125,20 @@ proc setL0Block*(h: var HiBitSet, l0Idx: int, value: BitBlock) {.inline.} =
 
 template setBatch*(h: var HiBitSet, idxs: openArray[uint|int]) =
   ## Sets multiple bits at once, grouping layer1/layer2 updates.
-  if idxs.len == 0: return
-  var lastL0Idx = -1
-  for idx in idxs:
-    let i = idx.int
-    h.ensureCapacity(i)
-    let l0Idx  = i shr L0_SHIFT
-    let bitPos = i and L0_MASK
-    h.layer0[l0Idx] = h.layer0[l0Idx] or (BitBlock(1) shl bitPos)
-    if l0Idx != lastL0Idx:
-      let l1Idx = l0Idx shr L0_SHIFT
-      h.layer1[l1Idx] = h.layer1[l1Idx] or (BitBlock(1) shl (l0Idx and L0_MASK))
-      let l2Idx = l1Idx shr L0_SHIFT
-      h.layer2[l2Idx] = h.layer2[l2Idx] or (BitBlock(1) shl (l1Idx and L0_MASK))
-      lastL0Idx = l0Idx
+  if idxs.len != 0:
+    var lastL0Idx = -1
+    for idx in idxs:
+      let i = idx.int
+      h.ensureCapacity(i)
+      let l0Idx  = i shr L0_SHIFT
+      let bitPos = i and L0_MASK
+      h.layer0[l0Idx] = h.layer0[l0Idx] or (BitBlock(1) shl bitPos)
+      if l0Idx != lastL0Idx:
+        let l1Idx = l0Idx shr L0_SHIFT
+        h.layer1[l1Idx] = h.layer1[l1Idx] or (BitBlock(1) shl (l0Idx and L0_MASK))
+        let l2Idx = l1Idx shr L0_SHIFT
+        h.layer2[l2Idx] = h.layer2[l2Idx] or (BitBlock(1) shl (l1Idx and L0_MASK))
+        lastL0Idx = l0Idx
 
 proc unsetBatch*(h: var HiBitSet, idxs: openArray[uint|int]) =
   ## Unsets multiple bits at once.

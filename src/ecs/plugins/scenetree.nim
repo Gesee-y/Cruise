@@ -279,9 +279,10 @@ proc deleteNode*(tree: var SceneTree, s:SparseHandle) =
 
 template setUp*(world:var ECSWorld, tree:var SceneTree) =
   world.addResource(tree)
-  discard world.events.onDenseEntityDestroyed(
+  var ev = world.events
+  discard ev.onDenseEntityDestroyed(
     proc (ev:DenseEntityDestroyedEvent) =
-      let w = cast[ECSWorld](ev.w)
+      let w = ev.entity.world
       var tr = getResource[SceneTree](w)
       let id = ev.entity.wid
       if tr.isRoot(ev.entity):
@@ -291,7 +292,7 @@ template setUp*(world:var ECSWorld, tree:var SceneTree) =
       tr.toDFilter[id] = 0
   )
 
-  discard world.events.onSparseEntityDestroyed(
+  discard ev.onSparseEntityDestroyed(
     proc (ev:SparseEntityDestroyedEvent) =
       let id = ev.entity.id
       if tree.isRoot(ev.entity):
@@ -301,7 +302,7 @@ template setUp*(world:var ECSWorld, tree:var SceneTree) =
       tree.toSFilter[id] = 0
   )
 
-  discard world.events.onDensified(
+  discard ev.onDensified(
     proc (ev:DensifiedEvent) =
       let id = ev.oldSparse.id
       let nid = ev.newDense.wid.uint
@@ -321,7 +322,7 @@ template setUp*(world:var ECSWorld, tree:var SceneTree) =
         tree.toDFilter[nid] = tree.toSFilter[id]
   )
 
-  discard world.events.onSparsified(
+  discard ev.onSparsified(
     proc (ev:SparsifiedEvent) =
       let id = ev.oldDense.wid.uint
       let nid = ev.newSparse.id

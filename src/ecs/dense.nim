@@ -166,7 +166,7 @@ template deleteRow(table: var ECSWorld, i: uint, arch: uint16): uint =
 
   let last = zone.r.e - 1
   let bid = zone.block_idx.uint
-  let lid = makeId(last, bid)
+  let lid = makeId(bid,last)
 
   ## Move last entity into the deleted slot
   if lid != i:
@@ -231,33 +231,33 @@ template changePartition(
   let oldMask = addr oldNode.mask
   let newMask = addr newArch.mask
   let intersection = oldMask and newMask
-  let destBase = (bid shl BLK_SHIFT) or new_id
+  let destBase = makeId(bid, new_id)
 
   if intersection == oldMask:
     # Fast Path: New archetype contains all old components (e.g. addComponent)
     for id in oldNode.componentIds:
       let entry = table.registry.entries[id]
-      entry.overrideValsOp(entry.rawPointer, destBase, i.uint)
+      entry.overrideValsOp(entry.rawPointer, destBase, i.uint32)
   elif intersection == newMask:
     # Fast Path: Old archetype contains all new components (e.g. removeComponent)
     for id in newArch.componentIds:
       let entry = table.registry.entries[id]
-      entry.overrideValsOp(entry.rawPointer, destBase, i.uint)
+      entry.overrideValsOp(entry.rawPointer, destBase, i.uint32)
   else:
     # Slow Path: Partial intersection (unlikely for direct edges)
     for id in oldNode.componentIds:
       if newMask.hasComponent(id):
         let entry = table.registry.entries[id]
-        entry.overrideValsOp(entry.rawPointer, destBase, i.uint)
+        entry.overrideValsOp(entry.rawPointer, destBase, i.uint32)
 
   ## Fix swap-remove in source partition
-  if (i and BLK_MASK).int != last:
+  if (i and ID_MASK).int != last:
     for id in oldNode.componentIds:
       let entry = table.registry.entries[id]
       entry.overrideValsOp(
         entry.rawPointer,
-        i.uint,
-        (blast.uint shl BLK_SHIFT) or last.uint
+        i.uint32,
+        makeId(blast, last)
       )
   
   newZone.r.e += 1
@@ -273,7 +273,7 @@ template changePartition(
   ids: var openArray[DenseHandle],
   oldArch: uint16,
   newArch: ArchetypeNode
-):(seq[uint], seq[uint]) =
+):(seq[uint32], seq[uint32], seq[uint32]) =
   check(ids.len > 0, "Batch change with empty handles")
 
   let oldPartition = table.archGraph.nodes[oldArch].partition
@@ -285,8 +285,8 @@ template changePartition(
   var m = ids.len
   var ofil = oldPartition.fill_index
   var c = 0
-  var toSwap = newSeq[uint](m)
-  var toAdd  = newSeq[uint](m)
+  var toSwap = newSeq[uint32](m)
+  var toAdd  = newSeq[uint32](m)
   
   ## Collect entities to remove from old partition
   while toSwap.len < ids.len:
@@ -298,7 +298,7 @@ template changePartition(
     m -= r.b - r.a + 1
 
     for i in r:
-      toSwap[c] = ((bid shl BLK_SHIFT) or i.uint)
+      toSwap[c] = makeId(bid, i)
       inc c
 
     zone.r.e = r.a
@@ -331,7 +331,7 @@ template changePartition(
     nfil += 1 * (r.b == DEFAULT_BLK_SIZE - 1).int
 
     for i in r:
-      toAdd[c] = ((bid shl BLK_SHIFT) or i.uint)
+      toAdd[c] = makeId(bid, i)
       inc c
 
     m -= r.b - r.a + 1
@@ -341,28 +341,30 @@ template changePartition(
   ## Safety checks before raw pointer operations
   for h in ids:
     check(not h.obj.isNil, "DenseHandle contains nil entity pointer.")
-    check(h.gen == table.generations[h.obj.widx], "DenseHandle contains stale handle.")
+    check(h.gen == table.generations[h.widx], "DenseHandle contains stale handle.")
 
   ## Perform batched component migration (only common components)
   let oldMask = addr table.archGraph.nodes[oldArch].mask
   let commonMask = oldMask and (addr newArch.mask)
   let commonComponents = commonMask.getComponents()
-  for id in commonComponents:
-    let entry = table.registry.entries[id]
-    let ents = addr table.handles
-    entry.overrideValsBatchOp(entry.rawPointer, newArch.id, ents, ids, toSwap, toAdd)
+  var eids = newSeq[uint32](ids.len)
 
   for i in 0..<ids.len:
     var e = ids[i].obj
     let s = toSwap[i]
     let a = toAdd[i]
     
-    table.handles[a.toIdx] = e
+    eids[i] = e.id
+    table.handles[a.toIdx] = ids[i].widx
     table.handles[e.id.toIdx] = table.handles[s.toIdx]
-    table.handles[s.toIdx].id = e.id
+    table.entities[table.handles[s.toIdx]].id = e.id
 
     e.id = a
     e.archetypeId = newArch.id
 
-  (toSwap, toAdd)
+  for id in commonComponents:
+    let entry = table.registry.entries[id]
+    entry.overrideValsBatchOp(entry.rawPointer, eids, toSwap, toAdd)
+
+  (eids, toSwap, toAdd)
 
