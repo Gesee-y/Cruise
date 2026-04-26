@@ -140,29 +140,29 @@ template setBatch*(h: var HiBitSet, idxs: openArray[uint|int]) =
         h.layer2[l2Idx] = h.layer2[l2Idx] or (BitBlock(1) shl (l1Idx and L0_MASK))
         lastL0Idx = l0Idx
 
-proc unsetBatch*(h: var HiBitSet, idxs: openArray[uint|int]) =
+proc unsetBatch*(h: var HiBitSet | ptr HiBitSet, idxs: openArray[uint|int]) =
   ## Unsets multiple bits at once.
   for idx in idxs:
     h.unset(idx.int)
 
-proc get*(h: HiBitSet, idx: int): bool {.inline.} =
+proc get*(h: HiBitSet | ptr HiBitSet, idx: int): bool {.inline.} =
   ## Returns true if the bit at `idx` is set. Time complexity: O(1)
   if idx >= h.len: return false
   let l0Idx  = idx shr L0_SHIFT
   let bitPos = idx and L0_MASK
   (h.layer0[l0Idx] and (BitBlock(1) shl bitPos)) != 0
 
-proc getL0*(h: HiBitSet, idx: int): BitBlock {.inline.} =
+proc getL0*(h: HiBitSet | ptr HiBitSet, idx: int): BitBlock {.inline.} =
   ## Returns the raw block at layer0 index `idx`.
   if idx >= h.layer0.len: return 0
   h.layer0[idx]
 
-proc hasL0*(h: HiBitSet, l0Idx: int): bool {.inline.} =
+proc hasL0*(h: HiBitSet | ptr HiBitSet, l0Idx: int): bool {.inline.} =
   l0Idx < h.layer0.len
 
-proc `[]`*(h: HiBitSet, idx: int): bool {.inline.} = h.get(idx)
+proc `[]`*(h: HiBitSet | ptr HiBitSet, idx: int): bool {.inline.} = h.get(idx)
 
-proc `[]=`*(h: var HiBitSet, idx: int, value: bool) {.inline.} =
+proc `[]=`*(h: var HiBitSet | ptr HiBitSet, idx: int, value: bool) {.inline.} =
   if value: h.set(idx) else: h.unset(idx)
 
 proc clear*(h: var HiBitSet) =
@@ -173,7 +173,7 @@ proc clear*(h: var HiBitSet) =
 
 # ---------- block-level helpers used by set operations ----------
 
-template rebuildL1L2(res: var HiBitSet) =
+template rebuildL1L2(res: var HiBitSet | ptr HiBitSet) =
   ## Recomputes layer1 and layer2 from scratch based on layer0.
   ## Used after bulk operations that set layer0 directly.
   for l1Idx in 0..<res.layer1.len: res.layer1[l1Idx] = 0
@@ -201,7 +201,7 @@ template `and`*(a, b: var HiBitSet): HiBitSet =
   res.rebuildL1L2()
   res
 
-template `andi`*(a: var HiBitSet, b: var HiBitSet) =
+template `andi`*(a: var HiBitSet | ptr HiBitSet, b: var HiBitSet | ptr HiBitSet) =
   ## In-place AND.
   let minL0 = min(a.layer0.len, b.layer0.len)
   a.layer0.setLen(minL0)
@@ -229,7 +229,7 @@ template `or`*(a, b: var HiBitSet): HiBitSet =
   res.rebuildL1L2()
   res
 
-template `ori`*(a: var HiBitSet, b: var HiBitSet) =
+template `ori`*(a: var HiBitSet | ptr HiBitSet, b: var HiBitSet | ptr HiBitSet) =
   ## In-place OR.
   let maxL0 = max(a.layer0.len, b.layer0.len)
   let maxL1 = (maxL0 + L0_BITS - 1) shr L0_SHIFT
@@ -270,7 +270,7 @@ template andNot*(a, b: HiBitSet): HiBitSet =
   res.rebuildL1L2()
   res
 
-template andNoti*(a: var HiBitSet, b: HiBitSet) =
+template andNoti*(a: var HiBitSet | ptr HiBitSet, b: HiBitSet | ptr HiBitSet) =
   ## In-place AND NOT.
   for i in 0..<a.layer0.len:
     let bVal = if i < b.layer0.len: b.layer0[i] else: BitBlock(0)
@@ -296,7 +296,7 @@ template `noti`*(a: var HiBitSet) =
 
 # ---------- iteration ----------
 
-iterator items*(h: HiBitSet): int =
+iterator items*(h: HiBitSet | ptr HiBitSet): int =
   ## Iterates over all set bit indices using trailing-zero-count skipping.
   ##
   ## Example:
@@ -325,7 +325,7 @@ iterator items*(h: HiBitSet): int =
 
       l2Block = l2Block and (l2Block - 1)
 
-iterator blkIter*(h: HiBitSet): int =
+iterator blkIter*(h: HiBitSet | ptr HiBitSet): int =
   ## Iterates over layer0 block indices that contain at least one set bit.
   for l2Idx in 0..<h.layer2.len:
     var l2Block = h.layer2[l2Idx]

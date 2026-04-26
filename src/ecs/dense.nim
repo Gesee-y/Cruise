@@ -75,9 +75,6 @@ macro allocateEntities(
   comps: varargs[typed]
 ): seq[(uint, Range)] =
 
-  #let nblk1 = quote("@") do: allocateNewBlocksM(`@table`, `@n`, res, 0, partition, `@comps`)
-  #let nblk2 = quote("@") do: allocateNewBlocksM(`@table`, m, res, current, partition, `@comps`)
-
   return quote("@") do:
     check(not `@archNode`.isNil, "ArchetypeNode is nil during entity allocation")
     var res = newSeq[(uint, Range)](`@n` div DEFAULT_BLK_SIZE + 1)
