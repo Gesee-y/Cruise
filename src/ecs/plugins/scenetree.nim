@@ -72,6 +72,10 @@ proc toDenseID*(world: ECSWorld, h: QueryFilter | ptr QueryFilter): QueryFilter 
   for i in h.dLayer:
     result.dLayer.set(world.entities[i].id.toIdx)
 
+proc toDenseID*(world: ECSWorld, h: QueryFilter | ptr QueryFilter, dst: var QueryFilter) =
+  for i in h.dLayer:
+    dst.dLayer.set(world.entities[i].id.toIdx)
+
 proc getNode*(tree:SceneTree, id:SceneID): ptr SceneNode =
   case id.kind:
     of rDense:

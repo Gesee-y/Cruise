@@ -211,7 +211,6 @@ proc getCommandBuffer*(w: var ECSWorld, id:int):CommandBuffer =
 proc isAlive*(w:ECSWorld, d:DenseHandle):bool =
   return d.gen == w.generations[d.wid]
 
-
 {.pop.}
 
 template getStableEntity(world:ECSWorld):uint32 =

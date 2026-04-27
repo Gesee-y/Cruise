@@ -81,7 +81,7 @@ suite.add benchmarkWithSetup(
     var velColumn = w.get(Vel)
     var root = w.createEntity()
     var tree = initSceneTree(root)
-    var ents = w.createEntities(ENTITY_COUNT, [0,1])
+    var ents = w.createEntities(ENTITY_COUNT, Pos,Vel)
 
     for e in ents:
       tree.addChild(e)
@@ -104,6 +104,84 @@ suite.add benchmarkWithSetup(
 showDetailed(suite.benchmarks[2])
 
 suite.add benchmarkWithSetup(
+  "tree_get_chldren_dense",
+  Samples,
+  Warmup,
+  (
+    var w = newECSWorld()
+    discard w.registerComponent(Pos)
+    discard w.registerComponent(Vel)
+    var posColumn = w.get(Pos)
+    var velColumn = w.get(Vel)
+    var root = w.createEntity()
+    var tree = initSceneTree(root)
+    var ents = w.createEntities(ENTITY_COUNT, Pos,Vel)
+
+    for e in ents:
+      tree.addChild(e)
+
+    var sig = w.query(Pos and Vel)
+  ),
+  (
+    var f = w.toDenseID(tree.getChildren(root)[])
+    #sig.addFilter(f)
+  )
+)
+showDetailed(suite.benchmarks[3])
+
+suite.add benchmarkWithSetup(
+  "tree_get_chldren_dense_inplace",
+  Samples,
+  Warmup,
+  (
+    var w = newECSWorld()
+    discard w.registerComponent(Pos)
+    discard w.registerComponent(Vel)
+    var posColumn = w.get(Pos)
+    var velColumn = w.get(Vel)
+    var root = w.createEntity()
+    var tree = initSceneTree(root)
+    var ents = w.createEntities(ENTITY_COUNT, Pos,Vel)
+
+    for e in ents:
+      tree.addChild(e)
+
+    var sig = w.query(Pos and Vel)
+    var inpf = newQueryFilter(ENTITY_COUNT)
+  ),
+  (
+    toDenseID(w, tree.getChildren(root), inpf)
+  )
+)
+showDetailed(suite.benchmarks[4])
+
+
+suite.add benchmarkWithSetup(
+  "tree_get_chldren_sparse",
+  Samples,
+  Warmup,
+  (
+    var w = newECSWorld()
+    discard w.registerComponent(Pos)
+    discard w.registerComponent(Vel)
+    var posColumn = w.get(Pos)
+    var velColumn = w.get(Vel)
+    var root = w.createEntity()
+    var tree = initSceneTree(root)
+    var ents = w.createEntities(ENTITY_COUNT, Pos,Vel)
+
+    for e in ents:
+      tree.addChild(e)
+
+    var sig = w.query(Pos and Vel)
+  ),
+  (
+    sig.addFilter(tree.getChildren(root)[])
+  )
+)
+showDetailed(suite.benchmarks[5])
+
+suite.add benchmarkWithSetup(
   "tree_iter_sparse",
   Samples,
   Warmup,
@@ -115,7 +193,7 @@ suite.add benchmarkWithSetup(
     var velColumn = w.get(Vel)
     var root = w.createEntity()
     var tree = initSceneTree(root)
-    var ents = w.createSparseEntities(ENTITY_COUNT, [0,1])
+    var ents = w.createSparseEntities(ENTITY_COUNT, Pos, Vel)
     
     for e in ents:
       tree.addChild(e)
@@ -137,4 +215,4 @@ suite.add benchmarkWithSetup(
         posy[i] += vely[i]
   )
 )
-showDetailed(suite.benchmarks[3])
+showDetailed(suite.benchmarks[6])

@@ -248,7 +248,7 @@ macro toObjectMod(T: typedesc, c: untyped, idx: untyped, v: untyped) =
 
   return quote("@") do:
     `@res`
-
+    
 macro toObjectCopy(T: typedesc, cDst: untyped, idxDst: untyped, cSrc: untyped,
     idxSrc: untyped) =
   ## Override SoA values using another SoA-backed value directly field-by-field.
@@ -278,7 +278,7 @@ macro toObjectCopy(T: typedesc, cDst: untyped, idxDst: untyped, cSrc: untyped,
   return quote("@") do:
     `@res`
 
-template getDenseMeta(i):untyped =
+template getDenseMeta*(i):untyped =
   (i shr ID_SHIFT, i and ID_MASK)
 
 template toIdx*(i: untyped): untyped =

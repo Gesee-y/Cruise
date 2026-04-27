@@ -53,14 +53,14 @@ type
 ################################################################### MASK ITERATOR ##################################################################
 ####################################################################################################################################################
 
-proc newQueryFilter*(): QueryFilter =
+proc newQueryFilter*(size=4096): QueryFilter =
   var q: QueryFilter
   when HibitsetType is HiBitSet:
-    q.dLayer = newHiBitSet()
-    q.sLayer = newHiBitSet()
+    q.dLayer = newHiBitSet(size)
+    q.sLayer = newHiBitSet(size)
   else:
-    q.dLayer = newSparseHiBitSet()
-    q.sLayer = newSparseHiBitSet()
+    q.dLayer = newSparseHiBitSet(size)
+    q.sLayer = newSparseHiBitSet(size)
   return q
 
 proc `and`*(a, b: var QueryFilter): QueryFilter =
