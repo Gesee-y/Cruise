@@ -12,7 +12,7 @@ const
 ## It contains the raw IDs required to locate the entity's component data in memory.
 type
   Entity* = object
-    id:uint32             ## The packed entity ID. This usually combines the Block ID and the local index
+    id*:uint32             ## The packed entity ID. This usually combines the Block ID and the local index
     archetypeId* {.align: 4.}:uint16  ## Identifies which Archetype (table of components) this entity currently belongs to.
 
   ## A type class (concept-like alias) encompassing various raw Entity forms.

@@ -58,7 +58,8 @@ proc len*(h: HiBitSet): int {.inline.} =
 
 # ---------- internal growth helper ----------
 
-template ensureCapacity(h: var HiBitSet, idx: int) =
+template ensureCapacity(h: var HiBitSet, i: untyped) =
+  let idx = i.int
   let neededL0 = (idx shr L0_SHIFT) + 1
   if neededL0 > h.layer0.len:
     h.layer0.setLen(neededL0)
@@ -71,9 +72,10 @@ template ensureCapacity(h: var HiBitSet, idx: int) =
 
 # ---------- bit manipulation ----------
 
-template set*(h: var HiBitSet, idx: int) =
+template set*(h: var HiBitSet, i: untyped) =
   ## Sets the bit at `idx` to 1. Grows automatically.
   ## Time complexity: O(1)
+  let idx = i.int
   h.ensureCapacity(idx)
   let l0Idx  = idx   shr L0_SHIFT
   let bitPos = idx   and L0_MASK

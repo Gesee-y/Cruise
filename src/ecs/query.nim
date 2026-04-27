@@ -201,7 +201,7 @@ proc buildQuerySignature(world: ECSWorld, components: seq[QueryComponent]): Quer
         # If you need the entity to exist to be checked for modification:
         result.includeMask[layer] = result.includeMask[layer] or (1.uint shl bitPos)
 
-proc addFilter*(qs: var QuerySignature, qf:var QueryFilter) =
+template addFilter*(qs: var QuerySignature, qf:QueryFilter) =
   ## Adds a new filter to the query
   qs.filters.add(addr qf)
 

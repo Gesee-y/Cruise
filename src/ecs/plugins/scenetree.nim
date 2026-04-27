@@ -67,26 +67,26 @@ proc sGetNode(tree:SceneTree, id:uint): ptr SceneNode =
 
   return nil
 
-proc getNode(tree:SceneTree, id:SceneID): ptr SceneNode =
+proc toDenseID*(world: ECSWorld, h: QueryFilter | ptr QueryFilter): QueryFilter =
+  result = newQueryFilter()
+  for i in h.dLayer:
+    result.dLayer.set(world.entities[i].id.toIdx)
+
+proc getNode*(tree:SceneTree, id:SceneID): ptr SceneNode =
   case id.kind:
     of rDense:
       return tree.dGetNode(id.id)
     of rSparse:
       return tree.sGetNode(id.id)
 
-proc getParent(tree:SceneTree, n:SomeSceneNode):ptr SceneNode =
+proc getParent*(tree:SceneTree, n:SomeSceneNode):ptr SceneNode =
   if n.parent == -1: return nil
   return addr tree.nodes[n.parent]
 
-proc getChildren(n:SomeSceneNode): ptr QueryFilter =
+proc getChildren*(n:SomeSceneNode): ptr QueryFilter =
   return addr n.children
 
-proc toDenseID(world: ECSWorld, h: QueryFilter | ptr QueryFilter): QueryFilter =
-  result = newQueryFilter()
-  for i in h:
-    result.dLayer.set(world.entities[i].id.toIdx)
-
-proc unsetChild(par:var SceneNode|ptr SceneNode, child:SomeSceneNode) =
+proc unsetChild*(par:var SceneNode|ptr SceneNode, child:SomeSceneNode) =
   case child.id.kind:
     of rDense:
       par.children.dLayer.unset(child.id.id.int)

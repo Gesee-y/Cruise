@@ -106,7 +106,7 @@ type
 
   ECSWorld* = ref object
     registry:ComponentRegistry
-    entities:seq[Entity]
+    entities*:seq[Entity]
     commandBufs:seq[CommandBuffer]
     evmanager: pointer
     handles*:seq[uint32]
@@ -171,9 +171,9 @@ proc unsafeGetResource*[T](w: ECSWorld): T =
 proc isEmpty(t:TableRange | ptr TableRange):bool = t.r.s == t.r.e
 proc isFull(t:TableRange | ptr TableRange):bool = t.r.e - t.r.s == DEFAULT_BLK_SIZE
 
-proc getDHandle*(w: ECSWorld, i:int | uint): DenseHandle = DenseHandle(obj: addr w.entities[i], gen: w.generations[i])
-proc getDHandleFromID*(w: ECSWorld, i:int | uint): DenseHandle = 
-  var e = w.handles[i.toIdx].widx
+template getDHandle*(w: ECSWorld, i:untyped): DenseHandle = DenseHandle(widx: i.uint32, gen: w.generations[i], world: w)
+template getDHandleFromID*(w: ECSWorld, i:untyped): DenseHandle = 
+  var e = w.handles[i.toIdx]
   w.getDHandle(e)
 
 proc getComponentId*(world:ECSWorld, t:typedesc):int =

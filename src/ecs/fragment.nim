@@ -281,7 +281,7 @@ macro toObjectCopy(T: typedesc, cDst: untyped, idxDst: untyped, cSrc: untyped,
 template getDenseMeta(i):untyped =
   (i shr ID_SHIFT, i and ID_MASK)
 
-template toIdx(i: uint): untyped =
+template toIdx*(i: untyped): untyped =
   ## Convert a packed (block,index) ID into a linear index.
   let (bid, id) = i.getDenseMeta
   id+bid*DEFAULT_BLK_SIZE
