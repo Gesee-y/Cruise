@@ -81,6 +81,11 @@ proc getParent(tree:SceneTree, n:SomeSceneNode):ptr SceneNode =
 proc getChildren(n:SomeSceneNode): ptr QueryFilter =
   return addr n.children
 
+proc toDenseID(world: ECSWorld, h: QueryFilter | ptr QueryFilter): QueryFilter =
+  result = newQueryFilter()
+  for i in h:
+    result.dLayer.set(world.entities[i].id.toIdx)
+
 proc unsetChild(par:var SceneNode|ptr SceneNode, child:SomeSceneNode) =
   case child.id.kind:
     of rDense:

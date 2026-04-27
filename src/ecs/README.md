@@ -127,7 +127,7 @@ tree.addChild(entity1)
 tree.addChild(entity1, entity2)
 
 var sig = world.query(Position and Velocity)
-sig.addFilter(tree.getChildren(entity1))
+sig.addFilter(tree.getChildren(entity1).toDenseIdx)
 for (bid, r) in world.denseQuery(sig):
   # Modify the children
 ```
