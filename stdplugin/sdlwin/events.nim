@@ -180,7 +180,7 @@ proc detectModifiers(win: SDL3Window): tuple[mkey, pkey: KeyInput] =
 # handleWindowEvent
 # ---------------------------------------------------------------------------
 
-method handleWindowEvent*(win: SDL3Window, ev: SDL_WindowEvent) =
+method handleWindowEvent*(win: SDL3Window, ev: SDL_WindowEvent) {.base.} =
   ## Translate an SDL3 SDL_WindowEvent into a WindowEvent and emit
   ## NOTIF_WINDOW_EVENT.  Also keeps SDL3Window metadata in sync.
   ##

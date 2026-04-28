@@ -114,10 +114,10 @@ export NOTIF_ERROR, NOTIF_WARNING, NOTIF_INFO
 
 method initWindow*(app: CApp, win: CWindow, title: string = "untitled", 
                    posX: int = 0, posY: int = 0,
-                   width: int = 200, height: int= 300, args: varargs[string]): CWindow {.base.} =
+                   width: int = 200, height: int= 300, args: varargs[string]) {.base.} =
   ## Create and register a new window in the app.
   ## Implementations must emit NOTIF_WINDOW_CREATED on success.
-  NOTIF_WINDOW_CREATED.emit((result,))
+  NOTIF_WINDOW_CREATED.emit((win,))
 
 method resizeWindow*(win: CWindow, width, height: int) {.base.} =
   ## Resize the window to (width × height).
