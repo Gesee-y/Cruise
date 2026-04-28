@@ -25,7 +25,8 @@ proc addResource*[T](manager: var PResourceManager, obj: T): int =
   let id = manager.resources.len
   manager.resources.add(newPluginResource(obj))
   manager.dirty = true
-  if $T notin manager.toId:
+  
+  if not manager.toId.hasKey($T):
     manager.toId[$T] = newSeq[int]()
 
   manager.toId[$T].add(id)

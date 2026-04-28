@@ -224,6 +224,7 @@ proc initRenderGraph*(
     onTransition: TransitionCallback = nil,
     onAlias:      AliasCallback      = nil
 ): RenderGraph =
+  result.plugin = Plugin()
   result.registry     = initResourceRegistry()
   result.resTypeId    = result.registry.registerType(RenderResource)
   result.cb           = initCommandBuffer()
@@ -247,7 +248,7 @@ proc addRenderResource*(
   ## Returns the PResourceManager id (used in addRenderPass read/write lists).
   let handle = rg.registry.create(rg.resTypeId, res)
   # Store the opaque handle as the resource so the access DAG can track it.
-  result = rg.plugin.res_manager.addResource(handle)
+  result = rg.plugin.res_manager.addResource(cast[ResourceHandle](handle))
 
 proc setBackbuffer*(rg: var RenderGraph, resourceId: int) =
   rg.backbufferId = resourceId

@@ -16,8 +16,8 @@ type
   PluginNode* = ref object of RootObj
     id*:int
     enabled*,mainthread*:bool
-    status*:PluginStatus
-    lasterr*:CatchableError
+    status:PluginStatus
+    lasterr:CatchableError
     deps:Table[string, PluginNode]
     res:Table[string, pointer]
     plugin:pointer
