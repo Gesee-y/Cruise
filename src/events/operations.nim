@@ -153,7 +153,7 @@ Example:
 notifier notif(x: int)
 notif.open()
     
-# In one thread:
+# In some thread:
 notif.wait()  # Blocks until signal
     
 # In another thread:
@@ -199,7 +199,6 @@ Only the next call to emit will execute the emission
 ]##
 proc emitDefer*[T,L](n:var Notifier[T,L], args:T) =
   addcallback(n, args)
-
   n.cond.signal()
 
 ##[

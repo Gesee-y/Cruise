@@ -8,7 +8,7 @@ suite "Reactive Operators Test Suite":
   # -----------------------------
   test "map: transforms emitted values":
     notifier src(x:int, y:int)
-    map(src, proc(x:int,y:int):int = x + y, int) 
+    var (mapper, _) = map(src, proc(x:int,y:int):int = x + y, int) 
 
     var result = 0
     mapper.connect(proc(r:int) = result = r)
@@ -25,7 +25,7 @@ suite "Reactive Operators Test Suite":
   # -----------------------------
   test "filter: only passes values that match condition":
     notifier src(x:int, y:int)
-    filter(src, proc(x:int,y:int):bool = x > y)
+    var (filt, _) = filter(src, proc(x:int,y:int):bool = x > y)
 
     var count = 0
     filt.connect(proc(v:int,t:int) = count.inc)
@@ -42,7 +42,7 @@ suite "Reactive Operators Test Suite":
   # -----------------------------
   test "fold: accumulates values over time":
     notifier src(x:int, y:int)
-    fold(src, 0, proc(acc:tuple[acc:int], x:(int,int)):int = acc[0] + x[0])
+    var (fol, _) = fold(src, 0, proc(acc:tuple[acc:int], x:(int,int)):int = acc[0] + x[0])
 
     var finalAcc = 0
     fol.connect(proc(v:int) = finalAcc = v)
@@ -62,7 +62,7 @@ suite "Reactive Operators Test Suite":
     notifier b(x:int)
     enable_value(a)
     enable_value(b)
-    merge(a, b)
+    var (mer, _, _) = merge(a, b)
 
     var seqRes: seq[int] = @[]
     mer.connect(proc(a:tuple[x:int], b:tuple[x:int]) = seqRes.add(a[0]+b[0]))
@@ -82,7 +82,7 @@ suite "Reactive Operators Test Suite":
     notifier b(x:int)
     enable_value(a)
     enable_value(b)
-    zip(a, b, proc(x:tuple[x:int],y:tuple[x:int]):int = x[0] * y[0], int)
+    var (mer, _, _) = zip(a, b, proc(x:tuple[x:int],y:tuple[x:int]):int = x[0] * y[0], int)
 
     var res: seq[int] = @[]
     mer.connect(proc(v:int) = res.add(v))

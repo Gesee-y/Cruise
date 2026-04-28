@@ -4,10 +4,7 @@
 #include "../../src/events/events.nim"
 
 import unittest
-import asyncdispatch
-import threadpool
 import ../../src/events/events 
-import macros
 import times
 import os
 

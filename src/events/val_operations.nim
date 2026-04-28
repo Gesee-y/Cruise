@@ -33,16 +33,16 @@ numbers.emit((value: 5))  # Prints "Doubled: 10"
 ```
 ]##
 template map*[T,L](n1:Notifier[T,L], fn, R):untyped =
+  block:
+    notifier mapper(ret:R)
+    enable_value(mapper)
+    anoFunc(f, T, quote do:
+      destructuredCallRet(val,fn, allarg)
+      let res = (ret:val)
+      mapper.emit(res))
   
-  notifier mapper(ret:R)
-  enable_value(mapper)
-  anoFunc(f, T, quote do:
-    destructuredCallRet(val,fn, allarg)
-    let res = (ret:val)
-    mapper.emit(res))
-  
-  n1.connect(f)
-  (mapper, f)
+    n1.connect(f)
+    (mapper, f)
 
 ##[
 Filter emitted values based on a predicate function.
@@ -75,16 +75,17 @@ numbers.emit((value: 5))  # Nothing printed
 ```
 ]##
 template filter*[T,L](src: Notifier[T,L], fn:untyped):untyped =
-  var filt = newNotifier[T,L]()
-  enable_value(filt)
+  block:
+    var filt = newNotifier[T,L]()
+    enable_value(filt)
 
-  anoFunc(f, T, quote do:
-    destructuredCallRet(condition,fn, allarg)
-    if condition:
-      filt.emit(allarg)
-  )
-  src.connect(f)
-  (filt, f)
+    anoFunc(f, T, quote do:
+      destructuredCallRet(condition,fn, allarg)
+      if condition:
+        filt.emit(allarg)
+    )
+    src.connect(f)
+    (filt, f)
 
 ##[
 Accumulate values from a notifier using a folding function.
@@ -120,16 +121,17 @@ numbers.emit((value: 2))   # Prints "Current sum: 10"
 ```
 ]##
 template fold*[T,L,A](src: Notifier[T,L], init: A, fn): untyped =
-  notifier fol(acc:A)
-  enable_value(fol)
-  var acc = init
-  anoFunc(f, T, quote do:
-    doAssert fol.hasValue, "Error: Fold notifier should be in Value Mode."
-    destructuredCallRet(acc, fn, (fol[0], allarg))
-    fol.emit((acc:acc))
-  )
-  src.connect(f)
-  (fol, f)
+  block:
+    notifier fol(acc:A)
+    enable_value(fol)
+    var acc = init
+    anoFunc(f, T, quote do:
+      doAssert fol.hasValue, "Error: Fold notifier should be in Value Mode."
+      destructuredCallRet(acc, fn, (fol[0], allarg))
+      fol.emit((acc:acc))
+    )
+    src.connect(f)
+    (fol, f)
 
 ##[
 Merge two notifiers into one that emits both values as a pair.
@@ -164,20 +166,21 @@ mouseY.emit((y: 20))  # Prints "Position: (10, 20)"
 ]##
 template merge*[TA,LA,TB,LB](a: Notifier[TA,LA], b: Notifier[TB,LB]): untyped =
   doAssert a.hasValue and b.hasValue, "Error: Both notifier to be merged together should be in Value Mode."
-  notifier mer(ax:TA, bx:TB)
-  enable_value(mer)
-  anoFunc(fa, TA, quote do:
-    doAssert a.hasValue and b.hasValue, "Error: Both notifier in merge should be in Value Mode."
-    mer.emit((a[0], b[0]))
-  )
-  anoFunc(fb, TB, quote do:
-    doAssert a.hasValue and b.hasValue, "Error: Both notifier in merge should be in Value Mode."
-    mer.emit((a[0], b[0]))
-  )
-  a.connect(fa)
-  b.connect(fb)
+  block:
+    notifier mer(ax:TA, bx:TB)
+    enable_value(mer)
+    anoFunc(fa, TA, quote do:
+      doAssert a.hasValue and b.hasValue, "Error: Both notifier in merge should be in Value Mode."
+      mer.emit((a[0], b[0]))
+    )
+    anoFunc(fb, TB, quote do:
+      doAssert a.hasValue and b.hasValue, "Error: Both notifier in merge should be in Value Mode."
+      mer.emit((a[0], b[0]))
+    )
+    a.connect(fa)
+    b.connect(fb)
 
-  (mer, fa, fb)
+    (mer, fa, fb)
 
 ##[
 Combine two notifiers using a custom function.
@@ -218,17 +221,18 @@ width.emit((w: 20))   # Prints "Area: 100"
 ]##
 template zip*[TA,LA,TB,LB](a: Notifier[TA,LA], b: Notifier[TB,LB], fn, R): untyped =
   doAssert a.hasValue and b.hasValue, "Error: Both notifier to make a zip should be in Value Mode."
-  notifier mer(ret:R)
-  enable_value(mer)
-  anoFunc(fa, TA, quote do:
-    doAssert a.hasValue and b.hasValue, "Error: Both notifier in zip should be in Value Mode."
-    mer.emit((ret:fn(a[0], b[0])))
-  )
-  anoFunc(fb, TB, quote do:
-    doAssert a.hasValue and b.hasValue, "Error: Both notifier in zip should be in Value Mode."
-    mer.emit((ret:fn(a[0], b[0])))
-  )
-  a.connect(fa)
-  b.connect(fb)
+  block:
+    notifier mer(ret:R)
+    enable_value(mer)
+    anoFunc(fa, TA, quote do:
+      doAssert a.hasValue and b.hasValue, "Error: Both notifier in zip should be in Value Mode."
+      mer.emit((ret:fn(a[0], b[0])))
+    )
+    anoFunc(fb, TB, quote do:
+      doAssert a.hasValue and b.hasValue, "Error: Both notifier in zip should be in Value Mode."
+      mer.emit((ret:fn(a[0], b[0])))
+    )
+    a.connect(fa)
+    b.connect(fb)
 
-  (mer, fa, fb)
+    (mer, fa, fb)

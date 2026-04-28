@@ -255,7 +255,7 @@ n.ignoreEqValue(true)
 ```
 ]##
 proc ignoreEqValue*[T,L](n: var Notifier[T,L], ignore_eqv=true) =
-  doAssert n.state.modekind == nValue
+  doAssert n.state.mode.kind == nValue
   n.state.mode.ignore_eqvalue = ignore_eqv
 
 ##[
