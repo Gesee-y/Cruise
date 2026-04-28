@@ -14,12 +14,12 @@
 ##     col 2 : m[8..11]
 ##     col 3 : m[12..15]
 ##
-## All matrix × vector multiplies accept ANY type satisfying Vec2/Vec3/Vec4 —
+## All matrix × vector multiplies accept ANY type satisfying CVec2/CVec3/CVec4 —
 ## the result is returned as the same concrete type T.
 ##
 
 # This file is meant to be imported alongside LA.nim which defines
-# MFloat, Vec2, Vec3, Vec4 and all vector generics.
+# MFloat, CVec2, CVec3, CVec4 and all Cvector generics.
 
 import math
 
@@ -114,8 +114,8 @@ func mat2*(c0x,c0y, c1x,c1y: MFloat): Mat2 {.inline.} =
   ## Build Mat2 from 4 scalars (column-major order).
   Mat2(m: [c0x,c0y, c1x,c1y])
 
-func mat2*[V: Vec2](col0, col1: V): Mat2 {.inline.} =
-  ## Build Mat2 from two Vec2 columns. Accepts any Vec2-compatible type.
+func mat2*[V: CVec2](col0, col1: V): Mat2 {.inline.} =
+  ## Build Mat2 from two CVec2 columns. Accepts any CVec2-compatible type.
   Mat2(m: [col0.x, col0.y,
            col1.x, col1.y])
 
@@ -123,8 +123,8 @@ func mat3*(c0x,c0y,c0z, c1x,c1y,c1z, c2x,c2y,c2z: MFloat): Mat3 {.inline.} =
   ## Build Mat3 from 9 scalars (column-major order).
   Mat3(m: [c0x,c0y,c0z, c1x,c1y,c1z, c2x,c2y,c2z])
 
-func mat3*[V: Vec3](col0, col1, col2: V): Mat3 {.inline.} =
-  ## Build Mat3 from three Vec3 columns. Accepts any Vec3-compatible type.
+func mat3*[V: CVec3](col0, col1, col2: V): Mat3 {.inline.} =
+  ## Build Mat3 from three CVec3 columns. Accepts any CVec3-compatible type.
   Mat3(m: [col0.x, col0.y, col0.z,
            col1.x, col1.y, col1.z,
            col2.x, col2.y, col2.z])
@@ -139,8 +139,8 @@ func mat4*(c0x,c0y,c0z,c0w,
            c2x,c2y,c2z,c2w,
            c3x,c3y,c3z,c3w])
 
-func mat4*[V: Vec4](col0, col1, col2, col3: V): Mat4 {.inline.} =
-  ## Build Mat4 from four Vec4 columns. Accepts any Vec4-compatible type.
+func mat4*[V: CVec4](col0, col1, col2, col3: V): Mat4 {.inline.} =
+  ## Build Mat4 from four CVec4 columns. Accepts any CVec4-compatible type.
   Mat4(m: [col0.x, col0.y, col0.z, col0.w,
            col1.x, col1.y, col1.z, col1.w,
            col2.x, col2.y, col2.z, col2.w,
@@ -168,31 +168,31 @@ func mat4*(upper: Mat3): Mat4 {.inline.} =
 func col0*(m: Mat2): (MFloat,MFloat) {.inline.} = (m.m[0], m.m[1])
 func col1*(m: Mat2): (MFloat,MFloat) {.inline.} = (m.m[2], m.m[3])
 
-func col*[V: Vec3](mat: Mat3, c: int, outType: typedesc[V]): V {.inline.} =
-  ## Extract column c as any Vec3-compatible type.
+func col*[V: CVec3](mat: Mat3, c: int, outType: typedesc[V]): V {.inline.} =
+  ## Extract column c as any CVec3-compatible type.
   let base = c * 3
   V(x: mat.m[base], y: mat.m[base+1], z: mat.m[base+2])
 
-func col*[V: Vec4](mat: Mat4, c: int, outType: typedesc[V]): V {.inline.} =
-  ## Extract column c as any Vec4-compatible type.
+func col*[V: CVec4](mat: Mat4, c: int, outType: typedesc[V]): V {.inline.} =
+  ## Extract column c as any CVec4-compatible type.
   let base = c * 4
   V(x: mat.m[base], y: mat.m[base+1], z: mat.m[base+2], w: mat.m[base+3])
 
-func row*[V: Vec3](mat: Mat3, r: int, outType: typedesc[V]): V {.inline.} =
-  ## Extract row r as any Vec3-compatible type.
+func row*[V: CVec3](mat: Mat3, r: int, outType: typedesc[V]): V {.inline.} =
+  ## Extract row r as any CVec3-compatible type.
   V(x: mat.m[r], y: mat.m[3+r], z: mat.m[6+r])
 
-func row*[V: Vec4](mat: Mat4, r: int, outType: typedesc[V]): V {.inline.} =
-  ## Extract row r as any Vec4-compatible type.
+func row*[V: CVec4](mat: Mat4, r: int, outType: typedesc[V]): V {.inline.} =
+  ## Extract row r as any CVec4-compatible type.
   V(x: mat.m[r], y: mat.m[4+r], z: mat.m[8+r], w: mat.m[12+r])
 
-func setCol*[V: Vec3](mat: var Mat3, c: int, v: V) {.inline.} =
-  ## Set column c from any Vec3-compatible value.
+func setCol*[V: CVec3](mat: var Mat3, c: int, v: V) {.inline.} =
+  ## Set column c from any CVec3-compatible value.
   let base = c * 3
   mat.m[base] = v.x; mat.m[base+1] = v.y; mat.m[base+2] = v.z
 
-func setCol*[V: Vec4](mat: var Mat4, c: int, v: V) {.inline.} =
-  ## Set column c from any Vec4-compatible value.
+func setCol*[V: CVec4](mat: var Mat4, c: int, v: V) {.inline.} =
+  ## Set column c from any CVec4-compatible value.
   let base = c * 4
   mat.m[base] = v.x; mat.m[base+1] = v.y; mat.m[base+2] = v.z; mat.m[base+3] = v.w
 
@@ -275,7 +275,7 @@ func `-`*(a, b: Mat3): Mat3 {.inline.} =
 #############################################################################################################################
 ################################################## MATRIX × MATRIX ##########################################################
 #############################################################################################################################
-# Fully unrolled — no loop overhead, compiler can schedule / vectorise freely.
+# Fully unrolled — no loop overhead, compiler can schedule / Cvectorise freely.
 
 func `*`*(a, b: Mat2): Mat2 {.inline.} =
   ## Mat2 × Mat2 — 8 multiplies, 4 adds.
@@ -398,52 +398,52 @@ func `*=`*(a: var Mat3, b: Mat3) {.inline.} = a = a * b
 
 
 #############################################################################################################################
-################################################## MATRIX × VECTOR ##########################################################
+################################################## MATRIX × CVECTOR ##########################################################
 #############################################################################################################################
-# Generic: works with ANY type satisfying Vec2/Vec3/Vec4.
+# Generic: works with ANY type satisfying CVec2/CVec3/CVec4.
 # Returns the same concrete type V so no casting is needed by the caller.
 
-func `*`*[V: Vec2](mat: Mat2, v: V): V {.inline.} =
-  ## Mat2 × Vec2 — transform a 2D vector.
-  ## Works with any type satisfying the Vec2 concept.
+func `*`*[V: CVec2](mat: Mat2, v: V): V {.inline.} =
+  ## Mat2 × CVec2 — transform a 2D Cvector.
+  ## Works with any type satisfying the CVec2 concept.
   V(x: mat.m[0]*v.x + mat.m[2]*v.y,
     y: mat.m[1]*v.x + mat.m[3]*v.y)
 
-func `*`*[V: Vec3](mat: Mat3, v: V): V {.inline.} =
-  ## Mat3 × Vec3 — transform a 3D vector (no translation).
-  ## Works with any type satisfying the Vec3 concept.
+func `*`*[V: CVec3](mat: Mat3, v: V): V {.inline.} =
+  ## Mat3 × CVec3 — transform a 3D Cvector (no translation).
+  ## Works with any type satisfying the CVec3 concept.
   V(x: mat.m[0]*v.x + mat.m[3]*v.y + mat.m[6]*v.z,
     y: mat.m[1]*v.x + mat.m[4]*v.y + mat.m[7]*v.z,
     z: mat.m[2]*v.x + mat.m[5]*v.y + mat.m[8]*v.z)
 
-func `*`*[V: Vec4](mat: Mat4, v: V): V {.inline.} =
-  ## Mat4 × Vec4 — full homogeneous transform.
-  ## Works with any type satisfying the Vec4 concept.
+func `*`*[V: CVec4](mat: Mat4, v: V): V {.inline.} =
+  ## Mat4 × CVec4 — full homogeneous transform.
+  ## Works with any type satisfying the CVec4 concept.
   V(x: mat.m[0]*v.x + mat.m[4]*v.y + mat.m[8]*v.z  + mat.m[12]*v.w,
     y: mat.m[1]*v.x + mat.m[5]*v.y + mat.m[9]*v.z  + mat.m[13]*v.w,
     z: mat.m[2]*v.x + mat.m[6]*v.y + mat.m[10]*v.z + mat.m[14]*v.w,
     w: mat.m[3]*v.x + mat.m[7]*v.y + mat.m[11]*v.z + mat.m[15]*v.w)
 
-func transformPoint*[V: Vec3](mat: Mat4, v: V): V {.inline.} =
+func transformPoint*[V: CVec3](mat: Mat4, v: V): V {.inline.} =
   ## Transform a 3D POINT by a Mat4 (w=1 implied — includes translation).
-  ## Equivalent to mat * vec4(v, 1.0) then dropping w.
-  ## Works with any Vec3-compatible type.
+  ## Equivalent to mat * Cvec4(v, 1.0) then dropping w.
+  ## Works with any CVec3-compatible type.
   V(x: mat.m[0]*v.x + mat.m[4]*v.y + mat.m[8]*v.z  + mat.m[12],
     y: mat.m[1]*v.x + mat.m[5]*v.y + mat.m[9]*v.z  + mat.m[13],
     z: mat.m[2]*v.x + mat.m[6]*v.y + mat.m[10]*v.z + mat.m[14])
 
-func transformDir*[V: Vec3](mat: Mat4, v: V): V {.inline.} =
+func transformDir*[V: CVec3](mat: Mat4, v: V): V {.inline.} =
   ## Transform a 3D DIRECTION by a Mat4 (w=0 implied — no translation).
   ## Use for normals, velocities, axes — anything that must not shift.
-  ## Works with any Vec3-compatible type.
+  ## Works with any CVec3-compatible type.
   V(x: mat.m[0]*v.x + mat.m[4]*v.y + mat.m[8]*v.z,
     y: mat.m[1]*v.x + mat.m[5]*v.y + mat.m[9]*v.z,
     z: mat.m[2]*v.x + mat.m[6]*v.y + mat.m[10]*v.z)
 
-func transformNormal*[V: Vec3](invTransposeMat: Mat4, n: V): V {.inline.} =
+func transformNormal*[V: CVec3](invTransposeMat: Mat4, n: V): V {.inline.} =
   ## Transform a surface normal correctly using the inverse-transpose matrix.
   ## Pass mat.inverseTranspose() as invTransposeMat.
-  ## Works with any Vec3-compatible type.
+  ## Works with any CVec3-compatible type.
   V(x: invTransposeMat.m[0]*n.x + invTransposeMat.m[4]*n.y + invTransposeMat.m[8]*n.z,
     y: invTransposeMat.m[1]*n.x + invTransposeMat.m[5]*n.y + invTransposeMat.m[9]*n.z,
     z: invTransposeMat.m[2]*n.x + invTransposeMat.m[6]*n.y + invTransposeMat.m[10]*n.z)
@@ -645,15 +645,15 @@ func inverseTRS*(mat: Mat4): Mat4 {.inline.} =
 ################################################## TRANSFORM CONSTRUCTORS ###################################################
 #############################################################################################################################
 
-func mat4Translate*[V: Vec3](t: V): Mat4 {.inline.} =
-  ## Translation matrix from any Vec3-compatible type.
+func mat4Translate*[V: CVec3](t: V): Mat4 {.inline.} =
+  ## Translation matrix from any CVec3-compatible type.
   Mat4(m:[1f,  0f,  0f,  0f,
           0f,  1f,  0f,  0f,
           0f,  0f,  1f,  0f,
           t.x, t.y, t.z, 1f])
 
-func mat4Scale*[V: Vec3](s: V): Mat4 {.inline.} =
-  ## Non-uniform scale matrix from any Vec3-compatible type.
+func mat4Scale*[V: CVec3](s: V): Mat4 {.inline.} =
+  ## Non-uniform scale matrix from any CVec3-compatible type.
   Mat4(m:[s.x, 0f,  0f,  0f,
           0f,  s.y, 0f,  0f,
           0f,  0f,  s.z, 0f,
@@ -690,10 +690,10 @@ func mat4RotateZ*(angle: MFloat): Mat4 {.inline.} =
           0f, 0f, 1f, 0f,
           0f, 0f, 0f, 1f])
 
-func mat4Rotate*[V: Vec3](axis: V, angle: MFloat): Mat4 =
+func mat4Rotate*[V: CVec3](axis: V, angle: MFloat): Mat4 =
   ## Rotation matrix around an arbitrary unit axis by `angle` radians.
   ## Uses the Rodrigues / angle-axis formula.
-  ## `axis` can be any Vec3-compatible type and must be normalized.
+  ## `axis` can be any CVec3-compatible type and must be normalized.
   let
     c  = cos(angle)
     s  = sin(angle)
@@ -710,9 +710,9 @@ func mat4Rotate*[V: Vec3](axis: V, angle: MFloat): Mat4 =
     0f,       0f,       0f,        1f
   ])
 
-func mat4LookAt*[V: Vec3](eye, center, up: V): Mat4 =
+func mat4LookAt*[V: CVec3](eye, center, up: V): Mat4 =
   ## View matrix looking from `eye` towards `center` with `up` defining the
-  ## world up direction. All arguments can be any Vec3-compatible type.
+  ## world up direction. All arguments can be any CVec3-compatible type.
   ## Right-handed convention (same as OpenGL gluLookAt).
   let
     # forward = normalize(center - eye)
@@ -786,9 +786,9 @@ func mat4Ortho*(left, right, bottom, top, zNear, zFar: MFloat): Mat4 {.inline.} 
    -(right+left)*rl, -(top+bottom)*tb, -(zFar+zNear)*fn, 1f
   ])
 
-func mat4TRS*[P, R, S: Vec3](pos: P, euler: R, scale: S): Mat4 {.inline.} =
+func mat4TRS*[P, R, S: CVec3](pos: P, euler: R, scale: S): Mat4 {.inline.} =
   ## Compose a TRS matrix from translation, Euler angles (XYZ order), scale.
-  ## All three arguments can be any Vec3-compatible type.
+  ## All three arguments can be any CVec3-compatible type.
   ## Equivalent to mat4Translate(pos) * rotX * rotY * rotZ * mat4Scale(scale).
   mat4Translate(pos) *
   mat4RotateZ(euler.z) *

@@ -168,34 +168,24 @@ proc tryLookupGraphTexture*(ren: CSDLRenderer, resourceName: string): Option[Tex
 # Renderer lifecycle
 # ===========================================================================
 
-proc initSDLRendererFromWindow*(window: ptr SDL_Window, vsync: bool = true): CSDLRenderer =
-  ## Crée un renderer à partir d'une fenêtre SDL3 existante.
-  
+proc initSDLRenderer*(window: ptr SDL_Window, vsync: bool = true): CSDLRenderer =
   if window == nil:
     raise newException(ValueError, "La fenêtre fournie est nil")
 
-  # 1. Création du renderer SDL3
   let sdlRen = SDL_CreateRenderer(window, nil)
   if sdlRen == nil:
     raise newException(IOError, "SDL_CreateRenderer failed: " & $SDL_GetError())
 
-  # 2. Configuration du VSync
   discard SDL_SetRenderVSync(sdlRen, if vsync: 1 else: 0)
 
-  # 3. Récupération des dimensions actuelles de la fenêtre
   var w, h: cint
   discard SDL_GetWindowSize(window, addr w, addr h)
 
-  # 4. Initialisation de la structure de données
   var data = initSDLData(window, sdlRen, int(w), int(h))
-
-  # 5. Configuration du renderer générique (ton architecture CSDLRenderer)
   var ren = initCRenderer[SDLData](data)
 
   ren.data.scrTypeId = registerType[SDLData, uint32](ren)
   ren.executeAll = sdlExecuteAll
-
-  discard createResource[SDLData, uint32](ren, ren.data.scrTypeId, 0u32)
   ren.data.screenKey = TextureKey(0)
 
   result = ren
@@ -217,41 +207,6 @@ proc initSDLRenderer*(title:     string  = "SDL3 Renderer",
     raise newException(IOError, "SDL_CreateWindow failed: " & $SDL_GetError())
 
   return initSDLRenderer(window, vsync)
-
-proc initSDLRenderer*(win: ptr SDL_Window,
-                       width:     int     = 1280,
-                       height:    int     = 720,
-                       vsync:     bool    = true,
-                       highDpi:   bool    = false): CSDLRenderer =
-  ## Initialize SDL3, create window and renderer, return a fully ready CSDLRenderer.
-  if not SDL_Init(SDL_INIT_VIDEO or SDL_INIT_EVENTS):
-    raise newException(IOError, "SDL_Init failed: " & $SDL_GetError())
-
-  var flags = SDL_WINDOW_RESIZABLE
-  if highDpi: flags = flags or SDL_WINDOW_HIGH_PIXEL_DENSITY
-
-  let window = SDL_CreateWindow(title.cstring, cint(width), cint(height), flags)
-  if window == nil:
-    raise newException(IOError, "SDL_CreateWindow failed: " & $SDL_GetError())
-
-  let sdlRen = SDL_CreateRenderer(window, nil)
-  if sdlRen == nil:
-    raise newException(IOError, "SDL_CreateRenderer failed: " & $SDL_GetError())
-
-  discard SDL_SetRenderVSync(sdlRen, if vsync: 1 else: 0)
-
-  var data = initSDLData(window, sdlRen, width, height)
-
-  var ren = initCRenderer[SDLData](data)
-
-  ren.data.scrTypeId = registerType[SDLData, uint32](ren)
-  ren.executeAll = sdlExecuteAll
-
-  discard createResource[SDLData, uint32](ren, ren.data.scrTypeId, 0u32)
-  ren.data.screenKey = TextureKey(0)
-
-  result = ren
-
 
 # ---------------------------------------------------------------------------
 # screenTarget accessor (required by the command push helpers)

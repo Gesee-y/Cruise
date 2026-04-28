@@ -78,6 +78,10 @@ notifier NOTIF_WINDOW_RESIZED(win: CWindow, width: int, height: int)
 notifier NOTIF_WINDOW_FULLSCREEN(win: CWindow, active: bool,
                                  desktopResolution: bool)
 
+export NOTIF_WINDOW_CREATED, NOTIF_WINDOW_UPDATED, NOTIF_WINDOW_EXITTED, NOTIF_WINDOW_MINIMIZED
+export NOTIF_WINDOW_MAXIMIZED, NOTIF_WINDOW_RESTORED, NOTIF_WINDOW_HIDDEN, NOTIF_WINDOW_SHOWN
+export NOTIF_WINDOW_RAISED, NOTIF_WINDOW_DELAYING, NOTIF_WINDOW_TITLE_CHANGED, NOTIF_WINDOW_REPOSITIONED
+export NOTIF_WINDOW_RESIZED, NOTIF_WINDOW_FULLSCREEN
 
 ## ============================================================
 ##  Diagnostic notifiers
@@ -101,13 +105,16 @@ notifier NOTIF_WARNING(mes: string, warning: string, code: int)
 ##   code – optional numeric code (0 = none).
 notifier NOTIF_INFO(mes: string, info: string, code: int)
 
+export NOTIF_ERROR, NOTIF_WARNING, NOTIF_INFO
 
 ## ============================================================
 ##  Abstract backend interface
 ##  Override these procs for each concrete backend (SDL, GLFW…).
 ## ============================================================
 
-method initWindow*(app: CApp, win: CWindow, args: varargs[string]): CWindow {.base.} =
+method initWindow*(app: CApp, win: CWindow, title: string = "untitled", 
+                   posX: int = 0, posY: int = 0,
+                   width: int = 200, height: int= 300, args: varargs[string]): CWindow {.base.} =
   ## Create and register a new window in the app.
   ## Implementations must emit NOTIF_WINDOW_CREATED on success.
   NOTIF_WINDOW_CREATED.emit((result,))

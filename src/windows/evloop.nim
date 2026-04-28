@@ -24,6 +24,8 @@ notifier NOTIF_MOUSE_BUTTON(win: CWindow, ev: MouseClickEvent)
 ## Fired when the user requests to quit the application.
 notifier NOTIF_QUIT_EVENT()
 
+export NOTIF_EVENT_RECEIVED, NOTIF_WINDOW_EVENT, NOTIF_KEYBOARD_INPUT
+export NOTIF_MOUSE_MOTION, NOTIF_MOUSE_WHEEL, NOTIF_MOUSE_BUTTON, NOTIF_QUIT_EVENT
 
 ## ============================================================
 ##  Abstract backend interface

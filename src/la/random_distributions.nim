@@ -3,7 +3,7 @@
 #############################################################################################################################
 ##
 ## Spatial random distributions for game development.
-## All functions return any type satisfying Vec2/Vec3/Vec4 concepts —
+## All functions return any type satisfying CVec2/CVec3/CVec4 concepts —
 ## pass the desired output type as the last argument.
 ##
 ## Every sampler takes pre-drawn uniform values [0,1) as input so you can
@@ -53,23 +53,23 @@ template randSign*(): MFloat  =
 ################################################## CIRCLE / DISK (2-D) ######################################################
 #############################################################################################################################
 
-template randOnCircleRaw*[V: Vec2](u: MFloat): V  =
+template randOnCircleRaw*[V: CVec2](u: MFloat): V  =
   ## Uniform point ON the unit circle (perimeter) from 1 uniform value.
   ## u in [0, 1).
   let angle = u * (MFloat(PI) * 2f)
   V(x: cos(angle), y: sin(angle))
 
-template randOnCircle*[V: Vec2](rng: var Rand): V  =
+template randOnCircle*[V: CVec2](rng: var Rand): V  =
   ## Uniform point ON the unit circle using the given RNG.
   randOnCircleRaw[V](rng.u01, V)
 
-template randOnCircle*[V: Vec2](t: typedesc[V]): V  =
+template randOnCircle*[V: CVec2](t: typedesc[V]): V  =
   ## Uniform point ON the unit circle using the global RNG.
   randOnCircleRaw[V](u01(), V)
 
 # ─────────────────────────────────────────────────────────────────────────────
 
-template randInDiskRaw*[V: Vec2](u, v: MFloat): V  =
+template randInDiskRaw*[V: CVec2](u, v: MFloat): V  =
   ## Uniform point IN the unit disk (area) from 2 uniform values.
   ## Uses sqrt(v) for radius so area is uniformly covered.
   ## Source: https://mathworld.wolfram.com/DiskPointPicking.html
@@ -78,15 +78,15 @@ template randInDiskRaw*[V: Vec2](u, v: MFloat): V  =
     r     = sqrt(v)           # NOT v — sqrt corrects for polar-area bias
   V(x: r * cos(angle), y: r * sin(angle))
 
-template randInDisk*[V: Vec2](rng: var Rand): V  =
+template randInDisk*[V: CVec2](rng: var Rand): V  =
   randInDiskRaw[V](rng.u01, rng.u01, V)
 
-template randInDisk*[V: Vec2](t: typedesc[V]): V  =
+template randInDisk*[V: CVec2](t: typedesc[V]): V  =
   randInDiskRaw[V](u01(), u01(), V)
 
 # ─────────────────────────────────────────────────────────────────────────────
 
-template randInAnnulusRaw*[V: Vec2](u, v, innerR, outerR: MFloat): V  =
+template randInAnnulusRaw*[V: CVec2](u, v, innerR, outerR: MFloat): V  =
   ## Uniform point in an annulus (ring) between innerR and outerR.
   ## 2 uniform values required.
   let
@@ -94,17 +94,17 @@ template randInAnnulusRaw*[V: Vec2](u, v, innerR, outerR: MFloat): V  =
     r     = sqrt(innerR*innerR + v*(outerR*outerR - innerR*innerR))
   V(x: r * cos(angle), y: r * sin(angle))
 
-template randInAnnulus*[V: Vec2](rng: var Rand, innerR, outerR: MFloat): V  =
+template randInAnnulus*[V: CVec2](rng: var Rand, innerR, outerR: MFloat): V  =
   randInAnnulusRaw[V](rng.u01, rng.u01, innerR, outerR, V)
 
-template randInAnnulus*[V: Vec2](innerR, outerR: MFloat): V  =
+template randInAnnulus*[V: CVec2](innerR, outerR: MFloat): V  =
   randInAnnulusRaw[V](u01(), u01(), innerR, outerR, V)
 
 #############################################################################################################################
 ################################################## SPHERE / BALL (3-D) ######################################################
 #############################################################################################################################
 
-template randOnSphereRaw*[V: Vec3](u, v: MFloat): V  =
+template randOnSphereRaw*[V: CVec3](u, v: MFloat): V  =
   ## Uniform point ON the unit sphere (surface) from 2 uniform values.
   ## Uses the Marsaglia / equal-area mapping — no clustering at poles.
   ## Source: https://mathworld.wolfram.com/SpherePointPicking.html
@@ -116,15 +116,15 @@ template randOnSphereRaw*[V: Vec3](u, v: MFloat): V  =
     y: sinPhi * sin(theta),
     z: cos(phi))
 
-template randOnSphere*[V: Vec3](rng: var Rand): V  =
+template randOnSphere*[V: CVec3](rng: var Rand): V  =
   randOnSphereRaw[V](rng.u01, rng.u01, V)
 
-template randOnSphere*[V: Vec3](t: typedesc[V]): V  =
+template randOnSphere*[V: CVec3](t: typedesc[V]): V  =
   randOnSphereRaw[V](u01(), u01(), V)
 
 # ─────────────────────────────────────────────────────────────────────────────
 
-template randInSphereRaw*[V: Vec3](u, v, r: MFloat): V  =
+template randInSphereRaw*[V: CVec3](u, v, r: MFloat): V  =
   ## Uniform point IN the unit sphere (volume) from 3 uniform values.
   ## cbrt(r) corrects for the volume-element bias in spherical coordinates,
   ## ensuring points are uniformly distributed throughout the ball.
@@ -141,17 +141,17 @@ template randInSphereRaw*[V: Vec3](u, v, r: MFloat): V  =
     y: rr * sp * st,
     z: rr * cp)
 
-template randInSphere*[V: Vec3](rng: var Rand): V  =
+template randInSphere*[V: CVec3](rng: var Rand): V  =
   ## Uniform point in the unit sphere using the given RNG.
   randInSphereRaw[V](rng.u01, rng.u01, rng.u01, V)
 
-template randInSphere*[V: Vec3](t: typedesc[V]): V  =
+template randInSphere*[V: CVec3](t: typedesc[V]): V  =
   ## Uniform point in the unit sphere using the global RNG.
   randInSphereRaw[V](u01(), u01(), u01(), V)
 
 # ─────────────────────────────────────────────────────────────────────────────
 
-template randInShellRaw*[V: Vec3](u, v, r, innerR, outerR: MFloat): V  =
+template randInShellRaw*[V: CVec3](u, v, r, innerR, outerR: MFloat): V  =
   ## Uniform point in a spherical shell between innerR and outerR.
   ## 3 uniform values required.
   let dir = randOnSphereRaw[V](u, v, V)
@@ -159,31 +159,31 @@ template randInShellRaw*[V: Vec3](u, v, r, innerR, outerR: MFloat): V  =
                  r*(outerR*outerR*outerR - innerR*innerR*innerR))
   V(x: dir.x*rr, y: dir.y*rr, z: dir.z*rr)
 
-template randInShell*[V: Vec3](rng: var Rand, innerR, outerR: MFloat): V  =
+template randInShell*[V: CVec3](rng: var Rand, innerR, outerR: MFloat): V  =
   randInShellRaw[V](rng.u01, rng.u01, rng.u01, innerR, outerR, V)
 
-template randInShell*[V: Vec3](innerR, outerR: MFloat): V  =
+template randInShell*[V: CVec3](innerR, outerR: MFloat): V  =
   randInShellRaw[V](u01(), u01(), u01(), innerR, outerR, V)
 
 #############################################################################################################################
 ################################################## HEMISPHERE ###############################################################
 #############################################################################################################################
 
-template randOnHemisphereRaw*[V: Vec3](u, v: MFloat): V  =
+template randOnHemisphereRaw*[V: CVec3](u, v: MFloat): V  =
   ## Uniform point on the upper unit hemisphere (z >= 0).
   ## Used for diffuse shading, ambient occlusion, cosine-weighted sampling.
   let p = randOnSphereRaw[V](u, v, V)
   V(x: p.x, y: p.y, z: abs(p.z))   # reflect below-equator points up
 
-template randOnHemisphere*[V: Vec3](rng: var Rand): V  =
+template randOnHemisphere*[V: CVec3](rng: var Rand): V  =
   randOnHemisphereRaw[V](rng.u01, rng.u01, V)
 
-template randOnHemisphere*[V: Vec3](t: typedesc[V]): V  =
+template randOnHemisphere*[V: CVec3](t: typedesc[V]): V  =
   randOnHemisphereRaw[V](u01(), u01(), V)
 
 # ─────────────────────────────────────────────────────────────────────────────
 
-template randCosineHemisphereRaw*[V: Vec3](u, v: MFloat): V  =
+template randCosineHemisphereRaw*[V: CVec3](u, v: MFloat): V  =
   ## Cosine-weighted sample on the upper hemisphere — biased towards the pole.
   ## Ideal importance-sampling distribution for Lambertian (diffuse) BRDFs.
   ## Source: PBR Book §13.6
@@ -194,50 +194,50 @@ template randCosineHemisphereRaw*[V: Vec3](u, v: MFloat): V  =
     y: r * sin(theta),
     z: sqrt(max(0f, 1f - v)))   # z = sqrt(1 - r²), always >= 0
 
-template randCosineHemisphere*[V: Vec3](rng: var Rand): V  =
+template randCosineHemisphere*[V: CVec3](rng: var Rand): V  =
   randCosineHemisphereRaw[V](rng.u01, rng.u01, V)
 
-template randCosineHemisphere*[V: Vec3](t: typedesc[V]): V  =
+template randCosineHemisphere*[V: CVec3](t: typedesc[V]): V  =
   randCosineHemisphereRaw[V](u01(), u01(), V)
 
 #############################################################################################################################
 ################################################## RECTANGLES / BOXES #######################################################
 #############################################################################################################################
 
-template randInRectRaw*[V: Vec2](u, v: MFloat): V  =
+template randInRectRaw*[V: CVec2](u, v: MFloat): V  =
   ## Uniform point in the unit square [0,1)².
   V(x: u, y: v)
 
-template randInRect*[V: Vec2](rng: var Rand): V  =
+template randInRect*[V: CVec2](rng: var Rand): V  =
   V(x: rng.u01, y: rng.u01)
 
-template randInRect*[V: Vec2](t: typedesc[V]): V  =
+template randInRect*[V: CVec2](t: typedesc[V]): V  =
   V(x: u01(), y: u01())
 
-template randInRectRangeRaw*[V: Vec2](u, v: MFloat,
+template randInRectRangeRaw*[V: CVec2](u, v: MFloat,
                                    minX, maxX, minY, maxY: MFloat,
                                    t: typedesc[V]): V  =
   ## Uniform point in an axis-aligned rectangle.
   V(x: minX + u*(maxX-minX), y: minY + v*(maxY-minY))
 
-template randInRectRange*[V: Vec2](rng: var Rand,
+template randInRectRange*[V: CVec2](rng: var Rand,
                                 minX, maxX, minY, maxY: MFloat,
                                 t: typedesc[V]): V  =
   randInRectRangeRaw[V](rng.u01, rng.u01, minX, maxX, minY, maxY, V)
 
 # ─────────────────────────────────────────────────────────────────────────────
 
-template randInBoxRaw*[V: Vec3](u, v, w: MFloat): V  =
+template randInBoxRaw*[V: CVec3](u, v, w: MFloat): V  =
   ## Uniform point in the unit cube [0,1)³.
   V(x: u, y: v, z: w)
 
-template randInBox*[V: Vec3](rng: var Rand): V  =
+template randInBox*[V: CVec3](rng: var Rand): V  =
   V(x: rng.u01, y: rng.u01, z: rng.u01)
 
-template randInBox*[V: Vec3](t: typedesc[V]): V  =
+template randInBox*[V: CVec3](t: typedesc[V]): V  =
   V(x: u01(), y: u01(), z: u01())
 
-template randInBoxRange*[V: Vec3](rng: var Rand,
+template randInBoxRange*[V: CVec3](rng: var Rand,
                                minP, maxP: V,
                                t: typedesc[V]): V  =
   ## Uniform point in an axis-aligned box defined by minP and maxP.
@@ -249,7 +249,7 @@ template randInBoxRange*[V: Vec3](rng: var Rand,
 ################################################## TRIANGLE #################################################################
 #############################################################################################################################
 
-template randInTriangleRaw*[V: Vec2](u, v: MFloat, a, b, c: V): V  =
+template randInTriangleRaw*[V: CVec2](u, v: MFloat, a, b, c: V): V  =
   ## Uniform point inside a 2D triangle (a, b, c) using 2 uniform values.
   ## Uses the square-root mapping to avoid the fold-back trick.
   ## Source: Osada et al. 2002
@@ -262,10 +262,10 @@ template randInTriangleRaw*[V: Vec2](u, v: MFloat, a, b, c: V): V  =
   V(x: w0*a.x + w1*b.x + w2*c.x,
     y: w0*a.y + w1*b.y + w2*c.y)
 
-template randInTriangle*[V: Vec2](rng: var Rand, a, b, c: V): V  =
+template randInTriangle*[V: CVec2](rng: var Rand, a, b, c: V): V  =
   randInTriangleRaw[V](rng.u01, rng.u01, a, b, c, V)
 
-template randInTriangle3DRaw*[V: Vec3](u, v: MFloat, a, b, c: V): V  =
+template randInTriangle3DRaw*[V: CVec3](u, v: MFloat, a, b, c: V): V  =
   ## Uniform point inside a 3D triangle (a, b, c).
   let
     r1 = sqrt(u)
@@ -276,28 +276,28 @@ template randInTriangle3DRaw*[V: Vec3](u, v: MFloat, a, b, c: V): V  =
     y: w0*a.y + w1*b.y + w2*c.y,
     z: w0*a.z + w1*b.z + w2*c.z)
 
-template randInTriangle3D*[V: Vec3](rng: var Rand, a, b, c: V): V  =
+template randInTriangle3D*[V: CVec3](rng: var Rand, a, b, c: V): V  =
   randInTriangle3DRaw[V](rng.u01, rng.u01, a, b, c, V)
 
 #############################################################################################################################
 ################################################## DIRECTION / ORIENTATION ##################################################
 #############################################################################################################################
 
-template randDirection2DRaw*[V: Vec2](u: MFloat): V  =
-  ## Uniform random unit vector in 2D. Alias for randOnCircle.
+template randDirection2DRaw*[V: CVec2](u: MFloat): V  =
+  ## Uniform random unit Cvector in 2D. Alias for randOnCircle.
   randOnCircleRaw[V](u, V)
 
-template randDirection2D*[V: Vec2](rng: var Rand): V  =
+template randDirection2D*[V: CVec2](rng: var Rand): V  =
   randOnCircle[V](rng, V)
 
-template randDirection3D*[V: Vec3](rng: var Rand): V  =
-  ## Uniform random unit vector in 3D. Alias for randOnSphere.
+template randDirection3D*[V: CVec3](rng: var Rand): V  =
+  ## Uniform random unit Cvector in 3D. Alias for randOnSphere.
   randOnSphere[V](rng, V)
 
-template randDirection3D*[V: Vec3](t: typedesc[V]): V  =
+template randDirection3D*[V: CVec3](t: typedesc[V]): V  =
   randOnSphere[V](V)
 
-template randConeRaw*[V: Vec3](u, v, halfAngle: MFloat,
+template randConeRaw*[V: CVec3](u, v, halfAngle: MFloat,
                              axis: V): V =
   ## Uniform random direction within a cone of `halfAngle` radians around `axis`.
   ## axis must be normalised. Used for spotlight penumbra, fuzzy reflections.
@@ -324,11 +324,11 @@ template randConeRaw*[V: Vec3](u, v, halfAngle: MFloat,
     y: lx*ty + ly*by + lz*axis.y,
     z: lx*tz + ly*bz + lz*axis.z)
 
-template randCone*[V: Vec3](rng: var Rand, halfAngle: MFloat,
+template randCone*[V: CVec3](rng: var Rand, halfAngle: MFloat,
                          axis: V): V  =
   randConeRaw[V](rng.u01, rng.u01, halfAngle, axis, V)
 
-template randCone*[V: Vec3](halfAngle: MFloat, axis: V): V  =
+template randCone*[V: CVec3](halfAngle: MFloat, axis: V): V  =
   randConeRaw[V](u01(), u01(), halfAngle, axis, V)
 
 #############################################################################################################################
@@ -352,22 +352,22 @@ template randGaussian2*(rng: var Rand,
   let a = MFloat(PI) * 2f * v
   (mean + r*cos(a), mean + r*sin(a))
 
-template randGaussianVec2*[V: Vec2](rng: var Rand, std: MFloat = 1f): V =
+template randGaussianVec2*[V: CVec2](rng: var Rand, std: MFloat = 1f): V =
   ## 2D isotropic Gaussian — each component independently N(0, std²).
   let (a, b) = randGaussian2(rng, 0f, std)
   V(x: a, y: b)
 
-template randGaussianVec3*[V: Vec3](rng: var Rand, std: MFloat = 1f): V =
+template randGaussianVec3*[V: CVec3](rng: var Rand, std: MFloat = 1f): V =
   ## 3D isotropic Gaussian — used for particle velocity scatter,
   ## perturbing normals, or generating random walk steps.
   let (a, b) = randGaussian2(rng, 0f, std)
   let c      = randGaussian(rng, 0f, std)
   V(x: a, y: b, z: c)
 
-template randGaussianOnSphere*[V: Vec3](rng: var Rand): V =
+template randGaussianOnSphere*[V: CVec3](rng: var Rand): V =
   ## Uniform sphere sample via normalised 3D Gaussian.
   ## Alternative to the trig-based method — same distribution, different path.
-  let v = randGaussianVec3[V](rng, 1f, V)
+  let v = randGaussianCVec3[V](rng, 1f, V)
   let l = sqrt(v.x*v.x + v.y*v.y + v.z*v.z)
   if l < 1e-8f: V(x:0f, y:0f, z:1f)
   else: V(x:v.x/l, y:v.y/l, z:v.z/l)

@@ -11,7 +11,7 @@ type
     cachedGraph: DiGraph
 
   PResourceManager* = object
-    resources: seq[PluginResource]
+    resources*: seq[PluginResource]
     maxRequestId: int
     cachedGraph: DiGraph
     toId:Table[string, seq[int]]

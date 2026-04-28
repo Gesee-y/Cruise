@@ -158,8 +158,9 @@ method setFullscreen*(win: SDL3Window, active: bool,
 # All methods take SDL3Window directly — proper OOP, no internal casting.
 # ---------------------------------------------------------------------------
 
-method initWindow*(app: CApp, sw: var SDL3Window,
-                   args: varargs[string]) {.base.} =
+method initWindow*(app: CApp, sw: var SDL3Window, title: string = "untitled", 
+                   posX: int = SDL_WINDOWPOS_CENTERED.int, posY: int = SDL_WINDOWPOS_CENTERED.int,
+                   width: int = 200, height: int= 300, args: varargs[string]) =
   ## Create a new SDL3 window and register it in *app*.
   ##
   ## args (positional, all optional):
@@ -170,12 +171,6 @@ method initWindow*(app: CApp, sw: var SDL3Window,
   ##   [4] y       default SDL_WINDOWPOS_CENTERED
   ##
   ## Emits NOTIF_WINDOW_CREATED on success, NOTIF_ERROR on failure.
-  let title  = if args.len > 0: args[0]            else: "Window"
-  let width  = if args.len > 1: parseInt(args[1])  else: 800
-  let height = if args.len > 2: parseInt(args[2])  else: 600
-  let posX   = if args.len > 3: parseInt(args[3])  else: SDL_WINDOWPOS_CENTERED.int
-  let posY   = if args.len > 4: parseInt(args[4])  else: SDL_WINDOWPOS_CENTERED.int
-
   let handle = SDL_CreateWindow(title.cstring,
                                 width.cint, height.cint,
                                 SDL_WINDOW_RESIZABLE)

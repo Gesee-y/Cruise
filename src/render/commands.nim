@@ -101,7 +101,7 @@ type DrawTexture2DCmd* = object
   ## Blit a texture onto a target surface.
   ## The source texture is encoded in the command's `caller` field (compressed
   ## handle) so the backend can recover it without an extra field here.
-  rect*:   tuple[x1,x2,x3,x4:float32]   ## Axis-aligned box: minX, maxX, minY, maxY (same as DrawRect2D).
+  rect*:   tuple[x1,x2,x3,x4:float32]   ## Axis-aligned Cbox: minX, maxX, minY, maxY (same as DrawRect2D).
   center*: tuple[x,y:float32]    ## Rotation pivot in local space.
   angle*:  float32  ## Rotation in radians.
   flipH*:  bool
@@ -121,7 +121,7 @@ commandAction DrawTexture2DCmd
 # DrawPoint2D
 # ---------------------------------------------------------------------------
 
-proc DrawPoint2D*[R; C: Vec4i; V: Vec2f](
+proc DrawPoint2D*[R; C: CVec4i; V: CVec2f](
     ren:      var R,
     target:   CResource[Screen],
     color:    C,
@@ -136,7 +136,7 @@ proc DrawPoint2D*[R; C: Vec4i; V: Vec2f](
     pass
   )
 
-proc DrawPoint2D*[R; C: Vec4i; V: Vec2f](
+proc DrawPoint2D*[R; C: CVec4i; V: CVec2f](
     ren:      var R,
     color:    C,
     pos:      V,
@@ -150,7 +150,7 @@ proc DrawPoint2D*[R; C: Vec4i; V: Vec2f](
 # DrawLine2D
 # ---------------------------------------------------------------------------
 
-proc DrawLine2D*[R; C: Vec4i; V: Vec2f](
+proc DrawLine2D*[R; C: CVec4i; V: CVec2f](
     ren:      var R,
     target:   CResource[Screen],
     color:    C,
@@ -167,7 +167,7 @@ proc DrawLine2D*[R; C: Vec4i; V: Vec2f](
     pass
   )
 
-proc DrawLine2D*[R; C: Vec4i; V: Vec2f](
+proc DrawLine2D*[R; C: CVec4i; V: CVec2f](
     ren:      var R,
     color:    C,
     start:    V,
@@ -182,7 +182,7 @@ proc DrawLine2D*[R; C: Vec4i; V: Vec2f](
 # DrawRect2D
 # ---------------------------------------------------------------------------
 
-proc DrawRect2D*[R; C: Vec4i; B: Box2Df](
+proc DrawRect2D*[R; C: CVec4i; B: CBox2Df](
     ren:      var R,
     target:   CResource[Screen],
     color:    C,
@@ -199,7 +199,7 @@ proc DrawRect2D*[R; C: Vec4i; B: Box2Df](
     pass
   )
 
-proc DrawRect2D*[R; C: Vec4i; B: Box2Df](
+proc DrawRect2D*[R; C: CVec4i; B: CBox2Df](
     ren:      var R,
     color:    C,
     rect:     B,
@@ -214,7 +214,7 @@ proc DrawRect2D*[R; C: Vec4i; B: Box2Df](
 # DrawCircle2D
 # ---------------------------------------------------------------------------
 
-proc DrawCircle2D*[R; C: Vec4i; V: Vec2f](
+proc DrawCircle2D*[R; C: CVec4i; V: CVec2f](
     ren:      var R,
     target:   CResource[Screen],
     color:    C,
@@ -236,7 +236,7 @@ proc DrawCircle2D*[R; C: Vec4i; V: Vec2f](
     pass
   )
 
-proc DrawCircle2D*[R; C: Vec4i; V: Vec2f](
+proc DrawCircle2D*[R; C: CVec4i; V: CVec2f](
     ren:      var R,
     color:    C,
     center:   V,
@@ -256,7 +256,7 @@ proc DrawCircle2D*[R; C: Vec4i; V: Vec2f](
 ## `decompressTypeId` on the batch's `caller` value.
 # ---------------------------------------------------------------------------
 
-proc DrawTexture2D*[R; B: Box2Df; V: Vec2f](
+proc DrawTexture2D*[R; B: CBox2Df; V: CVec2f](
     ren:      var R,
     texture:  CResource[Texture],
     target:   CResource[Screen],
@@ -278,7 +278,7 @@ proc DrawTexture2D*[R; B: Box2Df; V: Vec2f](
     DrawTexture2DCmd(
       ## Same layout as DrawRect2DCmd: minX, maxX, minY, maxY stored as x1,x2,x3,x4.
       rect:   (x1: rect.x1, x2: rect.x2, x3: rect.y1, x4: rect.y2),
-      center: Vec2f(center),
+      center: (center.x, center.y),
       angle:  angle,
       flipH:  flipH,
       flipV:  flipV,
@@ -286,7 +286,7 @@ proc DrawTexture2D*[R; B: Box2Df; V: Vec2f](
     pass
   )
 
-proc DrawTexture2D*[R; B: Box2Df; V: Vec2f](
+proc DrawTexture2D*[R; B: CBox2Df; V: CVec2f](
     ren:      var R,
     texture:  CResource[Texture],
     rect:     B,

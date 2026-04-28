@@ -49,9 +49,9 @@ type
     targetKey*:   TextureKey   ## destination render target
 
 template point(x, y) = Point(x: x.float32, y: y.float32) 
-template point[V: Vec2](v: V) = point(v.x.float32, v.y.float32)
+template point[V: CVec2](v: V) = point(v.x.float32, v.y.float32)
 template rect(x1, x2, y1, y2) = Rect(x1: x1.float32, x2: x2.float32, y1: y1.float32, y2: y2.float32) 
-template rect[B: Box2D](b: B) = rect(b.x1, b.x2, b.y1, b.y2)
+template rect[B: CBox2D](b: B) = rect(b.x1, b.x2, b.y1, b.y2)
 
 proc initBatch*(textureKey, targetKey: TextureKey,
                 blend: SDLBlendMode): Batch =

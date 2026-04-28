@@ -13,8 +13,8 @@
 ##     - Prefixed with `quat` when the semantics differ (quatMul, quatInverse…)
 ##
 
-## Quat is just Vec4 — any type with x,y,z,w : MFloat is a valid quaternion.
-type Quat* = Vec4
+## Quat is just CVec4 — any type with x,y,z,w : MFloat is a valid quaternion.
+type Quat* = CVec4
 
 func quatApproxEq*[Q: Quat](a, b: Q, eps: MFloat = 1e-6f): bool {.inline.} =
   ## Approximate equality that accounts for the double-cover q ≡ -q.

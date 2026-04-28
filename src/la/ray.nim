@@ -4,16 +4,16 @@
 
 type
   MRay2D* = concept r
-    r.start is Vec2
-    r.dir is Vec2
+    r.start is CVec2
+    r.dir is CVec2
 
   MRay3D* = concept r
-    r.start is Vec3
-    r.dir is Vec3
+    r.start is CVec3
+    r.dir is CVec3
 
   MRay4D* = concept r
-    r.start is Vec4
-    r.dir is Vec4
+    r.start is CVec4
+    r.dir is CVec4
 
   MRay* = MRay2D | MRay3D | MRay4D
 
@@ -23,7 +23,7 @@ template `$`(r: MRay): string =
 template rayAt(r: MRay, t): untyped =
   r.start + (r.dir)*t
 
-template closestPoint(ray: MRay2D, pos: Vec2, min_t: float32 = 0'f32, max_t: float = float32.high): untyped =
+template closestPoint(ray: MRay2D, pos: CVec2, min_t: float32 = 0'f32, max_t: float = float32.high): untyped =
   let pa = pos - ray.start
   let ba = ray.dir
 
@@ -32,7 +32,7 @@ template closestPoint(ray: MRay2D, pos: Vec2, min_t: float32 = 0'f32, max_t: flo
 
   length(pa - (ba * h))
 
-template closestPoint(ray: MRay3D, pos: Vec3, min_t: float32 = 0'f32, max_t: float = float32.high): untyped =
+template closestPoint(ray: MRay3D, pos: CVec3, min_t: float32 = 0'f32, max_t: float = float32.high): untyped =
   let pa = pos - ray.start
   let ba = ray.dir
 
@@ -41,7 +41,7 @@ template closestPoint(ray: MRay3D, pos: Vec3, min_t: float32 = 0'f32, max_t: flo
 
   length(pa - (ba * h))
 
-template closestPoint(ray: MRay4D, pos: Vec4, min_t: float32 = 0'f32, max_t: float = float32.high): untyped =
+template closestPoint(ray: MRay4D, pos: CVec4, min_t: float32 = 0'f32, max_t: float = float32.high): untyped =
   let pa = pos - ray.start
   let ba = ray.dir
 
