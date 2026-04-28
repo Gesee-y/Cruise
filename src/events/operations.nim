@@ -206,7 +206,9 @@ proc emitDefer*[T,L](n:var Notifier[T,L], args:T) =
 Execute the pipeline if there are any remaining events. Useful if you have deferred some events.
 ]##
 proc flush*[T,L](n:var Notifier[T,L]) =
+  n.lck.acquire()
   execute_pipeline(n)
+  n.lck.release()
 
 proc `[]`*[T,L](n:Notifier[T,L], i:int=0):T =
   let mode = n.state.mode

@@ -73,11 +73,15 @@ benchmark "filter", SAMPLE:
 
 notifier notif4(a:int, b:int)
 notifier notif5(a:int, b:int)
+enable_value(notif4)
+enable_value(notif5)
 benchmark "merge", SAMPLE:
   discard merge(notif4,notif5)
 
 notifier notif6(a:int, b:int)
 notifier notif7(a:int, b:int)
+enable_value(notif6)
+enable_value(notif7)
 benchmark "zip", SAMPLE:
   discard zip(notif6,notif7, proc(a,b: tuple[a:int, b:int]): int = a.a + b.b, int)
 
