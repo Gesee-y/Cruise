@@ -156,7 +156,7 @@ proc insertSorted[L](s: var seq[Listener[L]], l:Listener[L]) =
   while low < high:
     let mid = (low + high) div 2
 
-    if s[mid].priority < l.priority:
+    if s[mid].priority > l.priority:
       low = mid+1
     else:
       high = mid-1

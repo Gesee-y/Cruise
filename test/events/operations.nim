@@ -118,20 +118,19 @@ suite "Notifier core operations":
 
     #n.wait()
 
-    # Si wait a été débloqué par emit, unlocked == true
     check unlocked == true
 
-    # Et pas trop tard (sinon wait n'a pas déverrouillé)
     # check (now() - start) < 300
 
 
-  #[test "connect avec plusieurs callbacks respecte l'ordre (priority)":
+  test "connect with multiple callbacks respect order (priority)":
     var order: seq[int] = @[]
 
     proc cb1(v:int) = order.add(1)
     proc cb2(v:int) = order.add(2)
 
     notifier n(x:int)
+    n.setPriority(true)
     n.open()
 
     n.connect(cb2, priority = 0)
@@ -139,5 +138,4 @@ suite "Notifier core operations":
 
     n.emit((x:7))
 
-    # cb1 devrait passer avant cb2
-    check order == @[1,2]]#
+    check order == @[1,2]
