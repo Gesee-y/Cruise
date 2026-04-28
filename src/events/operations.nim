@@ -184,13 +184,13 @@ notif.emit(100)  # Prints "Value: 100"
 ```
 ]##
 proc emit*[T,L](n:var Notifier[T,L], args:T) =
-  let success = n.lck.tryAcquire()
-  addcallback(n, args)
-
   n.cond.signal()
-  if success:
-    execute_pipeline(n)
-    n.lck.release()
+  if n.listeners.len > 0:
+    let success = n.lck.tryAcquire()
+    addcallback(n, args)  
+    if success:
+      execute_pipeline(n)
+      n.lck.release()
 
 ##[
 Deferred version of emit.

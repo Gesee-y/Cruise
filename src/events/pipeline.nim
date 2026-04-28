@@ -53,8 +53,8 @@ proc nexec_latest[T,L](notif:var Notifier[T,L], count:int) =
   
   while tried.dataAvailable and n > 0:
     notif.buffer.add(tried.msg)
-    n -= 1
     tried = stream.tryRecv()
+    n -= 1
 
 proc nexec_oldest[T,L](notif:var Notifier[T,L], count:int) = 
   # Get the oldest N messages from the stream
@@ -67,8 +67,8 @@ proc nexec_oldest[T,L](notif:var Notifier[T,L], count:int) =
     if n < peek(stream): continue
     
     notif.buffer.add(tried.msg)
-    n -= 1
     tried = stream.tryRecv()
+    n -= 1
 
 proc filtering[T,L](n:var Notifier[T,L], e:ExecMode) =
   # Apply the execution mode filtering strategy

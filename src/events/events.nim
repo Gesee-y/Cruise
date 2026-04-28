@@ -35,7 +35,7 @@ type
   ##[ Encapsultate how the Notifier can be executed
   They define how it should emit signals (synchronously, asynchronously, etc).
   ]##
-  EmissionState = ref object
+  EmissionState = object
     mode:TaskMode
     consumes:bool
     case kind : EmissionVar
@@ -58,13 +58,13 @@ type
   ##[
   TaskMode define how the emission should be done for the asynchronous state.
   ]##
-  TaskMode = ref object
+  TaskMode = object
     kind:TaskVar
 
   ##[
   Define if there should be a delay between emissions.
   ]##
-  DelayMode = ref object
+  DelayMode = object
     case kind:DelayVar
     of dNone:
       discard
@@ -75,7 +75,7 @@ type
   ##[
   Represent the ways in which Listeners can be organized.
   ]##
-  ExecMode = ref object
+  ExecMode = object
     case kind:ExecVar
     of exAll:
       discard
@@ -99,7 +99,7 @@ type
   ##[
   Concrete Listener. Is used by default.
   ]##
-  Listener*[T] = object
+  Listener*[T] = ref object
     callback:T
     consume:bool
     priority:int
@@ -108,7 +108,7 @@ type
   ##[
   List of listeners for a given callback. Serves for registration purposes.
   ]##
-  EmissionCallback[T,L] = ref object
+  EmissionCallback[T,L] = object
     listeners:seq[Listener[L]]
     data:T
 
@@ -269,7 +269,7 @@ macro notifier*(args:untyped) =
       namedtypes.add(ident)
   
   return quote do:
-    var `nname`* = newNotifier[`namedtypes`, `procty`]()
+    var `nname` = newNotifier[`namedtypes`, `procty`]()
 
 ##[
 Call a function with tuple elements as separate arguments.

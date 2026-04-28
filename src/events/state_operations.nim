@@ -155,10 +155,8 @@ assert n.isSingleTask()
 ```
 ]##
 proc singleTask*[T,L](n: var Notifier[T,L]) =
-  var em = n.state.emission
-  doAssert em.kind == emParallel
-
-  em.mode = SingleTask()
+  doAssert n.state.emissionkind == emParallel
+  n.state.emissionmode = SingleTask()
 
 ##[
 Returns `true` if the notifier runs listeners as a single task.
@@ -186,10 +184,8 @@ assert n.isMultiTask()
 ```
 ]##
 proc multipleTask*[T,L](n: var Notifier[T,L]) =
-  var em = n.state.emission
-  doAssert em.kind == emParallel
-
-  em.mode = MultipleTask()
+  doAssert n.state.emission.kind == emParallel
+  n.state.emission.mode = MultipleTask()
 
 ##[
 Returns `true` if the notifier dispatches each listener in its own parallel task.
@@ -259,10 +255,8 @@ n.ignoreEqValue(true)
 ```
 ]##
 proc ignoreEqValue*[T,L](n: var Notifier[T,L], ignore_eqv=true) =
-  var m = n.state.mode
-  doAssert m.kind == nValue
-
-  m.ignore_eqvalue = ignore_eqv
+  doAssert n.state.modekind == nValue
+  n.state.mode.ignore_eqvalue = ignore_eqv
 
 ##[
 Returns whether the notifier ignores identical values.
@@ -270,7 +264,7 @@ Returns whether the notifier ignores identical values.
 proc doesIgnoreEqValue*[T,L](n: Notifier[T,L]):bool =
   if n.state.mode.kind != nValue: return false
 
-  return n.state.mode.ignore_eqv
+  return n.state.mode.ignore_eqvalue
 
 
 ##[
