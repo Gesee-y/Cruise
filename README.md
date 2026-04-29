@@ -28,15 +28,15 @@ This architecture offers several advantages:
 
 ## Features
 
-- **Secure and flexible plugin system**: Built around a Dual DAG, it allows you to extend Cruise, share your own plugin and collaborate without too much hassle. Each system of the plugin have his own inteface to safely interact with his dependencies.
+- **[Secure and flexible plugin system](https://github.com/Gesee-y/Cruise/tree/main/src/plugins)**: Built around a Dual DAG, it allows you to extend Cruise, share your own plugin and collaborate without too much hassle. Each system of the plugin have his own inteface to safely interact with his dependencies.
 
 - **Optimal system scheduling**: Through topological sort, Cruise ensure your systems are executed in the most efficient way.
 
 - **Game logics as first class citizens**: Your customs systems have as much power as the core ones. They are easy to define and scheduled.
 
-- **CLI tool**: To manage plugins, get them, solve dependencies, etc. ![Cruise CLI overview](https://github.com/Gesee-y/Cruise/blob/main/assets%2Fcruise_cli.PNG)
+- **[CLI tool](https://github.com/Gesee-y/Cruise/tree/main/src/cli)**: To manage plugins, get them, solve dependencies, etc. ![Cruise CLI overview](https://github.com/Gesee-y/Cruise/blob/main/assets%2Fcruise_cli.PNG)
 
-- **Generic math library**: Cruise allows any objects implementing his concept to be fully usable for in the math library. Which for example means that any type with an x,y fields are Vec2, etc. Making Cruise highly compatible almost every existing math library objects:
+- **[Generic math library](https://github.com/Gesee-y/Cruise/tree/main/src/la)**: Cruise allows any objects implementing his concept to be fully usable for in the math library. Which for example means that any type with an x,y fields are Vec2, etc. Making Cruise highly compatible almost every existing math library objects:
 ```nim
 type MyVec3 = object
   x, y, z: float32
@@ -46,23 +46,23 @@ let b = MyVec3(x: 0, y: 1, z: 0)
 let c = a.cross(b)
 ``` 
 
-- **Projective Geometrical Algebra**: Being one of the first Nim's engine to provide this, Cruise allows your to use PGA for your games which allows unified 2D and 3D logics, simple collision detection, and more.
+- **[Projective Geometrical Algebra](https://github.com/Gesee-y/Cruise/tree/main/src/pga)**: Being one of the first Nim's engine to provide this, Cruise allows your to use PGA for your games which allows unified 2D and 3D logics, simple collision detection, and more.
 
-- **Event System**: Cruise provides you 2 event system, a lightweight synchronous one that can be use for simple cases, and a complex one leveraging the full powers of reactive programming such as merging, filtering, delays, throttling,  etc.
+- **[Event System](https://github.com/Gesee-y/Cruise/tree/main/src/events)**: Cruise provides you 2 event system, a lightweight synchronous one that can be use for simple cases, and a complex one leveraging the full powers of reactive programming such as merging, filtering, delays, throttling,  etc.
 
-- **File System**: Easy to use file management system for editors and file watching enable hot reload independently of the OS.
+- **[File System](https://github.com/Gesee-y/Cruise/tree/main/src/filesys)**: Easy to use file management system for editors and file watching enable hot reload independently of the OS.
 
-- **Asset Pipeline**: Generic and easy to extend asset pipeline, featuring image loading, texture compression, serialization and more.
+- **[Asset Pipeline](https://github.com/Gesee-y/Cruise/tree/main/src/assets)**: Generic and easy to extend asset pipeline, featuring image loading, texture compression, serialization and more.
 
-- **Optional ECS**: Cruise provides a high performances, optional ECS based on a fragmented storage. Allowing to mimick archetypes and sparse sets in the same structure without losing the best of both.
+- **[Optional ECS](https://github.com/Gesee-y/Cruise/tree/main/src/assets)**: Cruise provides a high performances, optional ECS based on a fragmented storage. Allowing to mimick archetypes and sparse sets in the same structure without losing the best of both.
 
-- **Temporary storage**: To easily share data among your systems, it also support TTL (Time To Live) for data and provides events and serialization support
+- **[Temporary storage](https://github.com/Gesee-y/Cruise/tree/main/src/temp)**: To easily share data among your systems, it also support TTL (Time To Live) for data and provides events and serialization support
 
-- **API-agnostic windowing**: Using a microkernel architecture, Cruise let you to manage windows and inputs in an unified interface, allowing you to change your windowing API in a breeze.
+- **[API-agnostic windowing](https://github.com/Gesee-y/Cruise/tree/main/src/windows)**: Using a microkernel architecture, Cruise let you to manage windows and inputs in an unified interface, allowing you to change your windowing API in a breeze.
 
-- **Backend agnostic rendering**: Command buffer based renderer, an everything as resource philosophy, 
+- **[Backend agnostic rendering](https://github.com/Gesee-y/Cruise/tree/main/src/render)**: Command buffer based renderer, an everything as resource philosophy, 
 
-- **Standar Plugins**: Cruise offers a set of default plugins like: render graph with multi-pass, aliasing, fully backend-agnostic. A SceneTree, SDL implementation of the abstraction,and more.
+- **[Standard Plugins](https://github.com/Gesee-y/Cruise/tree/main/stdplugin)**: Cruise offers a set of default plugins like: render graph with multi-pass, aliasing, fully backend-agnostic. A SceneTree, SDL implementation of the abstraction,and more.
 
 - **Make your own structure**: Cruise doesn't enforce any architecture, build your game as you feel
 
@@ -72,9 +72,9 @@ let c = a.cross(b)
 
 Cruise provides a set of default plugins and modules to allows you to start building games or tools with it, such as:
 
-- **Render graph**: Provide a functional render graph built directly on top of Cruise plugin system that allows you to control rendering pass and resource management.
+- **[Render graph](https://github.com/Gesee-y/Cruise/tree/main/stdplugin/rendergraph)**: Provide a functional render graph built directly on top of Cruise plugin system that allows you to control rendering pass and resource management.
 
-- **SDL Windows**: Provide an implementation of the windowing abstraction for SDL3, allowing you to conveniently mange inputs and windows.
+- **[SDL Windows](https://github.com/Gesee-y/Cruise/tree/main/stdplugin/sdlwin)**: Provide an implementation of the windowing abstraction for SDL3, allowing you to conveniently mange inputs and windows.
 ```nim
 import Cruise/src/windows/windows
 import Cruise/stdplugin/sdlwin/sdlwin
@@ -107,7 +107,7 @@ win.quitWindow()
 app.quitSDL3App()
 ```
 
-- **SDL Render**: An implementation of a renderer using the rendering interface, allows you to draw, manage resources and batch draw calls or even integrate it with a render graph.
+- **[SDL Render](https://github.com/Gesee-y/Cruise/tree/main/stdplugin/sdlrender)**: An implementation of a renderer using the rendering interface, allows you to draw, manage resources and batch draw calls or even integrate it with a render graph.
 ```nim
 import Cruise/src/render/render
 import Cruise/stdplugin//rendergraph/core
@@ -148,6 +148,10 @@ while running:
 
   ren.teardown()
 ```
+
+## Example
+
+You can see examples and some little games made with Cruise [here](https://github.com/Gesee-y/Cruise/tree/main/examples)
 
 ## License
 
