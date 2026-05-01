@@ -46,7 +46,7 @@ when isMainModule:
   game.app.initWindow(game.window, "Breakout", posX=0, posY=0, width=game.windowWidth, height=game.windowHeight)
   game.renderer = initSDLRenderer(game.window.handle)
 
-  game.createScene(findBenchscale("small"))
+  game.createScene(findBenchscale("xxlarge"))
 
   while game.isRunning:
     game.renderer.beginFrame

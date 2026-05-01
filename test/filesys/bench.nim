@@ -195,7 +195,7 @@ proc benchLatency() =
     let t0       = now()
     var received = false
 
-    w.onEvent(proc(ev: WatchEvent) =
+    w.onEvent(proc(ev: FileEvent) =
       if not received and ev.path.endsWith(".txt"):
         latencies.add((now() - t0) * 1000.0)
         received = true)

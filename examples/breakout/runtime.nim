@@ -16,6 +16,7 @@ import std/[math, random]
 
 const
   BALL_RADIUS = 10
+  PADDLE_SPEED = 0.5'f32
 
 type
   Input* = enum
@@ -238,7 +239,7 @@ proc createScene*(game: var Game; scale: BenchScale) =
     float32(game.windowHeight - 60),
     eventSeed(1'u32, 0, float32(game.windowWidth / 2), float32(game.windowHeight - 60))
   )
-  game.createPaddle(float32(game.windowWidth / 2), float32(game.windowHeight - 60))
+  game.createPaddle(float32(game.windowWidth / 2), float32(game.windowHeight - 30))
 
 template updateTransformWorld(game: var Game; entity: DenseHandle) =
   var transforms = game.world.get(Transform2d)
@@ -355,9 +356,9 @@ proc sysControlPaddle*(game: var Game) =
   
   move.direction.x = 0
   if game.inputState[Left]:
-    move.direction.x -= 1
+    move.direction.x -= PADDLE_SPEED
   if game.inputState[Right]:
-    move.direction.x += 1
+    move.direction.x += PADDLE_SPEED
 
   moves[game.paddle] = move
 

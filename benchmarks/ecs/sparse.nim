@@ -7,9 +7,9 @@ include "../../src/ecs/table.nim"
 include "../../src/profile/benchmarks.nim"
 
 const
-  Samples = 1000
+  Samples = 50
   Warmup  = 1
-  ENTITY_COUNT = 10_000
+  ENTITY_COUNT = 10_00000
 
 type
   Position = object
