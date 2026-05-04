@@ -146,7 +146,7 @@ while running:
     ren.endFrame()
     t += 0.016f
 
-  ren.teardown()
+ren.teardown()
 ```
 
 ## Example
