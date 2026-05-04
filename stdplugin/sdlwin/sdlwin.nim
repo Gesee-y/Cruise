@@ -12,7 +12,7 @@
 ## =============================================================
 
 import strutils
-import ../../externalLibs/sdl3_nim/src/sdl3_nim
+import ../../externalLibs/sdl3/src/sdl3_nim
 import ../../src/windows/windows
 export SDL_Delay
 
