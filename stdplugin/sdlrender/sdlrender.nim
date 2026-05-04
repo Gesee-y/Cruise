@@ -14,7 +14,7 @@
 ##   Graph API         — addRenderPass, executeFrame
 ##   Frame API         — beginFrame, endFrame, teardown
 
-import ../../externalLibs/sdl3/src/sdl3_nim
+import ../../externalLib/sdl3/src/sdl3_nim
 import std/[options, sets, tables, os, hashes]
 
 ## Pull in the entire existing render infrastructure
