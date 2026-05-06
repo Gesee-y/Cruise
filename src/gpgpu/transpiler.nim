@@ -427,7 +427,7 @@ proc processNode(ctx: var GLSLContext, node: NimNode, depth: int = 0): string =
       ctx.header &= "const " & glslTy & " " & name & "[" & size & "];\n"
     else:
       error("GLSL Transpiler: only fixed-size array types are supported at top level", node)
-      
+
   of nnkCaseStmt:
     ## case x:
     ##   of 1: ...
@@ -519,14 +519,3 @@ macro compileToGLSL(fn: typed): CompiledShader =
   
   return quote do: CompiledShader(glsl: `glsl`, bindings: `bindings`)
 
-proc myFunc(i:var int) =
-  let d = true
-  var s: int = i+2
-
-  s = 3
-
-  if s == 5:
-    s = 0
-
-let d = compileToGLSL(myFunc).glsl
-echo d
