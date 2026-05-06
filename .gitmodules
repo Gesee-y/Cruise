@@ -1,3 +1,6 @@
 [submodule "externalLibs/sdl3"]
 	path = externalLibs/sdl3
 	url = https://github.com/dinau/sdl3_nim
+[submodule "externalLib/shaderc"]
+	path = externalLib/shaderc
+	url = https://github.com/RowDaBoat/shadercnim

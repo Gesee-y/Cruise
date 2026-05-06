@@ -62,6 +62,16 @@ let c = a.cross(b)
 
 - **[Backend agnostic rendering](https://github.com/Gesee-y/Cruise/tree/main/src/render)**: Command buffer based renderer, an everything as resource philosophy, 
 
+- **[Nim Shaders]**: Cruise allows you to write your shader in nim, compile them to GLSL 4.3, then use [shaderc](https://github.com/RowDaBoat/shadercnim) to compile it to other shading backend. This even allows you to test your shader on CPU!
+
+```nim
+proc myShader(fragCoord: MyVec4, uv: MyVec2) =
+  fragCoord.x = uv.x
+  fragCoord.y = uv.y
+
+let result = compileToGLSL(myShader)
+```
+
 - **[Standard Plugins](https://github.com/Gesee-y/Cruise/tree/main/stdplugin)**: Cruise offers a set of default plugins like: render graph with multi-pass, aliasing, fully backend-agnostic. A SceneTree, SDL implementation of the abstraction,and more.
 
 - **Make your own structure**: Cruise doesn't enforce any architecture, build your game as you feel
