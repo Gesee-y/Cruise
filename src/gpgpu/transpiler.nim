@@ -2,8 +2,6 @@
 ############################################################ TRANPILER NIM -> GLSL #######################################################################
 ##########################################################################################################################################################
 
-import macros, tables, sets, strutils
-
 ## ── Uniform / buffer qualifier wrappers ───────────────────────────────────────
 ## Wrap a type in one of these to declare it as a GLSL qualified variable.
 ## The transpiler detects these wrappers in function signatures and variable
@@ -15,6 +13,9 @@ import macros, tables, sets, strutils
 ##   #   uniform float a;
 ##   #   layout(std430, binding=0) buffer { float buf[]; };
 ##   #   layout(rgba32f) writeonly uniform image2D img;
+
+import macros, tables, sets, strutils
+
 type
   Uniform*[T]       = distinct T  ## uniform T name;
   UniformReadOnly*[T]  = distinct T  ## layout(...) readonly buffer
@@ -23,15 +24,15 @@ type
   Image2D*[T]       = distinct T  ## layout(rgba32f) writeonly uniform image2D
   Sampler2D*        = object      ## uniform sampler2D name;
 
+  CompiledShader* = object
+    result*: string
+    bindings*: Table[string, int]
+
   GLSLContext = object
     header: string      ## Type definitions, struct declarations
     body: string        ## Main function body
     emittedTypes: HashSet[string] ## Already emitted type
     emittedFuncs: HashSet[string]
-
-  CompiledShader = object
-    glsl*: string
-    bindings*: Table[string, int]
 
 proc processNode(ctx: var GLSLContext,node: NimNode, depth: int = 0): string
 proc processDeclaration(ctx: var GLSLContext, node: NimNode): string
@@ -517,5 +518,5 @@ macro compileToGLSL(fn: typed): CompiledShader =
 
   let bindings = globalBindingTable
   
-  return quote do: CompiledShader(glsl: `glsl`, bindings: `bindings`)
+  return quote do: CompiledShader(result: `glsl`, bindings: `bindings`)
 
