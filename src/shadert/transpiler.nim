@@ -17,6 +17,9 @@
 import macros, tables, sets, strutils
 
 type
+  ParsingContext = enum
+    pcNone, pcReturn, pcWhile, pcFor, pcIf
+
   Uniform*[T]       = distinct T  ## uniform T name;
   UniformReadOnly*[T]  = distinct T  ## layout(...) readonly buffer
   UniformWriteOnly*[T] = distinct T  ## layout(...) writeonly buffer
@@ -30,16 +33,30 @@ type
 
   GLSLContext = object
     header: string      ## Type definitions, struct declarations
+    forwardDecl: string ## Forward declaration of functions
+    typeDecl: string    ## Type declaration
+    funcDef: string    ## Functions definition
     body: string        ## Main function body
     emittedTypes: HashSet[string] ## Already emitted type
     emittedFuncs: HashSet[string]
 
-proc processNode(ctx: var GLSLContext,node: NimNode, depth: int = 0): string
+macro glslType*(ty: untyped, name: static string) = return quote do: `ty`
+
+template `[]`*[T](obj: SSBO[T], i: untyped): untyped = cast[seq[T]](obj)[i]
+
+template `[]=`*[T](obj: var SSBO[T], i, v: untyped): untyped = 
+  cast[seq[T]](obj)[i] = v
+
+proc isPrimitiveType(name: string): bool =
+  name in ["int", "float", "string", "cstring", "seq"]
+
+proc processNode(ctx: var GLSLContext,node: NimNode, depth: int = 0, pc: ParsingContext= pcNone): string
 proc processDeclaration(ctx: var GLSLContext, node: NimNode): string
 proc emitStruct(ctx: var GLSLContext, ty: NimNode): string
 
 var glslTypeTable {.compileTime.} = initTable[string, string]()
 var glslFuncTable {.compileTime.} = initTable[string, string]()
+var glslUniformTable {.compileTime.} = initTable[string, string]()
 
 var globalBindingTable {.compileTime.} = initTable[string, int]()
 var nextBinding {.compileTime.} = 0
@@ -53,10 +70,13 @@ proc getBinding(name: string): int {.compileTime.} =
   globalBindingTable[name] = result
   inc nextBinding
 
-macro registerGLSLType(ty: typed, glslName: string): untyped =
-  glslTypeTable[$ty.getTypeInst()] = glslName.strVal
+macro registerUniformType*(ty: typed, glslName: string): untyped =
+  glslUniformTable[$ty] = glslName.strVal
 
-macro registerGLSLFunc(nimFunc: typed, glslName: string): untyped =
+macro registerGLSLType*(ty: typed, glslName: string): untyped =
+  glslTypeTable[ty.repr] = glslName.strVal
+
+macro registerGLSLFunc*(nimFunc: typed, glslName: string): untyped =
   ## Register a mapping from a Nim function to a GLSL builtin name.
   ## Use this for functions from external libraries whose implementation
   ## should not be transpiled but mapped directly to a GLSL builtin.
@@ -140,8 +160,7 @@ proc isWrapperType(typeName: string): bool {.compileTime.} =
   typeName.startsWith("Uniform[")      or
   typeName.startsWith("UniformReadOnly[") or
   typeName.startsWith("UniformWriteOnly[") or
-  typeName.startsWith("SSBO[")         or
-  typeName.startsWith("Image2D[")      or
+  typeName in glslUniformTable or
   typeName == "Sampler2D"
 
 proc getGLSLType(ctx: var GLSLContext, typeName: string): string {.compileTime.} =
@@ -166,25 +185,29 @@ proc emitQualifiedVar(ctx: var GLSLContext, typeName: string,
   ## typeName is the full Nim generic name e.g. "Uniform[float32]"
 
   let bid = getBinding(paramName)
+  let innerPos = typeName.find("[")
+  let tyName = if innerPos != -1: typeName[0..<innerPos] else: typeName
+  let glslVal = if tyName in glslUniformTable: glslUniformTable[tyName] else: tyName
+  let innerName = if innerPos != -1: typeName[(innerPos+1)..^2] else: ""
 
   if typeName.startsWith("Uniform["):
-    let inner = ctx.getGLSLType(typeName[8..^2])  ## strip "Uniform[" and "]"
+    let inner = ctx.getGLSLType(innerName)  ## strip "Uniform[" and "]"
     return "uniform " & inner & " " & paramName & ";\n"
 
-  elif typeName.startsWith("SSBO["):
-    let inner = ctx.getGLSLType(typeName[5..^2])
+  elif glslVal == "SSBO":
+    let inner = ctx.getGLSLType(innerName)
     return "layout(std430, binding = " & $bid & ") buffer " & paramName &
-           "Block {\n  " & inner & " " & paramName & "[];\n};\n"
+           "Block {\n  " & inner & " " & paramName & "[];\n};\n\n"
 
   elif typeName.startsWith("UniformReadOnly["):
-    let inner = ctx.getGLSLType(typeName[16..^2])
+    let inner = ctx.getGLSLType(innerName)
     return "layout(std430) readonly buffer " & paramName &
-           "Block {\n  " & inner & " " & paramName & "[];\n};\n"
+           "Block {\n  " & inner & " " & paramName & "[];\n};\n\n"
 
   elif typeName.startsWith("UniformWriteOnly["):
-    let inner = ctx.getGLSLType(typeName[17..^2])
+    let inner = ctx.getGLSLType(innerName)
     return "layout(std430) writeonly buffer " & paramName &
-           "Block {\n  " & inner & " " & paramName & "[];\n};\n"
+           "Block {\n  " & inner & " " & paramName & "[];\n};\n\n"
 
   elif typeName.startsWith("Image2D["):
     return "layout(rgba32f) writeonly uniform image2D " & paramName & ";\n"
@@ -195,7 +218,7 @@ proc emitQualifiedVar(ctx: var GLSLContext, typeName: string,
 proc getGLSLType(ctx: var GLSLContext, node: NimNode): string =
   var sym = node.getTypeInst()
   if sym.kind == nnkVarTy: sym = sym[0]
-  let typeName = sym.strVal
+  let typeName = if sym.kind == nnkBracketExpr: sym[1].repr else: sym.repr
   let paramName = node.strVal
 
   if isWrapperType(typeName):
@@ -216,13 +239,18 @@ proc getGLSLType(ctx: var GLSLContext, node: NimNode): string =
     if typeName in glslTypeTable:
       return glslTypeTable[typeName]
 
-    for pragma in sym.getImpl()[4]:  # nnkPragma
-      if pragma[0].strVal == "glslType":
-        return pragma[1].strVal
+    let symb = if sym.kind == nnkBracketExpr: sym[0] else: sym
+    let pragmas = symb.getImpl()
 
-    let s = emitStruct(ctx, sym)
-    ctx.header.add(s)
-    ctx.emittedTypes.incl(typeName)
+    if pragmas.kind != nnkNilLit and pragmas.kind != nnkEmpty and pragmas.len >= 5:
+      for pragma in pragmas[4]:  # nnkPragma
+        if pragma[0].strVal == "glslType":
+          return pragma[1].strVal
+    
+    if not symb.strVal.isPrimitiveType:
+      let s = emitStruct(ctx, sym)
+      ctx.typeDecl.add(s)
+      ctx.emittedTypes.incl(typeName)
 
     return typeName
 
@@ -255,22 +283,10 @@ proc remapFunc(ctx: var GLSLContext, name: string, node: NimNode): string =
     error("GLSL Transpiler: unknown function '" & name & "' has no Nim implementation to transpile.\n" &
           "  Hint: add it to the function mapping table or provide a Nim implementation.", node)
 
-  # Emit dependencies first (recursive calls inside this func)
-  # processNode will call remapFunc again for any calls found inside,
-  # which will recursively emit their definitions before this one.
-  var funcCtx = GLSLContext()  ## inherit type/func tables
-  funcCtx.emittedTypes = ctx.emittedTypes
-  funcCtx.emittedFuncs = ctx.emittedFuncs
-
-  let glslBody = processNode(funcCtx, impl[6])
-  ctx.emittedTypes = funcCtx.emittedTypes  ## propagate newly discovered types
-  ctx.emittedFuncs = funcCtx.emittedFuncs
-
-  # Build GLSL function signature
   let params = impl[3]
   let returnType = if params[0].kind == nnkEmpty: "void"
                    else: ctx.getGLSLType(params[0])
-  
+
   var args: seq[string]
   for i in 1..<params.len:
     let param = params[i]
@@ -280,9 +296,37 @@ proc remapFunc(ctx: var GLSLContext, name: string, node: NimNode): string =
 
   let signature = returnType & " " & name & "(" & args.join(", ") & ")"
 
+  ctx.forwardDecl = signature & ";\n" & ctx.forwardDecl
+  ctx.emittedFuncs.incl(name) # Include the name early to avoid infinite recursions
+  # Emit dependencies first (recursive calls inside this func)
+  # processNode will call remapFunc again for any calls found inside,
+  # which will recursively emit their definitions before this one.
+  var funcCtx = GLSLContext()  ## inherit type/func tables
+  funcCtx.emittedTypes = ctx.emittedTypes
+  funcCtx.emittedFuncs = ctx.emittedFuncs
+
+  var glslBody = ""
+  #if returnType != "void":
+  #  glslBody &= "  " & returnType & " result;\n"
+  let fbody = processNode(funcCtx, impl[6])
+  ctx.typeDecl &= funcCtx.typeDecl
+  ctx.forwardDecl = funcCtx.forwardDecl & "\n" & ctx.forwardDecl
+  ctx.funcDef &= funcCtx.funcDef
+  glslBody &= funcCtx.body
+  
+  case impl[6].kind:
+    of nnkStmtList, nnkStmtListExpr: discard
+    else: glslBody = "   " & fbody
+
+  ## Last expression → return result
+  #if returnType != "void":
+  #  glslBody &= "\n  return result;\n"
+
+  ctx.emittedTypes = funcCtx.emittedTypes  ## propagate newly discovered types
+  ctx.emittedFuncs = funcCtx.emittedFuncs
+
   # Emit to header BEFORE marking as done (handles mutual recursion guard)
-  ctx.emittedFuncs.incl(name)
-  ctx.header &= signature & " {\n" & glslBody & "\n}\n\n"
+  ctx.funcDef &= signature & " {\n" & glslBody & "\n}\n"
 
   return name
 
@@ -291,14 +335,14 @@ proc processDeclaration(ctx: var GLSLContext, node: NimNode): string =
   let name = node[0].strVal
   let tyNode = if node[1].kind == nnkEmpty: node[0] else: node[1]
 
-  let ty = getGLSLType(ctx, tyNode)
+  let ty = getGLSLType(ctx, node[0])
   let expr = processNode(ctx, node[2])
 
   res.add ty & " " & name
   if expr != "": res.add " = " & expr
   res
 
-proc processNode(ctx: var GLSLContext, node: NimNode, depth: int = 0): string =
+proc processNode(ctx: var GLSLContext, node: NimNode, depth: int = 0, pc: ParsingContext= pcNone): string =
   ## Recursively transpile a Nim AST node to GLSL.
   ## Writes type/struct definitions to ctx.header,
   ## returns the GLSL expression/statement for the current node.
@@ -318,7 +362,8 @@ proc processNode(ctx: var GLSLContext, node: NimNode, depth: int = 0): string =
          tyNode.getTypeInst().kind == nnkBracketExpr and
          tyNode.getTypeInst()[0].strVal == "array":
         let name   = n[0].strVal
-        let size   = tyNode.getTypeInst()[1].intVal
+        
+        let size   = tyNode[1].intVal
         let glslTy = ctx.getGLSLType(tyNode.getTypeInst()[2])
         let expr   = if n[2].kind != nnkEmpty: " = " & processNode(ctx, n[2], depth) else: ""
         ## Local fixed arrays stay in body, global ones go to header
@@ -371,7 +416,7 @@ proc processNode(ctx: var GLSLContext, node: NimNode, depth: int = 0): string =
     let hi = processNode(ctx, iter[2])
     result = idnt & "for (int " & varName & " = " & lo & "; " &
              varName & " < " & hi & "; " & varName & "++) {\n"
-    result &= processNode(ctx, node[2], depth+1) & "}"
+    result &= processNode(ctx, node[2], depth+1) & "\n" & idnt & "}"
 
   of nnkWhileStmt:
     ## while cond: body -> while (cond) { body }
@@ -379,7 +424,7 @@ proc processNode(ctx: var GLSLContext, node: NimNode, depth: int = 0): string =
     result &= processNode(ctx, node[1], depth+1) & "}"
 
   of nnkReturnStmt:
-    result = idnt & "return " & processNode(ctx, node[0])
+    result = idnt & "return " & processNode(ctx, node[0], pc=pcReturn)
 
   of nnkSym, nnkIdent:
     result = node.strVal
@@ -392,7 +437,10 @@ proc processNode(ctx: var GLSLContext, node: NimNode, depth: int = 0): string =
   of nnkPrefix:
     result = node[0].strVal & processNode(ctx, node[1])
   of nnkAsgn:
-    result = idnt & processNode(ctx, node[0]) & " = " & processNode(ctx, node[1])
+    if pc == pcReturn:
+      result = processNode(ctx, node[1])
+    else:
+      result = idnt & processNode(ctx, node[0]) & " = " & processNode(ctx, node[1])
   of nnkBreakStmt:
     result = idnt & "break"
 
@@ -452,6 +500,36 @@ proc processNode(ctx: var GLSLContext, node: NimNode, depth: int = 0): string =
       else:
         error("GLSL Transpiler: unsupported case branch kind: " & $branch.kind, branch)
     result &= idnt & "}"
+  of nnkHiddenStdConv:
+    ## Implicit standard type conversion e.g. int literal → float32
+    ## The actual value is in node[1], node[0] is the target type
+    result = processNode(ctx, node[1], depth)
+
+  of nnkHiddenSubConv:
+    ## Implicit subtype conversion — same treatment
+    result = processNode(ctx, node[1], depth)
+
+  of nnkHiddenCallConv:
+    ## Implicit conversion via a constructor call e.g. SomeType(x)
+    ## node[0] is the constructor, node[1..] are the args
+    let glslTy = ctx.getGLSLType(node[0])
+    result = glslTy & "(" & processNode(ctx, node[1], depth) & ")"
+  of nnkStmtListExpr:
+    ## A statement list used as an expression — the last node is the value.
+    ## Generated by template expansion, e.g:
+    ##   template foo(x): float32 =
+    ##     let tmp = x * 2.0  ## statement
+    ##     tmp                 ## ← returned value
+    ##
+    ## Emit all statements except the last, then return the last as expression.
+    for i in 0..<node.len - 1:
+      let stmt = processNode(ctx, node[i], depth)
+      if stmt != "":
+        ctx.body &= idnt & stmt & ";\n"
+    ## Last node is the expression value
+    result = processNode(ctx, node[^1], depth)
+  of nnkEmpty: discard
+  of nnkDiscardStmt: result = "discard"
   else:
     error("Unsupported AST node in GLSL Transpiler: " & $node.kind & "\n" &
           "  This Nim construct cannot be transpiled to GLSL.", node)
@@ -474,8 +552,8 @@ proc processParams(ctx: var GLSLContext, params: NimNode): bool =
     let tyNode    = identDef[1]           ## [1] is type, [0] is name
     let isVar     = tyNode.kind == nnkVarTy
 
-    let innerTy = if isVar: tyNode[0] else: tyNode
-    let typeName = innerTy.getTypeInst().strVal
+    let innerTy = identDef[0]
+    let typeName = innerTy.getTypeInst().repr
 
     if isWrapperType(typeName):
       ## Uniform[T], SSBO[T] etc. — emitQualifiedVar handles the header line
@@ -501,7 +579,7 @@ proc processParams(ctx: var GLSLContext, params: NimNode): bool =
 
   return isCompute
 
-macro compileToGLSL(fn: typed): CompiledShader =
+macro compileToGLSL*(fn: typed): CompiledShader =
   var ctx = GLSLContext()
   let impl = fn.getImpl
   let name = impl[0]
@@ -509,12 +587,18 @@ macro compileToGLSL(fn: typed): CompiledShader =
   let body = impl[6]
 
   let isCompute = ctx.processParams(params)
-  discard processNode(ctx, body)
+  let isBlock = body.kind in {nnkStmtList, nnkStmtListExpr}
+  let isControl = body.kind in {nnkForStmt, nnkIfExpr, nnkIfStmt, nnkWhileStmt}
+  let res = processNode(ctx, body, isControl.int)
+  
+  # In case the proc's body was a single statement
+  if not isBlock:
+    ctx.body = "   " & res & ";\n"
 
   ## Assemble final GLSL
   var header = "#version 430\n"
   if isCompute: header &= "layout(local_size_x = 64) in;\n\n"
-  let glsl = header & ctx.header & "\nvoid main() {\n" & ctx.body & "}"
+  let glsl = header & ctx.header & "\n" & ctx.typeDecl & "\n" & ctx.forwardDecl & "\n" & ctx.funcDef & "\nvoid main() {\n" & ctx.body & "}"
 
   let bindings = globalBindingTable
   
