@@ -18,10 +18,12 @@ type
     data: B
     capacity: int
     lenght: int
+    startIdx: int
     count: RefCount
 
   GPUArray*[N: static int,B,T] = object
     data: B
+    startIdx: int
     count: RefCount
 
 #########################################################################################################################################################

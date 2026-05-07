@@ -9,6 +9,7 @@ proc clone*[B, T](src: GPUSeq[B, T]): GPUSeq[B, T] =
   result.data = src.data
   result.count = RefCount(count: 1)
   result.capacity = src.capacity
+  result.startIdx = src.startIdx
   result.length = src.length
 
 proc clone*[N, B, T](src: GPUArray[N, B, T]): GPUArray[N, B, T] =
@@ -51,6 +52,7 @@ template `=copy`*[T: GPUSeq | GPUArray](dest: var T, src: T) =
   dest.count = src.count
   dest.capacity = src.capacity
   dest.length = src.length
+  dest.startIdx = src.startIdx
   
   if dest.count != nil:
     acquire(dest.count)
