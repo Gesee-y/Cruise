@@ -21,7 +21,7 @@ type
     data*: T
     ticks*: array[N, uint64]
 
-  VecFragment*[N: static int, P: static bool, T, B] = object
+  VecFragment*[N: static int, P: static bool, B] = object
     ## Vector Storage
     data*: array[N, B]
     ticks*: array[N, uint64]
@@ -56,9 +56,6 @@ type
     freeBlocks: seq[int]
     ## Change counter tick
     tick: uint64
-
-template newFragArr[N,P,T,S,B]():  =
-  
 
 proc toSoATuple(T: NimNode, N: int): NimNode =
   ## Transform an object type into a tuple-of-arrays (SoA-compatible) type.
@@ -116,26 +113,32 @@ proc toSoATuple(T: NimNode, N: int): NimNode =
 
   return res
 
-macro toFragmentTy*(Ty: typedesc, N: static int = DEFAULT_BLK_SIZE,
+macro toSoAFragmentTy*(Ty: typedesc, N: static int = DEFAULT_BLK_SIZE,
     P: static bool = false): untyped = 
   let T = Ty.getTypeInst()[1]
+  let S = sizeof(uint)*8
   let ty = toSoATuple(Ty.getType[1], N)
-  let sy = toSoATuple(Ty.getType[1], sizeof(uint)*8)
+  let sy = toSoATuple(Ty.getType[1], S)
   return quote("@") do:
-    FragmentArray[`@N`, `@P`, `@ty`, `@sy`, `@T`]
+    FragmentArray[`@N`, `@P`, SoAFragment[`@N`, `@P`,`@ty`,`@T`], SoAFragment[`@S`, `@P`,`@sy`,`@T`], `@T`]
 
-macro castTo*(obj: untyped, Ty: typedesc, N: static int,
+macro soaCastTo*(obj: untyped, Ty: typedesc, N: static int,
     P: static bool = false): untyped =
   ## Cast an existing value to a `FragmentArray` of the given type.
   ##
   ## This is a low-level operation and assumes the underlying layout
   ## already matches the requested FragmentArray.
   let T = Ty.getTypeInst()[1]
+  let S = sizeof(uint)*8
   let ty = toSoATuple(Ty.getType[1], N)
-  let sy = toSoATuple(Ty.getType[1], sizeof(uint)*8)
+  let sy = toSoATuple(Ty.getType[1], S)
 
   return quote("@") do:
-    cast[FragmentArray[`@N`, `@P`, `@ty`, `@sy`, `@T`]](`@obj`)
+    cast[FragmentArray[`@N`, `@P`, SoAFragment[`@N`, `@P`,`@ty`,`@T`], SoAFragment[`@S`, `@P`,`@sy`,`@T`], `@T`]](`@obj`)
+
+template vecCastTo*(obj: untyped, Ty: typedesc, N: static int,
+    P: static bool = false): untyped =
+  cast[FragmentArray[N, P, VecFragment[N, P, Ty], VecFragment[UINT_BITS, P, Ty], Ty]](obj)
 
 macro newSoAFragArr(Ty: typedesc, N: static int,
     P: static bool = false): untyped =
@@ -147,40 +150,22 @@ macro newSoAFragArr(Ty: typedesc, N: static int,
   let sy = toSoATuple(Ty.getType[1], sizeof(uint)*8)
   let S = sizeof(uint)*8
   return quote("@") do:
-    let f = new(FragmentArray[`@N`, `@P`, `@ty`, `@sy`, `@T`])
+    let f = new(FragmentArray[`@N`, `@P`, SoAFragment[`@N`, `@P`,`@ty`,`@T`], SoAFragment[`@S`, `@P`,`@sy`,`@T`], `@T`])
     f.sparse = newSeqOfCap[SoAFragment[`@S`, `@P`, `@sy`, `@T`]](INITIAL_SPARSE_SIZE)
     f.toSparse = newSeqOfCap[int](INITIAL_SPARSE_SIZE*`@S`)
     f.freeBlocks = newSeq[int]()
     f.sparseMask = newHiBitSet(INITIAL_SPARSE_SIZE)
     f
 
-macro SoAFragArr(N: static int, stmt: typed) =
-  ## Rewrite variable declarations to use `FragmentArray` automatically.
-  ##
-  ## This macro allows declaring SoA-backed components using a more
-  ## ergonomic syntax.
-  for section in stmt:
-    case section.kind:
-      of nnkVarSection, nnkLetSection, nnkConstSection:
-        for identdef in section:
-          var ridentdef = newNimNode(nnkIdentDefs)
-          var brack = newNimNode(nnkBracketExpr)
-          var intl = newNimNode(nnkIntLit)
-          let ty = toSoATuple(identdef[1], N)
+proc newVecFragArr[T](ty: typedesc[T], N: static int,
+    P: static bool = false): FragmentArray[N, P, VecFragment[N,P,T], VecFragment[UINT_BITS,P,T], T] =
+  new(result)
 
-          intl.intVal = N
-
-          brack.add(ident"FragmentArray")
-          brack.add(intl)
-          brack.add(ty)
-          brack.add(ident(identdef[1].strVal))
-
-          identdef[0] = (ident(identdef[0].strVal))
-          identdef[1] = brack
-      else: continue
-
-  return quote("@") do:
-    `@stmt`
+proc initFragArr[N,P,T,S,B](fr: var FragmentArray[N,P,T,S,P]) =
+  fr.sparse = newSeqOfCap[S](INITIAL_SPARSE_SIZE)
+  fr.toSparse = newSeqOfCap[int](INITIAL_SPARSE_SIZE*UINT_BITS)
+  fr.freeBlocks = newSeq[int]()
+  fr.sparseMask = newHiBitSet(INITIAL_SPARSE_SIZE)
 
 ####################################################################################################################################################
 ############################################################### OPERATIONS #########################################################################
@@ -226,9 +211,9 @@ macro toObjectParam(T: typedesc, c: untyped, idx: untyped): untyped =
   res.add(constructorName)
 
   for f in fields:
-    let fieldAccess = newDotExpr(c, ident(f.strVal))
-    let bracketAccess = newNimNode(nnkBracketExpr).add(fieldAccess, idx)
-    res.add(bracketAccess)
+    let bracketAccess = newNimNode(nnkBracketExpr).add(c, idx)
+    let fieldAccess = newDotExpr(bracketAccess, ident(f.strVal))
+    res.add(fieldAccess)
 
   return res
 
@@ -300,22 +285,22 @@ template swapVals(b: untyped, i, j: int|uint) =
   b[i] = b[j]
   b[j] = tmp
 
-template overrideVals[N, P, T, S, B](b: FragmentArray[N, P, T, S, B], i, j: int|uint) =
+template overrideVals[N: static int, P: static bool, T, S, B](b: FragmentArray[N, P, T, S, B], i, j: untyped) =
   ## Override one value with another inside a fragment array by field-copying.
-  when T is tuple[]:
-    discard
-  else:
-    let (bidi, idxi) = i.getDenseMeta
-    let (bidj, idxj) = j.getDenseMeta
-    toObjectCopy(B, b.blocks[bidi].data, idxi, b.blocks[bidj].data, idxj)
+  let (bidi, idxi) = i.getDenseMeta
+  let (bidj, idxj) = j.getDenseMeta
+  b.blocks[bidi].data[idxi] = b.blocks[bidj].data[idxj]
+
+template overrideVals[N: static int, P: static bool, T: SoAFragment, S: SoAFragment, B](b: FragmentArray[N, P, T, S, B], i, j: untyped) =
+  ## Override one value with another inside a fragment array by field-copying.
+  let (bidi, idxi) = i.getDenseMeta
+  let (bidj, idxj) = j.getDenseMeta
+  toObjectCopy(B, b.blocks[bidi].data, idxi, b.blocks[bidj].data, idxj)
 
 template overrideVals[N, P, T, B](b: SoAFragment[N, P, T, B] | ref SoAFragment[
     N, P, T, B], i, j: int|uint) =
   ## Override one value with another inside a fragment.
-  when T is tuple[]:
-    discard
-  else:
-    toObjectCopy(B, b.data, i, b.data, j)
+  toObjectCopy(B, b.data, i, b.data, j)
 
 macro overrideValsBatch[N, P, T, S, B](f: var FragmentArray[N, P, T, S, B],
     ids: untyped, sw: seq[uint32], ad: seq[uint32]) =
@@ -445,9 +430,7 @@ proc newBlockAt[N, P, T, S, B](f: var FragmentArray[N, P, T, S, B], i: int) =
     let newCap = i + 1
     f.blocks.setLen(newCap)
     f.blkTicks.setLen(newCap)
-  var blk: ref SoAFragment[N, P, T, B]
-  new(blk)
-  f.blocks[i] = blk
+  new(f.blocks[i])
 
 proc getBlockId*[N, P, T, S, B](i: int|uint): uint =
   ## Compute the block index for a linear index.
@@ -527,6 +510,25 @@ template `[]`*[N: static int, P: static bool, T, B](blk: SoAFragment[N, P, T,
       toObjectParam(B, blk.data, i)
     else:
       toObject(B, blk.data, i)
+
+template `[]=`*[N, P, B](blk: var VecFragment[N, P, B] | ref VecFragment[N, P, B], i, v: untyped) =
+  ## Write a value into a fragment slot.
+  check(i.int < N, "Invalid access. " & $i &
+      "is out of bound for block of size " & $N)
+  when P:
+    setComponent(addr blk, i.uint, v)
+  else:
+    blk.data[i] = v
+
+template `[]`*[N: static int, P: static bool, B](blk: VecFragment[N, P,B] | ref VecFragment[N, P, B], i: untyped): untyped =
+  ## Read a value from a fragment slot.
+  check(i.int < N, "Invalid access. " & $i &
+      "is out of bound for block of size " & $N)
+
+  when P == true:
+    toObjectParam(B, blk.data, i)
+  else:
+    blk.data[i]
 
 template `[]`*[N, P, T, S, B](f: FragmentArray[N, P, T, S, B],
     i: uint): untyped =

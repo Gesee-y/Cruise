@@ -21,18 +21,18 @@ proc link*(w: ECSWorld, d:SparseHandle): SWEntity =
 ################################################################### ACCESSORS #####################################################################
 ####################################################################################################################################################
 
-## Retrieves component data from a `SoAFragmentArray` using a `DWEntity`.
-template `[]`*[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B], dw:DWEntity):untyped = f[dw.handle]
+## Retrieves component data from a `FragmentArray` using a `DWEntity`.
+template `[]`*[N,P,T,S,B](f: FragmentArray[N,P,T,S,B], dw:DWEntity):untyped = f[dw.handle]
 
-## Retrieves component data from a `SoAFragmentArray` using a `SWEntity`.
-template `[]`*[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B], sw:SWEntity):untyped = f[sw.handle]
+## Retrieves component data from a `FragmentArray` using a `SWEntity`.
+template `[]`*[N,P,T,S,B](f: FragmentArray[N,P,T,S,B], sw:SWEntity):untyped = f[sw.handle]
 
-## Sets component data in a `SoAFragmentArray` for a `DWEntity`.
-template `[]=`*[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], dw:DWEntity, v:B) = 
+## Sets component data in a `FragmentArray` for a `DWEntity`.
+template `[]=`*[N,P,T,S,B](f:var FragmentArray[N,P,T,S,B], dw:DWEntity, v:B) = 
   f[dw.handle] = v
 
-## Sets component data in a `SoAFragmentArray` for a `SWEntity`.
-template `[]=`*[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], sw:SWEntity, v:B) = 
+## Sets component data in a `FragmentArray` for a `SWEntity`.
+template `[]=`*[N,P,T,S,B](f: var FragmentArray[N,P,T,S,B], sw:SWEntity, v:B) = 
   f[sw.handle] = v
 
 ####################################################################################################################################################

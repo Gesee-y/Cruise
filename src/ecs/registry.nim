@@ -13,6 +13,8 @@ var NEXT_COMPONENT_ID {.compileTime.} = 0
 var NEXT_ARCHETYPE_ID {.compileTime.} = 0
 var COMPONENT_ID_REGISTRY {.compileTime.} = initTable[int, int]()
 var ID_TO_COMPONENT {.compileTime.} = initTable[int, NimNode]()
+var COMPONENT_TO_LAYOUT {.compileTime.} = initTable[int, NimNode]()
+var ID_TO_LAYOUT {.compileTime.} = initTable[int, tuple[createProc:NimNode, castProc: NimNode]]()
 var ARCHETYPE_ID_REGISTRY {.compileTime.} = initTable[ArchetypeMask, int]()
 var ARCHETYPE_ID_TO_MASK {.compileTime.} = initTable[int, ArchetypeMask]()
 var REQUIRED_COMPS {.compileTime.} = initTable[int, seq[int]]()
@@ -190,7 +192,20 @@ type
     entries:seq[ComponentEntry]
     cmap:Table[string, int]
 
-macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped =
+macro registerLayout(ty, createProcName, castProcName: untyped) =
+  let id = ty.repr.hash.int
+  ID_TO_LAYOUT[id] = (createProcName, castProcName)
+
+macro castTo*(obj: untyped, Ty: typedesc, N: static int,
+    P: static bool = false): untyped =
+  let cid = getComponentIdFromRegistry(Ty)
+  let layout = COMPONENT_TO_LAYOUT[cid]
+  let (createProc, castProc) = ID_TO_LAYOUT[layout.repr.hash.int]
+
+  return quote do:
+    `castProc`(`obj`, `Ty`, `N`, `P`)
+
+macro registerComponent(registry:ComponentRegistry, B:typed, P:static bool=false, layout: untyped = SoAFragment):untyped =
   ## Register a component type `B` into the given registry.
   ##
   ## This macro:
@@ -203,17 +218,23 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
   ## - B: component type (AoS)
   ## - P: enable/disable change tracking
   let str = B.getType()[1].strVal
+  let cid = getComponentIdFromRegistry(B)
+  let key = layout.repr.hash.int
+  if key notin ID_TO_LAYOUT:
+    error("Layout '" & layout.repr & "' not registered. Call registerLayout first.", layout)
+  
+  let (createProc, castProc) = ID_TO_LAYOUT[key]
+  COMPONENT_TO_LAYOUT[cid] = layout
 
   return quote do:
     let id = toComponentId(`B`)
-
     if id >= `registry`.entries.len or `registry`.entries[id].isNil:
       `registry`.cmap[`str`] = id
       if id >= `registry`.entries.len: 
         `registry`.entries.setLen(id+1)
       
       # Allocate SoA storage for the component
-      var frag = newSoAFragArr(`B`, DEFAULT_BLK_SIZE, `P`)
+      var frag = `createProc`(`B`, DEFAULT_BLK_SIZE, `P`)
 
       # Prevent GC from collecting the fragment array
       GC_ref(frag)
@@ -259,7 +280,7 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
         let sbid = s shr BIT_DIVIDER
         let si = s and BIT_REMAINDER
         let physIdx = fr.toSparse[sbid] - 1
-        toObjectCopy(`B`, fr.blocks[bidi].data, idxi, fr.sparse[physIdx].data, si)
+        fr.blocks[bidi][idxi] = fr.sparse[physIdx][si]
 
       let overSD = proc (p:pointer,s:uint32, d:uint32) {.noSideEffect, nimcall, inline.} =
         var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,false)
@@ -267,7 +288,7 @@ macro registerComponent(registry:untyped, B:typed, P:static bool=false):untyped 
         let sbid = s shr BIT_DIVIDER
         let si = s and BIT_REMAINDER
         let physIdx = fr.toSparse[sbid] - 1
-        toObjectCopy(`B`, fr.sparse[physIdx].data, si, fr.blocks[bidi].data, idxi)
+        fr.sparse[physIdx][si] = fr.blocks[bidi][idxi]
 
       let overvb = proc (p:pointer, ids:openArray[uint32], sw:seq[uint32], ad:seq[uint32]) =
         var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,false)

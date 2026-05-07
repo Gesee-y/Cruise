@@ -33,25 +33,25 @@ template archID*(s: SparseHandle): uint16 = (s.meta shr SHIFT16).uint16
 template `archID=`(s: SparseHandle, v: untyped) = 
   s.meta = (s.meta and MASK16) or (v.uint32 shl SHIFT16)
 
-## Retrieves component data from a `SoAFragmentArray` using a raw `Entity`.
-template `[]`*[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B], d: DenseHandle):untyped = f[d.world.entities[d.widx]]
+## Retrieves component data from a `FragmentArray` using a raw `Entity`.
+template `[]`*[N,P,T,S,B](f: FragmentArray[N,P,T,S,B], d: DenseHandle):untyped = f[d.world.entities[d.widx]]
 
-## Sets component data in a `SoAFragmentArray` for a raw `Entity`.
-template `[]=`*[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], d: DenseHandle, v:B) = 
+## Sets component data in a `FragmentArray` for a raw `Entity`.
+template `[]=`*[N,P,T,S,B](f:var FragmentArray[N,P,T,S,B], d: DenseHandle, v:B) = 
   f[d.id] = v
 
-## Retrieves component data from a `SoAFragmentArray` using a `SparseHandle`.
+## Retrieves component data from a `FragmentArray` using a `SparseHandle`.
 ##
 ## Sparse storage typically maps an Entity ID to a component value.
-template `[]`*[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B], d:SparseHandle):untyped = 
+template `[]`*[N,P,T,S,B](f: FragmentArray[N,P,T,S,B], d:SparseHandle):untyped = 
   let S = sizeof(uint)*8 # Size of the bucket range (e.g., 64 bits).
   
   # Calculate the bucket index via toSparse indirection.
   # Calculate the offset: `id and (S-1)` gets the index within that page (modulo 64).
   f.sparse[f.toSparse[d.id shr BIT_DIVIDER.uint]-1][d.id and BIT_REMAINDER.uint]
 
-## Sets component data in a `SoAFragmentArray` for a `SparseHandle`.
-proc `[]=`*[N,P,T,S,B](f: var SoAFragmentArray[N,P,T,S,B], d:SparseHandle, v:B) = 
+## Sets component data in a `FragmentArray` for a `SparseHandle`.
+proc `[]=`*[N,P,T,S,B](f: var FragmentArray[N,P,T,S,B], d:SparseHandle, v:B) = 
   let S = sizeof(uint)*8
   when P: setChangedSparse(f, d.id)
   f.sparse[f.toSparse[d.id shr BIT_DIVIDER.uint]-1][d.id and BIT_REMAINDER.uint] = v
