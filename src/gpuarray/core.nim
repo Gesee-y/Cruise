@@ -2,14 +2,14 @@
 ################################################################ GPU SEQUENCE CORE #######################################################################
 ##########################################################################################################################################################
 
-import logging, strutils, atomics
+import logging, atomics
 
 type
   ScalarIndexingMode* = enum
-    ScalarAllowed, ScalarWarn, ScalarDisallowed
+    ScalarDisallowed, ScalarAllowed, ScalarWarn
 
-  ScalarIndexingError* = ref object of CatchableError
-  RefCountError* = ref object of CatchableError
+  ScalarIndexingError* = object of CatchableError
+  RefCountError* = object of CatchableError
 
   RefCount = ref object
     count: Atomic[int]
@@ -28,9 +28,9 @@ type
 ################################################################### ABSTRACTION #########################################################################
 #########################################################################################################################################################
 
-var CURRENT_INDEXING {.threadVar.}
+var CURRENT_INDEXING {.threadVar.}: ScalarIndexingMode
 
-template assert_scalar(op: untyped, behavior: ScalarIndexingMode)
+template assert_scalar(op: untyped, behavior: ScalarIndexingMode) =
     let errdesc = &"""Invocation of '{op}' resulted in scalar indexing of a GPU array.
               This is typically caused by calling an iterating implementation of a method.
               Such implementations *do not* execute on the GPU, but very slowly on the CPU,
