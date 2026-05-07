@@ -21,6 +21,11 @@ type
     data*: T
     ticks*: array[N, uint64]
 
+  VecFragment*[N: static int, P: static bool, T, B] = object
+    ## Vector Storage
+    data*: array[N, B]
+    ticks*: array[N, uint64]
+
   ## A dynamically-sized array of SoA fragments.
   ##
   ## This is the main container used to store a component in SoA layout.
@@ -36,21 +41,24 @@ type
   SoAFragmentArray*[N: static int, P: static bool, T, S, B] = ref object
     ## Dense blocks.
     blocks*: seq[ref SoAFragment[N, P, T, B]]
-    blkTicks: seq[uint64]
+    blkTicks*: seq[uint64]
     ## Sparse blocks (one block represents sizeof(uint)*8 entities).
     sparse*: seq[SoAFragment[sizeof(uint)*8, P, S, B]]
-    sparseTicks: seq[uint64]
+    sparseTicks*: seq[uint64]
     changeFilter: QueryFilter
     ## Mapping from dense indices to sparse blocks.
-    toSparse: seq[int]
+    toSparse*: seq[int]
     ## Dense activation mask.
     mask: seq[uint]
     ## Active sparse indices.
-    sparseMask: HiBitSetType
+    sparseMask*: HiBitSetType
     ## Recycled sparse block indices.
     freeBlocks: seq[int]
     ## Change counter tick
     tick: uint64
+
+template newFragArr(db:T, sb:S, t:typedesc[B], N: static int = DEFAULT_BLK_SIZE, p:) =
+  
 
 proc toSoATuple(T: NimNode, N: int): NimNode =
   ## Transform an object type into a tuple-of-arrays (SoA-compatible) type.
