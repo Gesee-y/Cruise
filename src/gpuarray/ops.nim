@@ -35,6 +35,12 @@ proc toOpenArray*[T: GPUSeq | GPUArray](g: T): T =
 proc copyTo*[B,T](g: GPUSeq[B,T], src: openArray[T], start, stop: int) =
   discard
 
+template `[]`*(g: GPUSeq): untyped = g.toSeq[i]
+template `[]`*(g: GPUArray): untyped = g.toArray[i]
+template `[]=`*(g: GPUSeq | GPUArray, i, item: untyped): untyped =
+  g.ensureLen()
+  copyTo(g, @[item], i, i+1)
+
 proc add*[B, T](g: var GPUSeq[B, T], item: T) =
   let oldLen = g.length
   g.length += 1
