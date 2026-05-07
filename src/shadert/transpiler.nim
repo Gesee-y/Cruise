@@ -264,6 +264,12 @@ proc emitStruct(ctx: var GLSLContext, ty: NimNode): string =
     result &= "  " & fieldType & " " & fieldName & ";\n"
   result &= "};\n"
 
+proc ensureStmtList(node: NimNode): NimNode =
+  if node.kind in {nnkStmtList, nnkStmtListExpr}:
+    return node
+  result = newNimNode(nnkStmtList)
+  result.add(node)
+
 proc remapFunc(ctx: var GLSLContext, name: string, node: NimNode): string =
   ## Resolve a function call to its GLSL name.
   ## If the function is unknown, transpile its Nim implementation
@@ -306,9 +312,9 @@ proc remapFunc(ctx: var GLSLContext, name: string, node: NimNode): string =
   funcCtx.emittedFuncs = ctx.emittedFuncs
 
   var glslBody = ""
-  #if returnType != "void":
-  #  glslBody &= "  " & returnType & " result;\n"
-  let fbody = processNode(funcCtx, impl[6])
+  var body = impl[6].ensureStmtList
+  
+  let fbody = processNode(funcCtx, body)
   ctx.typeDecl &= funcCtx.typeDecl
   ctx.forwardDecl = funcCtx.forwardDecl & "\n" & ctx.forwardDecl
   ctx.funcDef &= funcCtx.funcDef
@@ -401,9 +407,9 @@ proc processNode(ctx: var GLSLContext, node: NimNode, depth: int = 0, pc: Parsin
       if branch.kind == nnkElifBranch:
         let keyword = if i == 0: "if" else: "else if"
         result &= idnt & keyword & " (" & processNode(ctx, branch[0]) & ") {\n"
-        result &= processNode(ctx, branch[1], depth+1) & "\n" & idnt & "}"
+        result &= processNode(ctx, branch[1].ensureStmtList, depth) & "\n" & idnt & "}"
       elif branch.kind == nnkElse:
-        result &= " else {\n" & processNode(ctx, branch[0], depth+1) & "\n" & idnt & "}"
+        result &= " else {\n" & processNode(ctx, branch[0].ensureStmtList, depth) & "\n" & idnt & "}"
 
   of nnkForStmt:
     ## for i in a..<b -> for(int i = a; i < b; i++)
@@ -416,12 +422,12 @@ proc processNode(ctx: var GLSLContext, node: NimNode, depth: int = 0, pc: Parsin
     let hi = processNode(ctx, iter[2])
     result = idnt & "for (int " & varName & " = " & lo & "; " &
              varName & " < " & hi & "; " & varName & "++) {\n"
-    result &= processNode(ctx, node[2], depth+1) & "\n" & idnt & "}"
+    result &= processNode(ctx, node[2].ensureStmtList, depth) & "\n" & idnt & "}"
 
   of nnkWhileStmt:
     ## while cond: body -> while (cond) { body }
     result = idnt & "while (" & processNode(ctx, node[0]) & ") {\n"
-    result &= processNode(ctx, node[1], depth+1) & "}"
+    result &= processNode(ctx, node[1].ensureStmtList, depth) & "\n" & idnt & "}"
 
   of nnkReturnStmt:
     result = idnt & "return " & processNode(ctx, node[0], pc=pcReturn)
@@ -584,16 +590,18 @@ macro compileToGLSL*(fn: typed): CompiledShader =
   let impl = fn.getImpl
   let name = impl[0]
   let params = impl[3]
-  let body = impl[6]
+  var body = impl[6]
 
   let isCompute = ctx.processParams(params)
   let isBlock = body.kind in {nnkStmtList, nnkStmtListExpr}
-  let isControl = body.kind in {nnkForStmt, nnkIfExpr, nnkIfStmt, nnkWhileStmt}
-  let res = processNode(ctx, body, isControl.int)
-  
+
   # In case the proc's body was a single statement
   if not isBlock:
-    ctx.body = "   " & res & ";\n"
+    var stmtList = newNimNode(nnkStmtList)
+    stmtList.add(body)
+    body = stmtList
+  
+  let res = processNode(ctx, body)
 
   ## Assemble final GLSL
   var header = "#version 430\n"
