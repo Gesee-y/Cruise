@@ -5,3 +5,4 @@
 include "core.nim"
 include "memory.nim"
 include "ops.nim"
+include "broadcast.nim"

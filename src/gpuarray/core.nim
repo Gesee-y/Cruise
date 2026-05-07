@@ -5,6 +5,9 @@
 import logging, atomics
 
 type
+  SomeInteger = int8 | int16 | int32 | int64 | int | uint8 | uint16 | uint32 | uint64 | uint
+  SomeFLoat = float32 | float64 | float
+
   ScalarIndexingMode* = enum
     ScalarDisallowed, ScalarAllowed, ScalarWarn
 
@@ -25,6 +28,8 @@ type
     data: B
     startIdx: int
     count: RefCount
+
+const DEFAULT_CAPACITY = 32
 
 #########################################################################################################################################################
 ################################################################### ABSTRACTION #########################################################################

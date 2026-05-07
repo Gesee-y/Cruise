@@ -27,7 +27,7 @@ proc toArray*[N,B,T](g: GPUArray[N,B,T]): array[N,T] =
   let res: array[N,T]
   res
 
-proc toOpenArray*[T: GPUSeq | GPUArray](g: T): T =
+proc toOpenArray*[T: GPUSeq | GPUArray, start, stop: int](g: T): T =
   result = T
   result.startIdx = g.startIdx + start
   result.lenght = g.startIdx + stop
@@ -60,6 +60,6 @@ proc `$`*[B, T](g: GPUSeq[B, T]): string =
   let cpuData = g.toSeq()
   return "GPUSeq(" & $cpuData & ")"
 
-proc `$`*[N, B, T](g: GPUSeq[N, B, T]): string =
+proc `$`*[N, B, T](g: GPUArray[N, B, T]): string =
   let cpuData = g.toArray()
   return "GPUArray(" & $cpuData & ")"
