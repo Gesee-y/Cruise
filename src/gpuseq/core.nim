@@ -5,15 +5,18 @@
 import logging
 
 type
-  ScalarIndexingMode = enum
+  ScalarIndexingMode* = enum
     ScalarAllowed, ScalarWarn, ScalarDisallowed
 
-  ScalarIndexingError = ref object of Exception
+  ScalarIndexingError* = ref object of CatchableError
 
-  GPUSeq[B,T] = object
+  GPUSeq*[B,T] = object
     data: B
     capacity: int
     lenght: int
+
+  GPUArray*[N: static int,B,T] = object
+    data: B
 
 #########################################################################################################################################################
 ################################################################### ABSTRACTION #########################################################################
@@ -29,7 +32,7 @@ template assert_scalar(op: untyped, behavior: ScalarIndexingMode)
 
               If you want to allow scalar iteration, use `allowscalar` or `@allowscalar`
               to enable scalar iteration globally or for the operations in question."""
-    let warnDesc = &"Performing s"
+    let warnDesc = &"Performing scalar indexing on: {op}"
 
     if behavior == ScalarDisallowed:
       raise newException(ScalarIndexingError, desc)
