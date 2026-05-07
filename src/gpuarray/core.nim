@@ -2,21 +2,27 @@
 ################################################################ GPU SEQUENCE CORE #######################################################################
 ##########################################################################################################################################################
 
-import logging
+import logging, strutils, atomics
 
 type
   ScalarIndexingMode* = enum
     ScalarAllowed, ScalarWarn, ScalarDisallowed
 
   ScalarIndexingError* = ref object of CatchableError
+  RefCountError* = ref object of CatchableError
+
+  RefCount = ref object
+    count: Atomic[int]
 
   GPUSeq*[B,T] = object
     data: B
     capacity: int
     lenght: int
+    count: RefCount
 
   GPUArray*[N: static int,B,T] = object
     data: B
+    count: RefCount
 
 #########################################################################################################################################################
 ################################################################### ABSTRACTION #########################################################################
