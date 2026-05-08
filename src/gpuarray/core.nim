@@ -14,8 +14,8 @@ type
   ScalarIndexingError* = object of CatchableError
   RefCountError* = object of CatchableError
 
-  RefCount = ref object
-    count: Atomic[int]
+  RefCount* = ref object
+    count*: Atomic[int]
 
   GPUSeq*[B,T] = object
     data: B
@@ -36,6 +36,11 @@ const DEFAULT_CAPACITY = 32
 #########################################################################################################################################################
 
 var CURRENT_INDEXING {.threadVar.}: ScalarIndexingMode
+
+proc newRefCount(): RefCount =
+  var r = RefCount()
+  r.count.store(1)
+  r 
 
 template assert_scalar(op: untyped, behavior: ScalarIndexingMode) =
     let errdesc = &"""Invocation of '{op}' resulted in scalar indexing of a GPU array.

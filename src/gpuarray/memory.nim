@@ -7,14 +7,14 @@ proc ensureLen*[T, B](g: GPUSeq[B,T]) = discard
 proc releaseData*[T: GPUSeq | GPUArray](g: T) = discard
 proc clone*[B, T](src: GPUSeq[B, T]): GPUSeq[B, T] =
   result.data = src.data
-  result.count = RefCount(count: 1)
+  result.count = newRefCount()
   result.capacity = src.capacity
   result.startIdx = src.startIdx
   result.length = src.length
 
 proc clone*[N, B, T](src: GPUArray[N, B, T]): GPUArray[N, B, T] =
   result.data = src.data
-  result.count = RefCount(count: 1)
+  result.count = newRefCount()
 
 proc acquire(r: RefCount): int =
   let c = load(r.count)
