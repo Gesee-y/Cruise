@@ -24,6 +24,23 @@
 ##   Arithmetic and trig operators compile a tiny OpenCL C kernel on first use
 ##   and cache it for the lifetime of the process (compileTime table keyed on the
 ##   operation + element type string).  Recompilation never happens at runtime.
+##
+## Buffer reuse:
+##   Every allocating operator (`+`, `-`, `*`, `/`, `sin`, …) has a matching
+##   non-allocating "into" variant that writes into a caller-supplied buffer:
+##
+##     add(a, b, dst)      # binary   — no allocation if dst.data.cap >= a.length
+##     addScalar(a, s, dst)# scalar   — same
+##     sinInto(a, dst)     # unary    — same
+##
+##   Compound-assignment operators (`+=`, `-=`, …) also write in-place without
+##   allocating a new cl_mem buffer.
+##
+##   NOTE on aliasing: the in-place compound operators (e.g. `a += a`) share
+##   the same cl_mem for read and write.  OpenCL 1.2 does not formally guarantee
+##   safety when the same buffer appears as both input and output in a kernel.
+##   For the common case (a += b where a ≠ b) this is always safe.  If you need
+##   to support `a += a`, clone `a` first.
 
 import math, strutils, tables
 import ../gpuarrays
@@ -92,7 +109,7 @@ type
     ## Device-side backing store for a CLArray of fixed size N.
     mem*: Pmem
 
-  CLSeq*[T]               = GPUSeq[CLSData[T], T]
+  CLSeq*[T]                  = GPUSeq[CLSData[T], T]
   CLArray*[N: static int, T] = GPUArray[N, CLAData[N, T], T]
 
 ##########################################################################################################################################################
@@ -127,7 +144,7 @@ proc ensureLen*[T](c: var CLSeq[T]) =
 
   if c.length <= c.data.cap: return   ## already fits
 
-  let newCap  = max(c.length, c.data.cap * 2)
+  let newCap   = max(c.length, c.data.cap * 2)
   let newBytes = newCap * sizeof(T)
   var err: TClResult
 
@@ -394,79 +411,111 @@ __kernel void $1(
 }""".replace("$1", kernName).replace("$2", clTy).replace("$3", fn)
 
 ##########################################################################################################################################################
-## DISPATCH HELPERS
+## DISPATCH HELPERS — internal, with explicit destination buffer
 ##########################################################################################################################################################
+##
+## Every `dispatchXxxInto` proc writes into a caller-supplied `dst` buffer.
+## `dst.length` is updated to match the source length and `dst.ensureLen()`
+## is called to grow the underlying cl_mem if necessary — but no new buffer
+## is allocated when the existing capacity is already sufficient.
+##
+## The allocating `dispatchXxx` wrappers simply construct a fresh CLSeq and
+## delegate to their `Into` counterpart, keeping the hot-path code in one place.
 
-proc dispatchBinOp[T](a, b: CLSeq[T], op, kernName: string): CLSeq[T] =
-  ## Compile (once) and dispatch a binary element-wise kernel.
+proc dispatchBinOpInto[T](a, b: CLSeq[T], op, kernName: string, dst: var CLSeq[T]) =
+  ## Write element-wise `a OP b` into `dst`.  Reuses `dst`'s cl_mem buffer
+  ## when its capacity is large enough; grows it (via ensureLen) otherwise.
   let clTy = clTypeName(T)
-  let src   = binOpKernelSrc(clTy, op, kernName & "_" & clTy)
-  let k     = getKernel(src, kernName & "_" & clTy)
-  result    = newCLSeq[T](a.length)
+  let kn   = kernName & "_" & clTy
+  let src  = binOpKernelSrc(clTy, op, kn)
+  let k    = getKernel(src, kn)
+
+  dst.length = a.length
+  dst.ensureLen()
 
   var aOff   = a.startIdx.cint
   var bOff   = b.startIdx.cint
-  var outOff = 0.cint
+  var dstOff = dst.startIdx.cint
   var n      = a.length.cint
 
-  check setKernelArg(k, 0, sizeof(Pmem),  addr a.data.mem)
-  check setKernelArg(k, 1, sizeof(Pmem),  addr b.data.mem)
-  check setKernelArg(k, 2, sizeof(Pmem),  addr result.data.mem)
-  check setKernelArg(k, 3, sizeof(cint),  addr aOff)
-  check setKernelArg(k, 4, sizeof(cint),  addr bOff)
-  check setKernelArg(k, 5, sizeof(cint),  addr outOff)
-  check setKernelArg(k, 6, sizeof(cint),  addr n)
+  check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
+  check setKernelArg(k, 1, sizeof(Pmem), addr b.data.mem)
+  check setKernelArg(k, 2, sizeof(Pmem), addr dst.data.mem)
+  check setKernelArg(k, 3, sizeof(cint), addr aOff)
+  check setKernelArg(k, 4, sizeof(cint), addr bOff)
+  check setKernelArg(k, 5, sizeof(cint), addr dstOff)
+  check setKernelArg(k, 6, sizeof(cint), addr n)
 
-  var globalSize = a.length
-  check enqueueNDRangeKernel(gCL.queue, k, 1, nil,
-    addr globalSize, nil, 0, nil, nil)
+  var gs = a.length
+  check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
   check finish(gCL.queue)
 
-proc dispatchScalarOp[T](a: CLSeq[T], scalar: T, op, kernName: string): CLSeq[T] =
-  ## Compile (once) and dispatch a scalar broadcast kernel.
+proc dispatchBinOp[T](a, b: CLSeq[T], op, kernName: string): CLSeq[T] =
+  ## Allocating wrapper: create a fresh CLSeq and delegate to dispatchBinOpInto.
+  result = newCLSeq[T](a.length)
+  dispatchBinOpInto(a, b, op, kernName, result)
+
+proc dispatchScalarOpInto[T](a: CLSeq[T], scalar: T, op, kernName: string, dst: var CLSeq[T]) =
+  ## Write element-wise `a OP scalar` into `dst`.  Reuses `dst`'s cl_mem buffer
+  ## when its capacity is large enough; grows it (via ensureLen) otherwise.
   let clTy = clTypeName(T)
-  let src   = scalarOpKernelSrc(clTy, op, kernName & "_" & clTy)
-  let k     = getKernel(src, kernName & "_" & clTy)
-  result    = newCLSeq[T](a.length)
+  let kn   = kernName & "_" & clTy
+  let src  = scalarOpKernelSrc(clTy, op, kn)
+  let k    = getKernel(src, kn)
+
+  dst.length = a.length
+  dst.ensureLen()
 
   var aOff   = a.startIdx.cint
-  var outOff = 0.cint
+  var dstOff = dst.startIdx.cint
   var n      = a.length.cint
   var s      = scalar
 
-  check setKernelArg(k, 0, sizeof(Pmem),   addr a.data.mem)
-  check setKernelArg(k, 1, sizeof(T),      addr s)
-  check setKernelArg(k, 2, sizeof(Pmem),   addr result.data.mem)
-  check setKernelArg(k, 3, sizeof(cint),   addr aOff)
-  check setKernelArg(k, 4, sizeof(cint),   addr outOff)
-  check setKernelArg(k, 5, sizeof(cint),   addr n)
+  check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
+  check setKernelArg(k, 1, sizeof(T),    addr s)
+  check setKernelArg(k, 2, sizeof(Pmem), addr dst.data.mem)
+  check setKernelArg(k, 3, sizeof(cint), addr aOff)
+  check setKernelArg(k, 4, sizeof(cint), addr dstOff)
+  check setKernelArg(k, 5, sizeof(cint), addr n)
 
-  var globalSize = a.length
-  check enqueueNDRangeKernel(gCL.queue, k, 1, nil,
-    addr globalSize, nil, 0, nil, nil)
+  var gs = a.length
+  check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
+  check finish(gCL.queue)
+
+proc dispatchScalarOp[T](a: CLSeq[T], scalar: T, op, kernName: string): CLSeq[T] =
+  ## Allocating wrapper: create a fresh CLSeq and delegate to dispatchScalarOpInto.
+  result = newCLSeq[T](a.length)
+  dispatchScalarOpInto(a, scalar, op, kernName, result)
+
+proc dispatchUnaryOpInto[T](a: CLSeq[T], fn, kernName: string, dst: var CLSeq[T]) =
+  ## Write element-wise `fn(a)` into `dst`.  Reuses `dst`'s cl_mem buffer
+  ## when its capacity is large enough; grows it (via ensureLen) otherwise.
+  let clTy = clTypeName(T)
+  let kn   = kernName & "_" & clTy
+  let src  = unaryOpKernelSrc(clTy, fn, kn)
+  let k    = getKernel(src, kn)
+
+  dst.length = a.length
+  dst.ensureLen()
+
+  var aOff   = a.startIdx.cint
+  var dstOff = dst.startIdx.cint
+  var n      = a.length.cint
+
+  check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
+  check setKernelArg(k, 1, sizeof(Pmem), addr dst.data.mem)
+  check setKernelArg(k, 2, sizeof(cint), addr aOff)
+  check setKernelArg(k, 3, sizeof(cint), addr dstOff)
+  check setKernelArg(k, 4, sizeof(cint), addr n)
+
+  var gs = a.length
+  check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
   check finish(gCL.queue)
 
 proc dispatchUnaryOp[T](a: CLSeq[T], fn, kernName: string): CLSeq[T] =
-  ## Compile (once) and dispatch a unary element-wise kernel.
-  let clTy = clTypeName(T)
-  let src   = unaryOpKernelSrc(clTy, fn, kernName & "_" & clTy)
-  let k     = getKernel(src, kernName & "_" & clTy)
-  result    = newCLSeq[T](a.length)
-
-  var aOff   = a.startIdx.cint
-  var outOff = 0.cint
-  var n      = a.length.cint
-
-  check setKernelArg(k, 0, sizeof(Pmem),  addr a.data.mem)
-  check setKernelArg(k, 1, sizeof(Pmem),  addr result.data.mem)
-  check setKernelArg(k, 2, sizeof(cint),  addr aOff)
-  check setKernelArg(k, 3, sizeof(cint),  addr outOff)
-  check setKernelArg(k, 4, sizeof(cint),  addr n)
-
-  var globalSize = a.length
-  check enqueueNDRangeKernel(gCL.queue, k, 1, nil,
-    addr globalSize, nil, 0, nil, nil)
-  check finish(gCL.queue)
+  ## Allocating wrapper: create a fresh CLSeq and delegate to dispatchUnaryOpInto.
+  result = newCLSeq[T](a.length)
+  dispatchUnaryOpInto(a, fn, kernName, result)
 
 ##########################################################################################################################################################
 ## CLArray DISPATCH HELPERS — native GPU kernels (no CPU round-trip)
@@ -758,6 +807,154 @@ proc sqrt*[T: SomeFloat](a: CLSeq[T]): CLSeq[T]   = dispatchUnaryOp(a, "sqrt",  
 proc exp*[T: SomeFloat](a: CLSeq[T]): CLSeq[T]    = dispatchUnaryOp(a, "exp",    "exp")
 proc ln*[T: SomeFloat](a: CLSeq[T]): CLSeq[T]     = dispatchUnaryOp(a, "log",    "ln")  ## OpenCL uses log() for ln
 proc abs*[T](a: CLSeq[T]): CLSeq[T]               = dispatchUnaryOp(a, "fabs",   "abs")
+
+##########################################################################################################################################################
+## CLSeq — non-allocating "into" variants (binary)
+##########################################################################################################################################################
+##
+## These procs write results into a caller-supplied `dst` buffer, avoiding any
+## cl_mem allocation on the hot path.  Typical usage:
+##
+##   var buf = newCLSeq[float32](n)   # allocate once outside the loop
+##   for step in 0..<iterations:
+##     add(a, b, buf)                 # reuse `buf` every iteration — zero allocation
+##     mulScalar(buf, 0.5, buf)       # chaining is safe as long as a != buf (see aliasing note)
+##
+## The buffer is grown automatically if `dst.data.cap < a.length`, but is never
+## shrunk.  `dst.length` is always updated to reflect the new logical size.
+
+proc add*[T](a, b: CLSeq[T], dst: var CLSeq[T]) =
+  ## Element-wise addition into `dst`.  No allocation when `dst` is large enough.
+  assert a.length == b.length, "add: length mismatch"
+  dispatchBinOpInto(a, b, "+", "add", dst)
+
+proc sub*[T](a, b: CLSeq[T], dst: var CLSeq[T]) =
+  ## Element-wise subtraction into `dst`.  No allocation when `dst` is large enough.
+  assert a.length == b.length, "sub: length mismatch"
+  dispatchBinOpInto(a, b, "-", "sub", dst)
+
+proc mul*[T](a, b: CLSeq[T], dst: var CLSeq[T]) =
+  ## Element-wise multiplication into `dst`.  No allocation when `dst` is large enough.
+  assert a.length == b.length, "mul: length mismatch"
+  dispatchBinOpInto(a, b, "*", "mul", dst)
+
+proc divInto*[T](a, b: CLSeq[T], dst: var CLSeq[T]) =
+  ## Element-wise division into `dst`.  No allocation when `dst` is large enough.
+  ## Named `divInto` to avoid shadowing Nim's built-in integer `div` operator.
+  assert a.length == b.length, "divInto: length mismatch"
+  dispatchBinOpInto(a, b, "/", "div_op", dst)
+
+##########################################################################################################################################################
+## CLSeq — non-allocating "into" variants (scalar broadcast)
+##########################################################################################################################################################
+
+proc addScalar*[T](a: CLSeq[T], scalar: T, dst: var CLSeq[T]) =
+  ## Broadcast scalar addition into `dst`.  No allocation when `dst` is large enough.
+  dispatchScalarOpInto(a, scalar, "+", "adds", dst)
+
+proc subScalar*[T](a: CLSeq[T], scalar: T, dst: var CLSeq[T]) =
+  ## Broadcast scalar subtraction into `dst`.  No allocation when `dst` is large enough.
+  dispatchScalarOpInto(a, scalar, "-", "subs", dst)
+
+proc mulScalar*[T](a: CLSeq[T], scalar: T, dst: var CLSeq[T]) =
+  ## Broadcast scalar multiplication into `dst`.  No allocation when `dst` is large enough.
+  dispatchScalarOpInto(a, scalar, "*", "muls", dst)
+
+proc divScalar*[T](a: CLSeq[T], scalar: T, dst: var CLSeq[T]) =
+  ## Broadcast scalar division into `dst`.  No allocation when `dst` is large enough.
+  dispatchScalarOpInto(a, scalar, "/", "divs", dst)
+
+##########################################################################################################################################################
+## CLSeq — non-allocating "into" variants (unary / trig)
+##########################################################################################################################################################
+
+proc sinInto*[T: SomeFloat](a: CLSeq[T], dst: var CLSeq[T]) =
+  ## Element-wise sine into `dst`.  No allocation when `dst` is large enough.
+  dispatchUnaryOpInto(a, "sin",  "sin",    dst)
+
+proc cosInto*[T: SomeFloat](a: CLSeq[T], dst: var CLSeq[T]) =
+  ## Element-wise cosine into `dst`.  No allocation when `dst` is large enough.
+  dispatchUnaryOpInto(a, "cos",  "cos",    dst)
+
+proc tanInto*[T: SomeFloat](a: CLSeq[T], dst: var CLSeq[T]) =
+  ## Element-wise tangent into `dst`.  No allocation when `dst` is large enough.
+  dispatchUnaryOpInto(a, "tan",  "tan",    dst)
+
+proc arcsinInto*[T: SomeFloat](a: CLSeq[T], dst: var CLSeq[T]) =
+  ## Element-wise arc sine into `dst`.  No allocation when `dst` is large enough.
+  dispatchUnaryOpInto(a, "asin", "arcsin", dst)
+
+proc arccosInto*[T: SomeFloat](a: CLSeq[T], dst: var CLSeq[T]) =
+  ## Element-wise arc cosine into `dst`.  No allocation when `dst` is large enough.
+  dispatchUnaryOpInto(a, "acos", "arccos", dst)
+
+proc arctanInto*[T: SomeFloat](a: CLSeq[T], dst: var CLSeq[T]) =
+  ## Element-wise arc tangent into `dst`.  No allocation when `dst` is large enough.
+  dispatchUnaryOpInto(a, "atan", "arctan", dst)
+
+proc sqrtInto*[T: SomeFloat](a: CLSeq[T], dst: var CLSeq[T]) =
+  ## Element-wise square root into `dst`.  No allocation when `dst` is large enough.
+  dispatchUnaryOpInto(a, "sqrt", "sqrt",   dst)
+
+proc expInto*[T: SomeFloat](a: CLSeq[T], dst: var CLSeq[T]) =
+  ## Element-wise e^x into `dst`.  No allocation when `dst` is large enough.
+  dispatchUnaryOpInto(a, "exp",  "exp",    dst)
+
+proc lnInto*[T: SomeFloat](a: CLSeq[T], dst: var CLSeq[T]) =
+  ## Element-wise natural logarithm into `dst`.  No allocation when `dst` is large enough.
+  dispatchUnaryOpInto(a, "log",  "ln",     dst)
+
+proc absInto*[T](a: CLSeq[T], dst: var CLSeq[T]) =
+  ## Element-wise absolute value into `dst`.  No allocation when `dst` is large enough.
+  dispatchUnaryOpInto(a, "fabs", "abs",    dst)
+
+##########################################################################################################################################################
+## CLSeq — in-place compound assignment operators
+##########################################################################################################################################################
+##
+## These operators mutate the left-hand side in place using the same cl_mem
+## buffer for both input and output.  No new device allocation ever occurs.
+##
+## Aliasing warning: `a += a` (same buffer as both operands) is technically
+## undefined in OpenCL 1.2 when the kernel reads and writes the same location.
+## For the typical case (a += b, a != b) this is always safe.
+## If self-aliasing is required, clone first: `a += a.clone()`.
+
+proc `+=`*[T](a: var CLSeq[T], b: CLSeq[T]) =
+  ## In-place element-wise addition: a[i] += b[i].
+  assert a.length == b.length, "+= : length mismatch"
+  dispatchBinOpInto(a, b, "+", "add", a)
+
+proc `-=`*[T](a: var CLSeq[T], b: CLSeq[T]) =
+  ## In-place element-wise subtraction: a[i] -= b[i].
+  assert a.length == b.length, "-= : length mismatch"
+  dispatchBinOpInto(a, b, "-", "sub", a)
+
+proc `*=`*[T](a: var CLSeq[T], b: CLSeq[T]) =
+  ## In-place element-wise multiplication: a[i] *= b[i].
+  assert a.length == b.length, "*= : length mismatch"
+  dispatchBinOpInto(a, b, "*", "mul", a)
+
+proc `/=`*[T](a: var CLSeq[T], b: CLSeq[T]) =
+  ## In-place element-wise division: a[i] /= b[i].
+  assert a.length == b.length, "/= : length mismatch"
+  dispatchBinOpInto(a, b, "/", "div_op", a)
+
+proc `+=`*[T](a: var CLSeq[T], scalar: T) =
+  ## In-place scalar addition: a[i] += scalar.
+  dispatchScalarOpInto(a, scalar, "+", "adds", a)
+
+proc `-=`*[T](a: var CLSeq[T], scalar: T) =
+  ## In-place scalar subtraction: a[i] -= scalar.
+  dispatchScalarOpInto(a, scalar, "-", "subs", a)
+
+proc `*=`*[T](a: var CLSeq[T], scalar: T) =
+  ## In-place scalar multiplication: a[i] *= scalar.
+  dispatchScalarOpInto(a, scalar, "*", "muls", a)
+
+proc `/=`*[T](a: var CLSeq[T], scalar: T) =
+  ## In-place scalar division: a[i] /= scalar.
+  dispatchScalarOpInto(a, scalar, "/", "divs", a)
 
 ##########################################################################################################################################################
 ## CLArray — arithmetic via native GPU kernels
