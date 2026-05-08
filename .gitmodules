@@ -7,6 +7,3 @@
 [submodule "externalLib/opengl"]
 	path = externalLib/opengl
 	url = https://github.com/nim-lang/opengl
-[submodule "externalLib/opencl"]
-	path = externalLib/opencl
-	url = https://github.com/SciNim/nimcl
