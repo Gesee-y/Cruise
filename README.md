@@ -56,6 +56,8 @@ let c = a.cross(b)
 
 - **[Optional ECS](https://github.com/Gesee-y/Cruise/tree/main/src/assets)**: Cruise provides a high performances, optional ECS based on a fragmented storage. Allowing to mimick archetypes and sparse sets in the same structure without losing the best of both.
 
+- **[Audio engine](https://github.com/Gesee-y/Cruise/blob/main/src/audio)**: Cruise offers an audio engine, abstracted across platforms allowing you to audio on windows, linux, macos, web.
+
 - **[Temporary storage](https://github.com/Gesee-y/Cruise/tree/main/src/temp)**: To easily share data among your systems, it also support TTL (Time To Live) for data and provides events and serialization support
 
 - **[API-agnostic windowing](https://github.com/Gesee-y/Cruise/tree/main/src/windows)**: Using a microkernel architecture, Cruise let you to manage windows and inputs in an unified interface, allowing you to change your windowing API in a breeze.
