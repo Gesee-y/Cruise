@@ -469,6 +469,250 @@ proc dispatchUnaryOp[T](a: CLSeq[T], fn, kernName: string): CLSeq[T] =
   check finish(gCL.queue)
 
 ##########################################################################################################################################################
+## CLArray DISPATCH HELPERS — native GPU kernels (no CPU round-trip)
+##########################################################################################################################################################
+
+proc dispatchBinOpArr*[N: static int, T](a, b: CLArray[N, T], op, kernName: string): CLArray[N, T] =
+  ## Binary element-wise kernel for CLArray. Reuses the same cached kernel as CLSeq.
+  let clTy = clTypeName(T)
+  let kn   = kernName & "_" & clTy
+  let src  = binOpKernelSrc(clTy, op, kn)
+  let k    = getKernel(src, kn)
+  result   = newCLArray[N, T]()
+  var aOff   = 0.cint
+  var bOff   = 0.cint
+  var outOff = 0.cint
+  var n      = N.cint
+  check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
+  check setKernelArg(k, 1, sizeof(Pmem), addr b.data.mem)
+  check setKernelArg(k, 2, sizeof(Pmem), addr result.data.mem)
+  check setKernelArg(k, 3, sizeof(cint), addr aOff)
+  check setKernelArg(k, 4, sizeof(cint), addr bOff)
+  check setKernelArg(k, 5, sizeof(cint), addr outOff)
+  check setKernelArg(k, 6, sizeof(cint), addr n)
+  var gs = N
+  check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
+  check finish(gCL.queue)
+
+proc dispatchScalarOpArr*[N: static int, T](a: CLArray[N, T], scalar: T, op, kernName: string): CLArray[N, T] =
+  ## Scalar broadcast kernel for CLArray.
+  let clTy = clTypeName(T)
+  let kn   = kernName & "_" & clTy
+  let src  = scalarOpKernelSrc(clTy, op, kn)
+  let k    = getKernel(src, kn)
+  result   = newCLArray[N, T]()
+  var aOff   = 0.cint
+  var outOff = 0.cint
+  var n      = N.cint
+  var s      = scalar
+  check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
+  check setKernelArg(k, 1, sizeof(T),    addr s)
+  check setKernelArg(k, 2, sizeof(Pmem), addr result.data.mem)
+  check setKernelArg(k, 3, sizeof(cint), addr aOff)
+  check setKernelArg(k, 4, sizeof(cint), addr outOff)
+  check setKernelArg(k, 5, sizeof(cint), addr n)
+  var gs = N
+  check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
+  check finish(gCL.queue)
+
+proc dispatchUnaryOpArr*[N: static int, T](a: CLArray[N, T], fn, kernName: string): CLArray[N, T] =
+  ## Unary element-wise kernel for CLArray.
+  let clTy = clTypeName(T)
+  let kn   = kernName & "_" & clTy
+  let src  = unaryOpKernelSrc(clTy, fn, kn)
+  let k    = getKernel(src, kn)
+  result   = newCLArray[N, T]()
+  var aOff   = 0.cint
+  var outOff = 0.cint
+  var n      = N.cint
+  check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
+  check setKernelArg(k, 1, sizeof(Pmem), addr result.data.mem)
+  check setKernelArg(k, 2, sizeof(cint), addr aOff)
+  check setKernelArg(k, 3, sizeof(cint), addr outOff)
+  check setKernelArg(k, 4, sizeof(cint), addr n)
+  var gs = N
+  check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
+  check finish(gCL.queue)
+
+##########################################################################################################################################################
+## FILL — constant initialisation
+##########################################################################################################################################################
+
+proc fillKernelSrc(clTy, kernName: string): string =
+  """
+__kernel void $1(
+    __global $2* out,
+    const    $2  val,
+    const int outOff, const int n)
+{
+    int i = get_global_id(0);
+    if (i < n) out[outOff + i] = val;
+}""".replace("$1", kernName).replace("$2", clTy)
+
+proc fill*[T](a: var CLSeq[T], val: T) =
+  ## Fill every logical element of `a` with `val` on the GPU.
+  if a.length == 0 or a.data == nil: return
+  let clTy = clTypeName(T)
+  let kn   = "fill_" & clTy
+  let k    = getKernel(fillKernelSrc(clTy, kn), kn)
+  var outOff = a.startIdx.cint
+  var n      = a.length.cint
+  var v      = val
+  check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
+  check setKernelArg(k, 1, sizeof(T),    addr v)
+  check setKernelArg(k, 2, sizeof(cint), addr outOff)
+  check setKernelArg(k, 3, sizeof(cint), addr n)
+  var gs = a.length
+  check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
+  check finish(gCL.queue)
+
+proc fill*[N: static int, T](a: var CLArray[N, T], val: T) =
+  ## Fill every element of `a` with `val` on the GPU.
+  if a.data == nil: return
+  let clTy = clTypeName(T)
+  let kn   = "fill_" & clTy
+  let k    = getKernel(fillKernelSrc(clTy, kn), kn)
+  var outOff = 0.cint
+  var n      = N.cint
+  var v      = val
+  check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
+  check setKernelArg(k, 1, sizeof(T),    addr v)
+  check setKernelArg(k, 2, sizeof(cint), addr outOff)
+  check setKernelArg(k, 3, sizeof(cint), addr n)
+  var gs = N
+  check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
+  check finish(gCL.queue)
+
+##########################################################################################################################################################
+## REDUCTION KERNELS — sum / min / max / dot
+##########################################################################################################################################################
+
+proc reduceKernelSrcSum(clTy, kernName: string): string =
+  """
+__kernel void $1(
+    __global const $2* a,
+    __global       $2* out,
+    __local        $2* scratch,
+    const int aOff, const int n)
+{
+    int gid = get_global_id(0);
+    int lid = get_local_id(0);
+    int lsz = get_local_size(0);
+    scratch[lid] = (gid < n) ? a[aOff + gid] : ($2)0;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    for (int s = lsz >> 1; s > 0; s >>= 1) {
+        if (lid < s) scratch[lid] += scratch[lid + s];
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+    if (lid == 0) out[get_group_id(0)] = scratch[0];
+}""".replace("$1", kernName).replace("$2", clTy)
+
+proc reduceKernelSrcMin(clTy, kernName, bigVal: string): string =
+  """
+__kernel void $1(
+    __global const $2* a,
+    __global       $2* out,
+    __local        $2* scratch,
+    const int aOff, const int n)
+{
+    int gid = get_global_id(0);
+    int lid = get_local_id(0);
+    int lsz = get_local_size(0);
+    scratch[lid] = (gid < n) ? a[aOff + gid] : ($3);
+    barrier(CLK_LOCAL_MEM_FENCE);
+    for (int s = lsz >> 1; s > 0; s >>= 1) {
+        if (lid < s) scratch[lid] = (scratch[lid] < scratch[lid+s]) ? scratch[lid] : scratch[lid+s];
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+    if (lid == 0) out[get_group_id(0)] = scratch[0];
+}""".replace("$1", kernName).replace("$2", clTy).replace("$3", bigVal)
+
+proc reduceKernelSrcMax(clTy, kernName, smallVal: string): string =
+  """
+__kernel void $1(
+    __global const $2* a,
+    __global       $2* out,
+    __local        $2* scratch,
+    const int aOff, const int n)
+{
+    int gid = get_global_id(0);
+    int lid = get_local_id(0);
+    int lsz = get_local_size(0);
+    scratch[lid] = (gid < n) ? a[aOff + gid] : ($3);
+    barrier(CLK_LOCAL_MEM_FENCE);
+    for (int s = lsz >> 1; s > 0; s >>= 1) {
+        if (lid < s) scratch[lid] = (scratch[lid] > scratch[lid+s]) ? scratch[lid] : scratch[lid+s];
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+    if (lid == 0) out[get_group_id(0)] = scratch[0];
+}""".replace("$1", kernName).replace("$2", clTy).replace("$3", smallVal)
+
+proc runGroupReduce[T](a: CLSeq[T], kernSrc, kernName: string, localSize: int = 64): seq[T] =
+  ## Execute one GPU reduction pass; return the per-group partial results to CPU.
+  let numGroups = max(1, (a.length + localSize - 1) div localSize)
+  var err: TClResult
+  let partMem = createBuffer(gCL.ctx, MEM_READ_WRITE, numGroups * sizeof(T), nil, addr err)
+  check err
+  let k = getKernel(kernSrc, kernName)
+  var aOff = a.startIdx.cint
+  var n    = a.length.cint
+  check setKernelArg(k, 0, sizeof(Pmem),          addr a.data.mem)
+  check setKernelArg(k, 1, sizeof(Pmem),          addr partMem)
+  check setKernelArg(k, 2, localSize * sizeof(T), nil)
+  check setKernelArg(k, 3, sizeof(cint),          addr aOff)
+  check setKernelArg(k, 4, sizeof(cint),          addr n)
+  var gs = numGroups * localSize
+  var ls = localSize
+  check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, addr ls, 0, nil, nil)
+  check finish(gCL.queue)
+  result = newSeq[T](numGroups)
+  check enqueueReadBuffer(gCL.queue, partMem, CL_TRUE, 0, numGroups * sizeof(T), addr result[0], 0, nil, nil)
+  check releaseMemObject(partMem)
+
+proc sum*[T: SomeNumber](a: CLSeq[T]): T =
+  ## GPU parallel reduction: sum of all elements.
+  if a.length == 0: return T(0)
+  let clTy = clTypeName(T)
+  let kn   = "rsum_" & clTy
+  let parts = runGroupReduce(a, reduceKernelSrcSum(clTy, kn), kn)
+  result = T(0)
+  for p in parts: result += p
+
+proc min*[T: SomeNumber](a: CLSeq[T]): T =
+  ## GPU parallel reduction: minimum element.
+  if a.length == 0: raise newException(ValueError, "min on empty CLSeq")
+  let clTy = clTypeName(T)
+  let kn   = "rmin_" & clTy
+  when T is SomeFloat:
+    let bigVal = "(" & clTy & ")1e38"
+  else:
+    let bigVal = "(" & clTy & ")2147483647"
+  let parts = runGroupReduce(a, reduceKernelSrcMin(clTy, kn, bigVal), kn)
+  result = parts[0]
+  for i in 1..<parts.len:
+    if parts[i] < result: result = parts[i]
+
+proc max*[T: SomeNumber](a: CLSeq[T]): T =
+  ## GPU parallel reduction: maximum element.
+  if a.length == 0: raise newException(ValueError, "max on empty CLSeq")
+  let clTy = clTypeName(T)
+  let kn   = "rmax_" & clTy
+  when T is SomeFloat:
+    let smallVal = "-(" & clTy & ")1e38"
+  else:
+    let smallVal = "-(" & clTy & ")2147483648"
+  let parts = runGroupReduce(a, reduceKernelSrcMax(clTy, kn, smallVal), kn)
+  result = parts[0]
+  for i in 1..<parts.len:
+    if parts[i] > result: result = parts[i]
+
+proc dot*[T: SomeNumber](a, b: CLSeq[T]): T =
+  ## GPU dot product: sum(a[i] * b[i]).
+  assert a.length == b.length, "dot: length mismatch"
+  let prod = dispatchBinOp(a, b, "*", "mul")
+  result = prod.sum()
+
+##########################################################################################################################################################
 ## CLSeq OP CLSeq
 ##########################################################################################################################################################
 
@@ -516,58 +760,124 @@ proc ln*[T: SomeFloat](a: CLSeq[T]): CLSeq[T]     = dispatchUnaryOp(a, "log",   
 proc abs*[T](a: CLSeq[T]): CLSeq[T]               = dispatchUnaryOp(a, "fabs",   "abs")
 
 ##########################################################################################################################################################
-## CLArray — arithmetic via toSeq round-trip (arrays are small by design)
+## CLArray — arithmetic via native GPU kernels
 ##########################################################################################################################################################
-##
-## CLArrays are statically sized and typically small (e.g. transform matrices,
-## parameter blocks).  Rather than generating specialised kernels for every N,
-## we round-trip through the CPU for array×array ops.  This is acceptable
-## because: (a) arrays are small, (b) GPUArray ops are rare in hot loops.
-## If you need high-throughput array ops, use CLSeq instead.
 
 proc `+`*[N: static int, T](a, b: CLArray[N, T]): CLArray[N, T] =
-  let sa = a.toArray(); let sb = b.toArray()
-  var r: array[N, T]
-  for i in 0..<N: r[i] = sa[i] + sb[i]
-  toGPU[N, T](r)
+  dispatchBinOpArr(a, b, "+", "add")
 
 proc `-`*[N: static int, T](a, b: CLArray[N, T]): CLArray[N, T] =
-  let sa = a.toArray(); let sb = b.toArray()
-  var r: array[N, T]
-  for i in 0..<N: r[i] = sa[i] - sb[i]
-  toGPU[N, T](r)
+  dispatchBinOpArr(a, b, "-", "sub")
 
 proc `*`*[N: static int, T](a, b: CLArray[N, T]): CLArray[N, T] =
-  let sa = a.toArray(); let sb = b.toArray()
-  var r: array[N, T]
-  for i in 0..<N: r[i] = sa[i] * sb[i]
-  toGPU[N, T](r)
+  dispatchBinOpArr(a, b, "*", "mul")
 
 proc `/`*[N: static int, T](a, b: CLArray[N, T]): CLArray[N, T] =
-  let sa = a.toArray(); let sb = b.toArray()
-  var r: array[N, T]
-  for i in 0..<N: r[i] = sa[i] / sb[i]
-  toGPU[N, T](r)
+  dispatchBinOpArr(a, b, "/", "div_op")
 
 proc `+`*[N: static int, T](a: CLArray[N, T], n: SomeNumber): CLArray[N, T] =
-  let sa = a.toArray(); var r: array[N, T]
-  for i in 0..<N: r[i] = sa[i] + T(n)
-  toGPU[N, T](r)
+  dispatchScalarOpArr(a, T(n), "+", "adds")
 
 proc `-`*[N: static int, T](a: CLArray[N, T], n: SomeNumber): CLArray[N, T] =
-  let sa = a.toArray(); var r: array[N, T]
-  for i in 0..<N: r[i] = sa[i] - T(n)
-  toGPU[N, T](r)
+  dispatchScalarOpArr(a, T(n), "-", "subs")
 
 proc `*`*[N: static int, T](a: CLArray[N, T], n: SomeNumber): CLArray[N, T] =
-  let sa = a.toArray(); var r: array[N, T]
-  for i in 0..<N: r[i] = sa[i] * T(n)
-  toGPU[N, T](r)
+  dispatchScalarOpArr(a, T(n), "*", "muls")
 
 proc `/`*[N: static int, T](a: CLArray[N, T], n: SomeNumber): CLArray[N, T] =
-  let sa = a.toArray(); var r: array[N, T]
-  for i in 0..<N: r[i] = sa[i] / T(n)
-  toGPU[N, T](r)
+  dispatchScalarOpArr(a, T(n), "/", "divs")
+
+proc `+`*[N: static int, T](n: SomeNumber, a: CLArray[N, T]): CLArray[N, T] = a + n
+proc `*`*[N: static int, T](n: SomeNumber, a: CLArray[N, T]): CLArray[N, T] = a * n
+
+##########################################################################################################################################################
+## CLArray — TRIGONOMETRY via native GPU kernels
+##########################################################################################################################################################
+
+proc sin*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
+  dispatchUnaryOpArr(a, "sin",  "sin")
+proc cos*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
+  dispatchUnaryOpArr(a, "cos",  "cos")
+proc tan*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
+  dispatchUnaryOpArr(a, "tan",  "tan")
+proc arcsin*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
+  dispatchUnaryOpArr(a, "asin", "arcsin")
+proc arccos*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
+  dispatchUnaryOpArr(a, "acos", "arccos")
+proc arctan*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
+  dispatchUnaryOpArr(a, "atan", "arctan")
+proc sqrt*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
+  dispatchUnaryOpArr(a, "sqrt", "sqrt")
+proc exp*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
+  dispatchUnaryOpArr(a, "exp",  "exp")
+proc ln*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
+  dispatchUnaryOpArr(a, "log",  "ln")
+proc abs*[N: static int, T](a: CLArray[N, T]): CLArray[N, T] =
+  dispatchUnaryOpArr(a, "fabs", "abs")
+
+##########################################################################################################################################################
+## CLSeq — commutative missing variants (n - seq, n / seq)
+##########################################################################################################################################################
+
+proc `-`*[T](n: SomeNumber, a: CLSeq[T]): CLSeq[T] =
+  ## Scalar minus seq: result[i] = n - a[i]
+  let clTy = clTypeName(T)
+  let kn   = "rsubs_" & clTy
+  let src  = """
+__kernel void $1(
+    __global const $2* a,
+    const          $2  scalar,
+    __global       $2* out,
+    const int aOff, const int outOff, const int n)
+{
+    int i = get_global_id(0);
+    if (i < n) out[outOff + i] = scalar - a[aOff + i];
+}""".replace("$1", kn).replace("$2", clTy)
+  let k  = getKernel(src, kn)
+  result = newCLSeq[T](a.length)
+  var aOff   = a.startIdx.cint
+  var outOff = 0.cint
+  var cnt    = a.length.cint
+  var sv     = T(n)
+  check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
+  check setKernelArg(k, 1, sizeof(T),    addr sv)
+  check setKernelArg(k, 2, sizeof(Pmem), addr result.data.mem)
+  check setKernelArg(k, 3, sizeof(cint), addr aOff)
+  check setKernelArg(k, 4, sizeof(cint), addr outOff)
+  check setKernelArg(k, 5, sizeof(cint), addr cnt)
+  var gs = a.length
+  check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
+  check finish(gCL.queue)
+
+proc `/`*[T](n: SomeNumber, a: CLSeq[T]): CLSeq[T] =
+  ## Scalar divided by seq: result[i] = n / a[i]
+  let clTy = clTypeName(T)
+  let kn   = "rdivs_" & clTy
+  let src  = """
+__kernel void $1(
+    __global const $2* a,
+    const          $2  scalar,
+    __global       $2* out,
+    const int aOff, const int outOff, const int n)
+{
+    int i = get_global_id(0);
+    if (i < n) out[outOff + i] = scalar / a[aOff + i];
+}""".replace("$1", kn).replace("$2", clTy)
+  let k  = getKernel(src, kn)
+  result = newCLSeq[T](a.length)
+  var aOff   = a.startIdx.cint
+  var outOff = 0.cint
+  var cnt    = a.length.cint
+  var sv     = T(n)
+  check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
+  check setKernelArg(k, 1, sizeof(T),    addr sv)
+  check setKernelArg(k, 2, sizeof(Pmem), addr result.data.mem)
+  check setKernelArg(k, 3, sizeof(cint), addr aOff)
+  check setKernelArg(k, 4, sizeof(cint), addr outOff)
+  check setKernelArg(k, 5, sizeof(cint), addr cnt)
+  var gs = a.length
+  check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
+  check finish(gCL.queue)
 
 ##########################################################################################################################################################
 ## $ — string representation (blocking read-back)
