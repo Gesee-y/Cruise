@@ -357,7 +357,7 @@ proc processNode(ctx: var GLSLContext, node: NimNode, depth: int = 0, pc: Parsin
   case node.kind:
   of nnkStmtList:
     for n in node:
-      result = processNode(ctx, n, depth+1) & ";\n"
+      result &= processNode(ctx, n, depth+1) & ";\n"
       ctx.body &= result
 
   of nnkVarSection, nnkLetSection:

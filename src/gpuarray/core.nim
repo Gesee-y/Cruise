@@ -2,7 +2,7 @@
 ################################################################ GPU SEQUENCE CORE #######################################################################
 ##########################################################################################################################################################
 
-import logging, atomics
+import logging, atomics, strformat
 
 type
   SomeInteger = int8 | int16 | int32 | int64 | int | uint8 | uint16 | uint32 | uint64 | uint
@@ -18,31 +18,31 @@ type
     count*: Atomic[int]
 
   GPUSeq*[B,T] = object
-    data: B
-    capacity: int
-    lenght: int
-    startIdx: int
-    count: RefCount
+    data*: B
+    capacity*: int
+    length*: int
+    startIdx*: int
+    count*: RefCount
 
   GPUArray*[N: static int,B,T] = object
-    data: B
-    startIdx: int
-    count: RefCount
+    data*: B
+    startIdx*: int
+    count*: RefCount
 
-const DEFAULT_CAPACITY = 32
+const DEFAULT_CAPACITY* = 32
 
 #########################################################################################################################################################
 ################################################################### ABSTRACTION #########################################################################
 #########################################################################################################################################################
 
-var CURRENT_INDEXING {.threadVar.}: ScalarIndexingMode
+var CURRENT_INDEXING* {.threadVar.}: ScalarIndexingMode
 
-proc newRefCount(): RefCount =
+proc newRefCount*(): RefCount =
   var r = RefCount()
   r.count.store(1)
   r 
 
-template assert_scalar(op: untyped, behavior: ScalarIndexingMode) =
+proc assert_scalar(op: string, behavior: ScalarIndexingMode) =
     let errdesc = &"""Invocation of '{op}' resulted in scalar indexing of a GPU array.
               This is typically caused by calling an iterating implementation of a method.
               Such implementations *do not* execute on the GPU, but very slowly on the CPU,
@@ -53,7 +53,7 @@ template assert_scalar(op: untyped, behavior: ScalarIndexingMode) =
     let warnDesc = &"Performing scalar indexing on: {op}"
 
     if behavior == ScalarDisallowed:
-      raise newException(ScalarIndexingError, desc)
+      raise newException(ScalarIndexingError, errdesc)
     elif behavior == ScalarWarn:
       warn(warnDesc)
 
