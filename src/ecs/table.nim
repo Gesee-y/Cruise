@@ -84,6 +84,8 @@ include "commands.nim"
 include "mask.nim"
 include "registry.nim"
 
+registerLayout(SoAFragment, newSoAFragArr, soaCastTo)
+registerLayout(VecFragment, newVecFragArr, vecCastTo)
 
 type
   TableRange* = object
@@ -249,10 +251,10 @@ proc getStableEntities(world:ECSWorld, n:int):seq[uint32] =
       result[free_len+c] = i.uint32
       inc c
 
-template registerComponent*(world:var ECSWorld, t:typed, P:static bool=false):int =
-  registerComponent(world.registry, t, P)
+template registerComponent*(world:var ECSWorld, t:typed, P:static bool=false, layout: untyped=SoAFragment):int =
+  registerComponent(world.registry, t, P, layout)
 
-macro requireComponent*(w: var ECSWorld, base: typedesc, comps:typedesc) =
+macro requireComponent*(w: var ECSWorld, base: typedesc, comps:typedesc, layout: untyped=SoAFragment) =
   if base.repr == comps.repr: return
   else:
     let bid = getComponentIdFromRegistry(base)
@@ -264,7 +266,7 @@ macro requireComponent*(w: var ECSWorld, base: typedesc, comps:typedesc) =
     REQUIRED_COMPS[bid].add(cid)
 
   return quote("@") do:    
-    discard `@w`.registerComponent(`@comps`)
+    discard `@w`.registerComponent(`@comps`, layout=`@layout`)
     `@w`.archGraph.requiredComps[toComponentId(`@base`)].add(toComponentId(`@comps`))
 
 template get*[T](world:ECSWorld,t:typedesc[T], P:static bool= false):untyped =

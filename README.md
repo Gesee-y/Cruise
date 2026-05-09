@@ -54,6 +54,8 @@ let c = a.cross(b)
 
 - **[Asset Pipeline](https://github.com/Gesee-y/Cruise/tree/main/src/assets)**: Generic and easy to extend asset pipeline, featuring image loading, texture compression, serialization and more.
 
+- **[GPGPU](https://github.com/Gesee-y/Cruise/tree/main/src/gpuarray)**: Cruise allows you to port seq/arrays operations on GPU to accelerate your calculations. It's provide the abstract `GPUSeq` and `GPUArray` that are easy to extend. There is already a CPU and OpenCL backend.
+
 - **[Optional ECS](https://github.com/Gesee-y/Cruise/tree/main/src/assets)**: Cruise provides a high performances, optional ECS based on a fragmented storage. Allowing to mimick archetypes and sparse sets in the same structure without losing the best of both.
 
 - **[Audio engine](https://github.com/Gesee-y/Cruise/blob/main/src/audio)**: Cruise offers an audio engine, abstracted across platforms allowing you to audio on windows, linux, macos, web.

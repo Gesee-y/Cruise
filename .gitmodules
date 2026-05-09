@@ -4,3 +4,9 @@
 [submodule "externalLib/shaderc"]
 	path = externalLib/shaderc
 	url = https://github.com/RowDaBoat/shadercnim
+[submodule "externalLib/opengl"]
+	path = externalLib/opengl
+	url = https://github.com/nim-lang/opengl
+[submodule "externalLib/nimopencl"]
+	path = externalLib/nimopencl
+	url = https://github.com/nim-lang/opencl

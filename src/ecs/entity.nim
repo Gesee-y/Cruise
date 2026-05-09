@@ -25,11 +25,11 @@ type
 ################################################################### ACCESSORS #####################################################################
 ####################################################################################################################################################
 
-## Retrieves component data from a `SoAFragmentArray` using a raw `Entity`.
-template `[]`[N,P,T,S,B](f: SoAFragmentArray[N,P,T,S,B], e:SomeEntity):untyped = f[e.id]
+## Retrieves component data from a `FragmentArray` using a raw `Entity`.
+template `[]`[N,P,T,S,B](f: FragmentArray[N,P,T,S,B], e:SomeEntity):untyped = f[e.id]
 
-## Sets component data in a `SoAFragmentArray` for a raw `Entity`.
-proc `[]=`[N,P,T,S,B](f:var SoAFragmentArray[N,P,T,S,B], e:SomeEntity, v:B) = 
+## Sets component data in a `FragmentArray` for a raw `Entity`.
+proc `[]=`[N,P,T,S,B](f:var FragmentArray[N,P,T,S,B], e:SomeEntity, v:B) = 
   f[e.id] = v
 
 ####################################################################################################################################################
