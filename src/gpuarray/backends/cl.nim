@@ -116,6 +116,8 @@ type
 ## MEMORY MANAGEMENT — releaseData / ensureLen / clone
 ##########################################################################################################################################################
 
+template clWaitForCPU*() = check finish(gCL.queue)
+
 proc releaseData*[T](d: CLSData[T]) =
   ## Free the device buffer.  Called automatically by `=destroy` when the
   ## last owner of a CLSeq is destroyed.
@@ -448,7 +450,6 @@ proc dispatchBinOpInto[T](a, b: CLSeq[T], op, kernName: string, dst: var CLSeq[T
 
   var gs = a.length
   check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
-  check finish(gCL.queue)
 
 proc dispatchBinOp[T](a, b: CLSeq[T], op, kernName: string): CLSeq[T] =
   ## Allocating wrapper: create a fresh CLSeq and delegate to dispatchBinOpInto.
@@ -480,7 +481,6 @@ proc dispatchScalarOpInto[T](a: CLSeq[T], scalar: T, op, kernName: string, dst: 
 
   var gs = a.length
   check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
-  check finish(gCL.queue)
 
 proc dispatchScalarOp[T](a: CLSeq[T], scalar: T, op, kernName: string): CLSeq[T] =
   ## Allocating wrapper: create a fresh CLSeq and delegate to dispatchScalarOpInto.
@@ -510,7 +510,6 @@ proc dispatchUnaryOpInto[T](a: CLSeq[T], fn, kernName: string, dst: var CLSeq[T]
 
   var gs = a.length
   check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
-  check finish(gCL.queue)
 
 proc dispatchUnaryOp[T](a: CLSeq[T], fn, kernName: string): CLSeq[T] =
   ## Allocating wrapper: create a fresh CLSeq and delegate to dispatchUnaryOpInto.
@@ -541,7 +540,6 @@ proc dispatchBinOpArr*[N: static int, T](a, b: CLArray[N, T], op, kernName: stri
   check setKernelArg(k, 6, sizeof(cint), addr n)
   var gs = N
   check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
-  check finish(gCL.queue)
 
 proc dispatchScalarOpArr*[N: static int, T](a: CLArray[N, T], scalar: T, op, kernName: string): CLArray[N, T] =
   ## Scalar broadcast kernel for CLArray.
@@ -562,7 +560,6 @@ proc dispatchScalarOpArr*[N: static int, T](a: CLArray[N, T], scalar: T, op, ker
   check setKernelArg(k, 5, sizeof(cint), addr n)
   var gs = N
   check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
-  check finish(gCL.queue)
 
 proc dispatchUnaryOpArr*[N: static int, T](a: CLArray[N, T], fn, kernName: string): CLArray[N, T] =
   ## Unary element-wise kernel for CLArray.
@@ -581,7 +578,6 @@ proc dispatchUnaryOpArr*[N: static int, T](a: CLArray[N, T], fn, kernName: strin
   check setKernelArg(k, 4, sizeof(cint), addr n)
   var gs = N
   check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
-  check finish(gCL.queue)
 
 ##########################################################################################################################################################
 ## FILL — constant initialisation
@@ -613,7 +609,6 @@ proc fill*[T](a: var CLSeq[T], val: T) =
   check setKernelArg(k, 3, sizeof(cint), addr n)
   var gs = a.length
   check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
-  check finish(gCL.queue)
 
 proc fill*[N: static int, T](a: var CLArray[N, T], val: T) =
   ## Fill every element of `a` with `val` on the GPU.
@@ -630,7 +625,6 @@ proc fill*[N: static int, T](a: var CLArray[N, T], val: T) =
   check setKernelArg(k, 3, sizeof(cint), addr n)
   var gs = N
   check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
-  check finish(gCL.queue)
 
 ##########################################################################################################################################################
 ## REDUCTION KERNELS — sum / min / max / dot
@@ -713,7 +707,6 @@ proc runGroupReduce[T](a: CLSeq[T], kernSrc, kernName: string, localSize: int = 
   var gs = numGroups * localSize
   var ls = localSize
   check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, addr ls, 0, nil, nil)
-  check finish(gCL.queue)
   result = newSeq[T](numGroups)
   check enqueueReadBuffer(gCL.queue, partMem, CL_TRUE, 0, numGroups * sizeof(T), addr result[0], 0, nil, nil)
   check releaseMemObject(partMem)
@@ -1044,7 +1037,6 @@ __kernel void $1(
   check setKernelArg(k, 5, sizeof(cint), addr cnt)
   var gs = a.length
   check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
-  check finish(gCL.queue)
 
 proc `/`*[T](n: SomeNumber, a: CLSeq[T]): CLSeq[T] =
   ## Scalar divided by seq: result[i] = n / a[i]
@@ -1074,7 +1066,6 @@ __kernel void $1(
   check setKernelArg(k, 5, sizeof(cint), addr cnt)
   var gs = a.length
   check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
-  check finish(gCL.queue)
 
 ##########################################################################################################################################################
 ## $ — string representation (blocking read-back)
