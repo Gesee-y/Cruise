@@ -293,12 +293,12 @@ proc toArray*[N: static int, T](c: CLArray[N, T]): array[N, T] =
 ## toGPU — CPU → device convenience constructors
 ##########################################################################################################################################################
 
-proc toGPU*[T](arr: openArray[T]): CLSeq[T] =
+proc toGPU*[B:CLSData,T](arr: openArray[T]): CLSeq[T] =
   ## Upload a CPU seq / array to a new CLSeq on the device.
   result = newCLSeq[T](arr.len)
   result.copyTo(arr, 0)
 
-proc toGPU*[N: static int, T](arr: array[N, T]): CLArray[N, T] =
+proc toGPU*[N: static int, B:CLAData, T](arr: array[N, T]): CLArray[N, T] =
   ## Upload a fixed-size CPU array to a new CLArray on the device.
   result = newCLArray[N, T]()
   result.copyTo(arr, 0)

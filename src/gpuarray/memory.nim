@@ -79,6 +79,7 @@ proc `=wasMoved`*[N: static int,T,B](src: var GPUArray[N,T,B]) =
   src.count = nil
 
 proc `=sink`*[B,T](dest: var GPUSeq[B,T], source: GPUSeq[B,T]) =
+  if dest.count.isNil: return
   discard dest.count.count.fetchAdd(1)
   copyMem(addr(dest), addr(source), sizeof(GPUSeq[B,T]))
   `=destroy`(dest)

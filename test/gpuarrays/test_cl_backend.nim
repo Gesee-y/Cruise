@@ -93,7 +93,7 @@ suite "CLSeq — construction":
     check s.count.count.load() == 1
 
   test "toGPU from openArray has correct length":
-    let s = toGPU[float32](@[1.0f, 2.0f, 3.0f])
+    let s = toGPU[CLSData[float32],float32](@[1.0f, 2.0f, 3.0f])
     check s.length == 3
 
 ##########################################################################################################################################################
@@ -112,7 +112,7 @@ suite "CLArray — construction":
 
   test "toGPU from array produces CLArray":
     let src: array[3, float32] = [1f, 2f, 3f]
-    let a = toGPU[3, float32](src)
+    let a = toGPU[3, CLAData[3, float32], float32](src)
     check a.data != nil
 
 ##########################################################################################################################################################
@@ -123,12 +123,12 @@ suite "CLSeq — transfers":
 
   test "toGPU then toSeq round-trips float32":
     let src = @[1.0f, 2.0f, 3.0f, 4.0f]
-    let s   = toGPU[float32](src)
+    let s   = toGPU[CLSData[float32], float32](src)
     check s.toSeq() == src
 
   test "toGPU then toSeq round-trips int32":
     let src = @[10'i32, 20'i32, 30'i32]
-    let s   = toGPU[int32](src)
+    let s   = toGPU[CLSData[int32], int32](src)
     check s.toSeq() == src
 
   test "copyTo writes at correct offset":
@@ -143,7 +143,7 @@ suite "CLArray — transfers":
 
   test "toGPU then toArray round-trips":
     let src: array[4, float32] = [10f, 20f, 30f, 40f]
-    let a   = toGPU[4, float32](src)
+    let a   = toGPU[4, CLAData[4, float32], float32](src)
     check a.toArray() == src
 
   test "copyTo then toArray":
@@ -158,20 +158,20 @@ suite "CLArray — transfers":
 suite "CLSeq — clone":
 
   test "clone produces independent copy":
-    let a = toGPU[float32](@[1f, 2f, 3f])
+    let a = toGPU[CLSData[float32], float32](@[1f, 2f, 3f])
     var b = a.clone()
     # Overwrite b with new data — a must be unchanged
     b.copyTo([99f, 99f, 99f], 0)
     check a.toSeq() == @[1f, 2f, 3f]
 
   test "clone has refcount 1":
-    let a = toGPU[float32](@[1f, 2f, 3f])
+    let a = toGPU[CLSData[float32], float32](@[1f, 2f, 3f])
     let b = a.clone()
     check b.count.count.load() == 1
 
   test "clone copies all elements":
     let src = @[5f, 6f, 7f, 8f]
-    let a   = toGPU[float32](src)
+    let a   = toGPU[CLSData[float32], float32](src)
     let b   = a.clone()
     check b.toSeq() == src
 
@@ -179,7 +179,7 @@ suite "CLArray — clone":
 
   test "CLArray clone is independent":
     let src: array[3, float32] = [1f, 2f, 3f]
-    let a = toGPU[3, float32](src)
+    let a = toGPU[3, CLAData[3, float32], float32](src)
     var b = a.clone()
     b.copyTo([0f, 0f, 0f], 0)
     check a.toArray() == src
@@ -191,12 +191,12 @@ suite "CLArray — clone":
 suite "CLSeq — toOpenArray slicing":
 
   test "slice has correct length":
-    let s = toGPU[float32](@[0f, 1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 9f])
+    let s = toGPU[CLSData[float32], float32](@[0f, 1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 9f])
     let v = s.toOpenArray(2, 6)
     check v.length == 4
 
   test "slice reads correct elements":
-    let s = toGPU[float32](@[0f, 1f, 2f, 3f, 4f])
+    let s = toGPU[CLSData[float32], float32](@[0f, 1f, 2f, 3f, 4f])
     let v = s.toOpenArray(1, 4)
     check v.toSeq() == @[1f, 2f, 3f]
 
@@ -213,7 +213,7 @@ suite "Fill":
     for v in r: check almostEq(v, 3.14f)
 
   test "fill CLSeq with zero":
-    var s = toGPU[float32](@[1f, 2f, 3f])
+    var s = toGPU[CLSData[float32], float32](@[1f, 2f, 3f])
     s.fill(0f)
     for v in s.toSeq(): check v == 0f
 
@@ -234,33 +234,33 @@ suite "Fill":
 suite "CLSeq — seq×seq arithmetic":
 
   test "a + b element-wise":
-    let a = toGPU[float32](@[1f, 2f, 3f, 4f])
-    let b = toGPU[float32](@[4f, 3f, 2f, 1f])
+    let a = toGPU[CLSData[float32], float32](@[1f, 2f, 3f, 4f])
+    let b = toGPU[CLSData[float32], float32](@[4f, 3f, 2f, 1f])
     check (a + b).toSeq() == @[5f, 5f, 5f, 5f]
 
   test "a - b element-wise":
-    let a = toGPU[float32](@[5f, 5f, 5f])
-    let b = toGPU[float32](@[1f, 2f, 3f])
+    let a = toGPU[CLSData[float32], float32](@[5f, 5f, 5f])
+    let b = toGPU[CLSData[float32], float32](@[1f, 2f, 3f])
     check (a - b).toSeq() == @[4f, 3f, 2f]
 
   test "a * b element-wise":
-    let a = toGPU[float32](@[2f, 3f, 4f])
-    let b = toGPU[float32](@[3f, 4f, 5f])
+    let a = toGPU[CLSData[float32], float32](@[2f, 3f, 4f])
+    let b = toGPU[CLSData[float32], float32](@[3f, 4f, 5f])
     check (a * b).toSeq() == @[6f, 12f, 20f]
 
   test "a / b element-wise":
-    let a = toGPU[float32](@[6f, 8f, 10f])
-    let b = toGPU[float32](@[2f, 4f, 5f])
+    let a = toGPU[CLSData[float32], float32](@[6f, 8f, 10f])
+    let b = toGPU[CLSData[float32], float32](@[2f, 4f, 5f])
     check (a / b).toSeq() == @[3f, 2f, 2f]
 
   test "int32 a + b":
-    let a = toGPU[int32](@[1'i32, 2'i32, 3'i32])
-    let b = toGPU[int32](@[4'i32, 5'i32, 6'i32])
+    let a = toGPU[CLSData[int32], int32](@[1'i32, 2'i32, 3'i32])
+    let b = toGPU[CLSData[int32], int32](@[4'i32, 5'i32, 6'i32])
     check (a + b).toSeq() == @[5'i32, 7'i32, 9'i32]
 
   test "length mismatch raises":
-    let a = toGPU[float32](@[1f, 2f])
-    let b = toGPU[float32](@[1f, 2f, 3f])
+    let a = toGPU[CLSData[float32], float32](@[1f, 2f])
+    let b = toGPU[CLSData[float32], float32](@[1f, 2f, 3f])
     expect AssertionDefect:
       discard a + b
 
@@ -271,36 +271,36 @@ suite "CLSeq — seq×seq arithmetic":
 suite "CLSeq — seq×scalar arithmetic":
 
   test "a + scalar":
-    let a = toGPU[float32](@[1f, 2f, 3f])
+    let a = toGPU[CLSData[float32], float32](@[1f, 2f, 3f])
     check (a + 10f).toSeq() == @[11f, 12f, 13f]
 
   test "a - scalar":
-    let a = toGPU[float32](@[5f, 6f, 7f])
+    let a = toGPU[CLSData[float32], float32](@[5f, 6f, 7f])
     check (a - 1f).toSeq() == @[4f, 5f, 6f]
 
   test "a * scalar":
-    let a = toGPU[float32](@[1f, 2f, 3f])
+    let a = toGPU[CLSData[float32], float32](@[1f, 2f, 3f])
     check (a * 3f).toSeq() == @[3f, 6f, 9f]
 
   test "a / scalar":
-    let a = toGPU[float32](@[2f, 4f, 6f])
+    let a = toGPU[CLSData[float32], float32](@[2f, 4f, 6f])
     check (a / 2f).toSeq() == @[1f, 2f, 3f]
 
   test "scalar + a (commutative)":
-    let a = toGPU[float32](@[1f, 2f, 3f])
+    let a = toGPU[CLSData[float32], float32](@[1f, 2f, 3f])
     check (10f + a).toSeq() == @[11f, 12f, 13f]
 
   test "scalar * a (commutative)":
-    let a = toGPU[float32](@[1f, 2f, 3f])
+    let a = toGPU[CLSData[float32], float32](@[1f, 2f, 3f])
     check (3f * a).toSeq() == @[3f, 6f, 9f]
 
   test "n - a: result[i] = n - a[i]":
-    let a = toGPU[float32](@[1f, 2f, 3f])
+    let a = toGPU[CLSData[float32], float32](@[1f, 2f, 3f])
     let r = (10f - a).toSeq()
     check r == @[9f, 8f, 7f]
 
   test "n / a: result[i] = n / a[i]":
-    let a = toGPU[float32](@[1f, 2f, 4f])
+    let a = toGPU[CLSData[float32], float32](@[1f, 2f, 4f])
     let r = (8f / a).toSeq()
     check almostEq(r[0], 8f) and almostEq(r[1], 4f) and almostEq(r[2], 2f)
 
@@ -311,28 +311,28 @@ suite "CLSeq — seq×scalar arithmetic":
 suite "CLArray — arr×arr arithmetic (GPU kernel)":
 
   test "arr + arr":
-    let a = toGPU[4, float32]([1f, 2f, 3f, 4f])
-    let b = toGPU[4, float32]([4f, 3f, 2f, 1f])
+    let a = toGPU[4, CLAData[4, float32], float32]([1f, 2f, 3f, 4f])
+    let b = toGPU[4, CLAData[4, float32], float32]([4f, 3f, 2f, 1f])
     check (a + b).toArray() == [5f, 5f, 5f, 5f]
 
   test "arr - arr":
-    let a = toGPU[3, float32]([5f, 6f, 7f])
-    let b = toGPU[3, float32]([1f, 2f, 3f])
+    let a = toGPU[3, CLAData[3, float32], float32]([5f, 6f, 7f])
+    let b = toGPU[3, CLAData[3, float32], float32]([1f, 2f, 3f])
     check (a - b).toArray() == [4f, 4f, 4f]
 
   test "arr * arr":
-    let a = toGPU[3, float32]([2f, 3f, 4f])
-    let b = toGPU[3, float32]([3f, 4f, 5f])
+    let a = toGPU[3, CLAData[3, float32], float32]([2f, 3f, 4f])
+    let b = toGPU[3, CLAData[3, float32], float32]([3f, 4f, 5f])
     check (a * b).toArray() == [6f, 12f, 20f]
 
   test "arr / arr":
-    let a = toGPU[3, float32]([6f, 8f, 10f])
-    let b = toGPU[3, float32]([2f, 4f, 5f])
+    let a = toGPU[3, CLAData[3, float32], float32]([6f, 8f, 10f])
+    let b = toGPU[3, CLAData[3, float32], float32]([2f, 4f, 5f])
     check (a / b).toArray() == [3f, 2f, 2f]
 
   test "int32 arr + arr":
-    let a = toGPU[3, int32]([1'i32, 2'i32, 3'i32])
-    let b = toGPU[3, int32]([4'i32, 5'i32, 6'i32])
+    let a = toGPU[3, CLAData[3, int32], int32]([1'i32, 2'i32, 3'i32])
+    let b = toGPU[3, CLAData[3, int32], int32]([4'i32, 5'i32, 6'i32])
     check (a + b).toArray() == [5'i32, 7'i32, 9'i32]
 
 ##########################################################################################################################################################
@@ -342,27 +342,27 @@ suite "CLArray — arr×arr arithmetic (GPU kernel)":
 suite "CLArray — arr×scalar arithmetic (GPU kernel)":
 
   test "arr + scalar":
-    let a = toGPU[3, float32]([1f, 2f, 3f])
+    let a = toGPU[3, CLAData[3, float32], float32]([1f, 2f, 3f])
     check (a + 10f).toArray() == [11f, 12f, 13f]
 
   test "arr - scalar":
-    let a = toGPU[3, float32]([5f, 6f, 7f])
+    let a = toGPU[3, CLAData[3, float32], float32]([5f, 6f, 7f])
     check (a - 1f).toArray() == [4f, 5f, 6f]
 
   test "arr * scalar":
-    let a = toGPU[3, float32]([1f, 2f, 3f])
+    let a = toGPU[3, CLAData[3, float32], float32]([1f, 2f, 3f])
     check (a * 2f).toArray() == [2f, 4f, 6f]
 
   test "arr / scalar":
-    let a = toGPU[3, float32]([4f, 6f, 8f])
+    let a = toGPU[3, CLAData[3, float32], float32]([4f, 6f, 8f])
     check (a / 2f).toArray() == [2f, 3f, 4f]
 
   test "scalar + arr (commutative)":
-    let a = toGPU[3, float32]([1f, 2f, 3f])
+    let a = toGPU[3, CLAData[3, float32], float32]([1f, 2f, 3f])
     check (5f + a).toArray() == [6f, 7f, 8f]
 
   test "scalar * arr (commutative)":
-    let a = toGPU[3, float32]([1f, 2f, 3f])
+    let a = toGPU[3, CLAData[3, float32], float32]([1f, 2f, 3f])
     check (3f * a).toArray() == [3f, 6f, 9f]
 
 ##########################################################################################################################################################
@@ -374,7 +374,7 @@ suite "CLSeq — trigonometry":
   proc makeAngleSeq(n: int): CLSeq[float32] =
     var vals = newSeq[float32](n)
     for i in 0..<n: vals[i] = float32(i) * 0.5f
-    toGPU[float32](vals)
+    toGPU[CLSData[float32], float32](vals)
 
   test "sin element-wise":
     let a = makeAngleSeq(4)
@@ -395,33 +395,33 @@ suite "CLSeq — trigonometry":
       check almostEq(r[i], tan(float32(i) * 0.5f), 1e-4f)
 
   test "sqrt element-wise":
-    let a = toGPU[float32](@[0f, 1f, 4f, 9f, 16f])
+    let a = toGPU[CLSData[float32], float32](@[0f, 1f, 4f, 9f, 16f])
     let r = sqrt(a).toSeq()
     check almostEq(r[0], 0f) and almostEq(r[1], 1f) and
           almostEq(r[2], 2f) and almostEq(r[3], 3f) and almostEq(r[4], 4f)
 
   test "exp element-wise":
-    let a = toGPU[float32](@[0f, 1f, 2f])
+    let a = toGPU[CLSData[float32], float32](@[0f, 1f, 2f])
     let r = exp(a).toSeq()
     check almostEq(r[0], 1f)
     check almostEq(r[1], exp(1f))
     check almostEq(r[2], exp(2f))
 
   test "ln element-wise":
-    let a = toGPU[float32](@[1f, float32(math.E), float32(math.E * math.E)])
+    let a = toGPU[CLSData[float32], float32](@[1f, float32(math.E), float32(math.E * math.E)])
     let r = ln(a).toSeq()
     check almostEq(r[0], 0f)
     check almostEq(r[1], 1f)
     check almostEq(r[2], 2f)
 
   test "abs element-wise":
-    let a = toGPU[float32](@[-3f, -1f, 0f, 1f, 3f])
+    let a = toGPU[CLSData[float32], float32](@[-3f, -1f, 0f, 1f, 3f])
     let r = abs(a).toSeq()
     check r == @[3f, 1f, 0f, 1f, 3f]
 
   test "arcsin element-wise":
     let vals = @[0f, 0.5f, 1f]
-    let a = toGPU[float32](vals)
+    let a = toGPU[CLSData[float32], float32](vals)
     let r = arcsin(a).toSeq()
     check almostEq(r[0], arcsin(0f),   1e-4f)
     check almostEq(r[1], arcsin(0.5f), 1e-4f)
@@ -429,7 +429,7 @@ suite "CLSeq — trigonometry":
 
   test "arccos element-wise":
     let vals = @[0f, 0.5f, 1f]
-    let a = toGPU[float32](vals)
+    let a = toGPU[CLSData[float32], float32](vals)
     let r = arccos(a).toSeq()
     check almostEq(r[0], arccos(0f),   1e-4f)
     check almostEq(r[1], arccos(0.5f), 1e-4f)
@@ -437,7 +437,7 @@ suite "CLSeq — trigonometry":
 
   test "arctan element-wise":
     let vals = @[0f, 1f, -1f]
-    let a = toGPU[float32](vals)
+    let a = toGPU[CLSData[float32], float32](vals)
     let r = arctan(a).toSeq()
     check almostEq(r[0], arctan(0f),  1e-4f)
     check almostEq(r[1], arctan(1f),  1e-4f)
@@ -451,38 +451,38 @@ suite "CLArray — trigonometry (GPU kernel)":
 
   test "sin on CLArray[4,float32]":
     let src: array[4, float32] = [0f, 0.5f, 1f, 1.5f]
-    let a = toGPU[4, float32](src)
+    let a = toGPU[4, CLAData[4, float32], float32](src)
     let r = sin(a).toArray()
     for i in 0..<4: check almostEq(r[i], sin(src[i]))
 
   test "cos on CLArray[4,float32]":
     let src: array[4, float32] = [0f, 0.5f, 1f, 1.5f]
-    let a = toGPU[4, float32](src)
+    let a = toGPU[4, CLAData[4, float32], float32](src)
     let r = cos(a).toArray()
     for i in 0..<4: check almostEq(r[i], cos(src[i]))
 
   test "sqrt on CLArray[4,float32]":
     let src: array[4, float32] = [0f, 1f, 4f, 9f]
-    let a = toGPU[4, float32](src)
+    let a = toGPU[4, CLAData[4, float32], float32](src)
     let r = sqrt(a).toArray()
     check almostEq(r[0], 0f) and almostEq(r[1], 1f) and
           almostEq(r[2], 2f) and almostEq(r[3], 3f)
 
   test "exp on CLArray[3,float32]":
     let src: array[3, float32] = [0f, 1f, 2f]
-    let a = toGPU[3, float32](src)
+    let a = toGPU[3, CLAData[3, float32], float32](src)
     let r = exp(a).toArray()
     check almostEq(r[0], 1f) and almostEq(r[1], exp(1f)) and almostEq(r[2], exp(2f))
 
   test "ln on CLArray[3,float32]":
     let src: array[3, float32] = [1f, float32(math.E), float32(math.E*math.E)]
-    let a = toGPU[3, float32](src)
+    let a = toGPU[3, CLAData[3, float32], float32](src)
     let r = ln(a).toArray()
     check almostEq(r[0], 0f) and almostEq(r[1], 1f) and almostEq(r[2], 2f)
 
   test "abs on CLArray[5,float32]":
     let src: array[5, float32] = [-3f, -1f, 0f, 1f, 3f]
-    let a = toGPU[5, float32](src)
+    let a = toGPU[5, CLAData[5, float32], float32](src)
     let r = abs(a).toArray()
     check r == [3f, 1f, 0f, 1f, 3f]
 
@@ -493,7 +493,7 @@ suite "CLArray — trigonometry (GPU kernel)":
 suite "CLSeq — reductions":
 
   test "sum of [1..5]":
-    let a = toGPU[float32](@[1f, 2f, 3f, 4f, 5f])
+    let a = toGPU[CLSData[float32], float32](@[1f, 2f, 3f, 4f, 5f])
     check almostEq(a.sum(), 15f)
 
   test "sum of empty returns 0":
@@ -501,25 +501,25 @@ suite "CLSeq — reductions":
     check a.sum() == 0f
 
   test "sum of 1-element":
-    let a = toGPU[float32](@[42f])
+    let a = toGPU[CLSData[float32], float32](@[42f])
     check almostEq(a.sum(), 42f)
 
   test "sum of int32":
-    let a = toGPU[int32](@[1'i32, 2'i32, 3'i32, 4'i32])
+    let a = toGPU[CLSData[int32], int32](@[1'i32, 2'i32, 3'i32, 4'i32])
     check a.sum() == 10'i32
 
   test "sum large (1024 elements)":
     var vals = newSeq[float32](1024)
     for i in 0..<1024: vals[i] = 1f
-    let a = toGPU[float32](vals)
+    let a = toGPU[CLSData[float32], float32](vals)
     check almostEq(a.sum(), 1024f, 0.01f)
 
   test "min of [3,1,4,1,5]":
-    let a = toGPU[float32](@[3f, 1f, 4f, 1f, 5f])
+    let a = toGPU[CLSData[float32], float32](@[3f, 1f, 4f, 1f, 5f])
     check almostEq(a.min(), 1f)
 
   test "max of [3,1,4,1,5]":
-    let a = toGPU[float32](@[3f, 1f, 4f, 1f, 5f])
+    let a = toGPU[CLSData[float32], float32](@[3f, 1f, 4f, 1f, 5f])
     check almostEq(a.max(), 5f)
 
   test "min on empty raises ValueError":
@@ -533,19 +533,19 @@ suite "CLSeq — reductions":
       discard a.max()
 
   test "dot product [1,2,3]·[4,5,6] = 32":
-    let a = toGPU[float32](@[1f, 2f, 3f])
-    let b = toGPU[float32](@[4f, 5f, 6f])
+    let a = toGPU[CLSData[float32], float32](@[1f, 2f, 3f])
+    let b = toGPU[CLSData[float32], float32](@[4f, 5f, 6f])
     check almostEq(dot(a, b), 32f)
 
   test "dot product length mismatch raises":
-    let a = toGPU[float32](@[1f, 2f])
-    let b = toGPU[float32](@[1f, 2f, 3f])
+    let a = toGPU[CLSData[float32], float32](@[1f, 2f])
+    let b = toGPU[CLSData[float32], float32](@[1f, 2f, 3f])
     expect AssertionDefect:
       discard dot(a, b)
 
   test "dot of orthogonal vectors = 0":
-    let a = toGPU[float32](@[1f, 0f])
-    let b = toGPU[float32](@[0f, 1f])
+    let a = toGPU[CLSData[float32], float32](@[1f, 0f])
+    let b = toGPU[CLSData[float32], float32](@[0f, 1f])
     check almostEq(dot(a, b), 0f)
 
 ##########################################################################################################################################################
@@ -557,8 +557,8 @@ suite "Kernel cache":
   test "repeated identical op does not grow the cache (smoke test)":
     ## We can’t inspect the internal cache size from here (not exported),
     ## but we can verify that repeated calls don’t raise or crash.
-    let a = toGPU[float32](@[1f, 2f, 3f])
-    let b = toGPU[float32](@[1f, 2f, 3f])
+    let a = toGPU[CLSData[float32], float32](@[1f, 2f, 3f])
+    let b = toGPU[CLSData[float32], float32](@[1f, 2f, 3f])
     discard a + b
     discard a + b
     discard a + b
@@ -571,29 +571,29 @@ suite "Kernel cache":
 suite "Edge cases":
 
   test "length-1 CLSeq addition":
-    let a = toGPU[float32](@[7f])
-    let b = toGPU[float32](@[3f])
+    let a = toGPU[CLSData[float32], float32](@[7f])
+    let b = toGPU[CLSData[float32], float32](@[3f])
     check (a + b).toSeq() == @[10f]
 
   test "length-1 sum":
-    let a = toGPU[float32](@[42f])
+    let a = toGPU[CLSData[float32], float32](@[42f])
     check almostEq(a.sum(), 42f)
 
   test "CLArray[1] ops":
-    let a = toGPU[1, float32]([5f])
-    let b = toGPU[1, float32]([3f])
+    let a = toGPU[1, CLAData[1, float32], float32]([5f])
+    let b = toGPU[1, CLAData[1, float32], float32]([3f])
     check (a + b).toArray() == [8f]
 
   test "large CLSeq sum (4096 elements of 1.0)":
     var vals = newSeq[float32](4096)
     for i in 0..<4096: vals[i] = 1f
-    let a = toGPU[float32](vals)
+    let a = toGPU[CLSData[float32], float32](vals)
     check almostEq(a.sum(), 4096f, 0.5f)
 
   test "fill then arithmetic":
     var a = newCLSeq[float32](4)
     a.fill(2f)
-    let b = toGPU[float32](@[1f, 2f, 3f, 4f])
+    let b = toGPU[CLSData[float32], float32](@[1f, 2f, 3f, 4f])
     check (a + b).toSeq() == @[3f, 4f, 5f, 6f]
 
 ##########################################################################################################################################################
@@ -603,16 +603,16 @@ suite "Edge cases":
 suite "String representation":
 
   test "$ on CLSeq contains CLSeq marker":
-    let s = toGPU[float32](@[1f, 2f, 3f])
+    let s = toGPU[CLSData[float32], float32](@[1f, 2f, 3f])
     check "CLSeq" in $s
 
   test "$ on CLSeq contains element values":
-    let s = toGPU[float32](@[1f, 2f, 3f])
+    let s = toGPU[CLSData[float32], float32](@[1f, 2f, 3f])
     let str = $s
     check "1" in str and "2" in str and "3" in str
 
   test "$ on CLArray contains CLArray marker":
-    let a = toGPU[3, float32]([1f, 2f, 3f])
+    let a = toGPU[3, CLAData[3, float32], float32]([1f, 2f, 3f])
     check "CLArray" in $a
 
   test "$ on empty CLSeq":
