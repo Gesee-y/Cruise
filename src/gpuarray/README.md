@@ -1,38 +1,66 @@
-## Cruise GPU Arrays
+# Cruise GPU Arrays
 
-This modules allows the user to do calculations on GPU. THis is useful when you have an huge amount of data requiring the same operations.
-Cruise offers an abstract interface that manage GPU memory and allows the user to add their owns GPU backend easily.
+Cruise GPU Arryas is a Cruise module designed for GPU-accelerated numerical computations. It is particularly effective when processing massive datasets that require parallelized operations.
+
+Cruise provides an abstract interface to manage GPU memory seamlessly while allowing users to implement and integrate their own GPU backends with ease.
 
 ## Features
 
-- **GPU Move semantics**: This ensure that your GPU data are truly freed only when they are no more necessary using Nim's hooks
-- **Refcounted GPU memory**: Since GPU memory are not handled by Nim's GC, Cruise use ref counting to tell you when you should free your data
-- **Easy to extend**: You just have to create your gpu type and overload basic functions
-- **CPU fallback**: Cruise offers a simple CPU implementation to let you test your logics on CPU (or allows better portability if there is no GPU)
-- **OpenCL backend**: This use openCL (mostly provided with your driver, but if not present you will have to download openCL.dll, the ICD Loader), to move your computations to GPU
+* **GPU Move Semantics**: Leverages Nim’s hooks (destructors and move semantics) to ensure GPU data is strictly freed only when it is no longer in scope.
+* **Reference-Counted Memory**: Since GPU memory is not managed by Nim’s default Garbage Collector, Cruise uses reference counting to safely track and automate resource deallocation.
+* **Extensible Architecture**: Easily add new hardware support by defining your custom GPU type and overloading a few core functions.
+* **CPU Fallback**: Includes a built-in CPU implementation for logic testing, debugging, or maintaining portability on systems without a dedicated GPU.
+* **OpenCL Backend**: Built-in support for OpenCL (standard in most drivers; requires the OpenCL ICD Loader/`opencl.dll`) to offload computations to the GPU.
 
-## Quick start
+## Quick Start
 
 ### CPU Backend
-```nim
-let a = newCPUSeq[float32](3) # init memory to 0
-let b = newCPUSeq[float32](3) # init memory to 0
-let c - toGPU[CPUSData[float32], float32](@[1'f32, 2'f32, 3'f32]) # Create a new CLSeq from an initial seq
 
-let d = a + b + c # Create a new CLSeq with the result of this calculation element wise
+The CPU backend allows you to run the same logic on your processor for debugging or fallback purposes.
+
+```nim
+# Initialize memory to 0
+let a = newCPUSeq[float32](3) 
+let b = newCPUSeq[float32](3) 
+
+# Create a new GPU-compatible sequence from an existing Nim seq
+let c = toGPU[CPUSData[float32], float32](@[1'f32, 2'f32, 3'f32]) 
+
+# Perform element-wise addition and return a new sequence
+let d = a + b + c 
 echo d.toSeq
+
 ```
 
-### CL Backend
+### OpenCL (CL) Backend
+
+The OpenCL backend moves the execution to the GPU for massive parallelism.
+
 ```nim
-let a = newCLSeq[float32](3) # init memory to 0
-let b = newCLSeq[float32](3) # init memory to 0
-let c - toGPU[CLSData[float32], float32](@[1'f32, 2'f32, 3'f32]) # Create a new CLSeq from an initial seq
+# Initialize GPU memory to 0
+let a = newCLSeq[float32](3) 
+let b = newCLSeq[float32](3) 
 
-let d = a + b + c # Create a new CLSeq with the result of this calculation element wise
-echo d.toSeq # Get the data from GPU to CPU
+# Transfer data from CPU to GPU
+let c = toGPU[CLSData[float32], float32](@[1'f32, 2'f32, 3'f32]) 
+
+# Perform element-wise addition directly on the GPU device
+let d = a + b + c 
+
+# Transfer result back from GPU to CPU for display
+echo d.toSeq 
+
 ```
+
+### Performance Insights
+
+Based on benchmarks (in the benchmark folder, feel free to run them) on a Core i7 vs AMD FirePro 4190:
+
+* **Massive Speedups on Complex Math**: Up to **48x faster** for exponential and trigonometric functions on large datasets ($n > 10^7$).
+* **Memory Management Matters**: Using in-place operations or buffer reuse (the `into` pattern) can make your code **10x faster** by avoiding costly GPU memory allocations.
+* **Threshold**: For simple additions, the GPU becomes efficient starting from approximately **250,000 elements**. Below that, the CPU fallback is usually faster due to overhead. 
 
 ## Limitations
 
-- You should avoid random access on GPU Arrays as this would requires the GPU data to go back to CPU, which is expensive.
+* **Avoid Random Access**: Accessing individual elements within a GPU array is expensive as it requires synchronizing data back to the CPU. Prefer bulk operations.
+* **Dataset Size**: Due to the overhead of memory transfer between Host (CPU) and Device (GPU), Cruise GPU Arrays is not recommended for processing very small datasets where the transfer time might exceed the computation time.
