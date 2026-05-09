@@ -350,3 +350,469 @@ proc ln*[N: static int, T: SomeFloat](a: CPUArray[N, T]): CPUArray[N, T] =
 
 proc abs*[N: static int, T](a: CPUArray[N, T]): CPUArray[N, T] =
   arrayUnaryOp(abs)
+
+##########################################################################################################################################################
+## FILL — constant initialisation
+##########################################################################################################################################################
+ 
+proc fill*[T](a: var CPUSeq[T], val: T) =
+  ## Set every logical element of `a` to `val`.
+  ##
+  ## Example:
+  ##   var s = newCPUSeq[float32](4)
+  ##   s.fill(0.0'f32)   # [0, 0, 0, 0]
+  for i in 0..<a.length:
+    a.data.data[a.startIdx + i] = val
+ 
+proc fill*[N: static int, T](a: var CPUArray[N, T], val: T) =
+  ## Set every element of the fixed-size array `a` to `val`.
+  ##
+  ## Example:
+  ##   var arr = newCPUArray[4, int]()
+  ##   arr.fill(1)   # [1, 1, 1, 1]
+  for i in 0..<N:
+    a.data.data[a.startIdx + i] = val
+ 
+##########################################################################################################################################################
+## REDUCTIONS — sum / min / max / dot
+##########################################################################################################################################################
+ 
+proc sum*[T: SomeNumber](a: CPUSeq[T]): T =
+  ## Return the sum of all logical elements.
+  ##
+  ## Returns 0 for an empty sequence.
+  result = T(0)
+  for i in 0..<a.length:
+    result += a.data.data[a.startIdx + i]
+ 
+proc min*[T: SomeNumber](a: CPUSeq[T]): T =
+  ## Return the minimum element.
+  ##
+  ## Raises `ValueError` on an empty sequence.
+  if a.length == 0:
+    raise newException(ValueError, "min on empty CPUSeq")
+  result = a.data.data[a.startIdx]
+  for i in 1..<a.length:
+    let v = a.data.data[a.startIdx + i]
+    if v < result: result = v
+ 
+proc max*[T: SomeNumber](a: CPUSeq[T]): T =
+  ## Return the maximum element.
+  ##
+  ## Raises `ValueError` on an empty sequence.
+  if a.length == 0:
+    raise newException(ValueError, "max on empty CPUSeq")
+  result = a.data.data[a.startIdx]
+  for i in 1..<a.length:
+    let v = a.data.data[a.startIdx + i]
+    if v > result: result = v
+ 
+proc dot*[T: SomeNumber](a, b: CPUSeq[T]): T =
+  ## Return the dot product: sum of a[i] * b[i] for all i.
+  ##
+  ## Both sequences must have the same logical length.
+  assert a.length == b.length, "dot: length mismatch"
+  result = T(0)
+  for i in 0..<a.length:
+    result += a.data.data[a.startIdx + i] * b.data.data[b.startIdx + i]
+ 
+##########################################################################################################################################################
+## toOpenArray — zero-copy logical slice (view, no allocation)
+##########################################################################################################################################################
+ 
+proc toOpenArray*[T](c: CPUSeq[T], start, stop: int): CPUSeq[T] =
+  ## Return a view into `c` covering logical indices [start, stop).
+  ##
+  ## No data is copied — both the original and the view share the same
+  ## underlying `seq[T]`.  Mutations through either handle are visible to
+  ## the other, matching the OpenCL backend's shared-cl_mem behaviour.
+  ##
+  ## Parameters:
+  ##   start  – first logical index to include (inclusive)
+  ##   stop   – first logical index to exclude (exclusive)
+  ##
+  ## Example:
+  ##   let full = [1, 2, 3, 4, 5].toGPU
+  ##   let view = full.toOpenArray(1, 4)   # logical elements 2, 3, 4
+  result.data     = c.data          # shared backing store
+  result.count    = c.count         # shared reference count
+  result.startIdx = c.startIdx + start
+  result.length   = stop - start
+  result.capacity = c.capacity
+ 
+##########################################################################################################################################################
+## NON-ALLOCATING "INTO" VARIANTS — binary
+##########################################################################################################################################################
+##
+## Each proc writes the result of a pairwise element-wise operation into `dst`.
+## If `dst` already has sufficient capacity the existing allocation is reused,
+## matching the zero-allocation hot-path promised by the OpenCL backend.
+##
+## `dst.length` is updated to match `a.length` on every call.
+##
+## Aliasing: `a += a` (self-aliasing through `dst`) is safe on the CPU because
+## reads and writes are sequential — no undefined behaviour unlike OpenCL 1.2.
+ 
+proc add*[T](a, b: CPUSeq[T], dst: var CPUSeq[T]) =
+  ## Element-wise addition into `dst`: dst[i] = a[i] + b[i].
+  assert a.length == b.length, "add: length mismatch"
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] =
+      a.data.data[a.startIdx + i] + b.data.data[b.startIdx + i]
+ 
+proc sub*[T](a, b: CPUSeq[T], dst: var CPUSeq[T]) =
+  ## Element-wise subtraction into `dst`: dst[i] = a[i] - b[i].
+  assert a.length == b.length, "sub: length mismatch"
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] =
+      a.data.data[a.startIdx + i] - b.data.data[b.startIdx + i]
+ 
+proc mul*[T](a, b: CPUSeq[T], dst: var CPUSeq[T]) =
+  ## Element-wise multiplication into `dst`: dst[i] = a[i] * b[i].
+  assert a.length == b.length, "mul: length mismatch"
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] =
+      a.data.data[a.startIdx + i] * b.data.data[b.startIdx + i]
+ 
+proc divInto*[T](a, b: CPUSeq[T], dst: var CPUSeq[T]) =
+  ## Element-wise division into `dst`: dst[i] = a[i] / b[i].
+  ##
+  ## Named `divInto` to avoid shadowing Nim's built-in integer `div` operator.
+  assert a.length == b.length, "divInto: length mismatch"
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] =
+      a.data.data[a.startIdx + i] / b.data.data[b.startIdx + i]
+ 
+##########################################################################################################################################################
+## NON-ALLOCATING "INTO" VARIANTS — scalar broadcast
+##########################################################################################################################################################
+ 
+proc addScalar*[T](a: CPUSeq[T], scalar: T, dst: var CPUSeq[T]) =
+  ## Broadcast scalar addition into `dst`: dst[i] = a[i] + scalar.
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] = a.data.data[a.startIdx + i] + scalar
+ 
+proc subScalar*[T](a: CPUSeq[T], scalar: T, dst: var CPUSeq[T]) =
+  ## Broadcast scalar subtraction into `dst`: dst[i] = a[i] - scalar.
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] = a.data.data[a.startIdx + i] - scalar
+ 
+proc mulScalar*[T](a: CPUSeq[T], scalar: T, dst: var CPUSeq[T]) =
+  ## Broadcast scalar multiplication into `dst`: dst[i] = a[i] * scalar.
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] = a.data.data[a.startIdx + i] * scalar
+ 
+proc divScalar*[T](a: CPUSeq[T], scalar: T, dst: var CPUSeq[T]) =
+  ## Broadcast scalar division into `dst`: dst[i] = a[i] / scalar.
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] = a.data.data[a.startIdx + i] / scalar
+ 
+##########################################################################################################################################################
+## NON-ALLOCATING "INTO" VARIANTS — unary / trigonometric
+##########################################################################################################################################################
+##
+## Each proc mirrors its OpenCL counterpart (sinInto, cosInto, …) and writes
+## into a caller-supplied buffer, enabling allocation-free hot loops.
+##
+## Trigonometric procs are constrained to `SomeFloat` element types; `absInto`
+## accepts any numeric type.
+ 
+proc sinInto*[T: SomeFloat](a: CPUSeq[T], dst: var CPUSeq[T]) =
+  ## Element-wise sine into `dst`.
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] = sin(a.data.data[a.startIdx + i])
+ 
+proc cosInto*[T: SomeFloat](a: CPUSeq[T], dst: var CPUSeq[T]) =
+  ## Element-wise cosine into `dst`.
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] = cos(a.data.data[a.startIdx + i])
+ 
+proc tanInto*[T: SomeFloat](a: CPUSeq[T], dst: var CPUSeq[T]) =
+  ## Element-wise tangent into `dst`.
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] = tan(a.data.data[a.startIdx + i])
+ 
+proc arcsinInto*[T: SomeFloat](a: CPUSeq[T], dst: var CPUSeq[T]) =
+  ## Element-wise arc sine into `dst`.
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] = arcsin(a.data.data[a.startIdx + i])
+ 
+proc arccosInto*[T: SomeFloat](a: CPUSeq[T], dst: var CPUSeq[T]) =
+  ## Element-wise arc cosine into `dst`.
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] = arccos(a.data.data[a.startIdx + i])
+ 
+proc arctanInto*[T: SomeFloat](a: CPUSeq[T], dst: var CPUSeq[T]) =
+  ## Element-wise arc tangent into `dst`.
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] = arctan(a.data.data[a.startIdx + i])
+ 
+proc sqrtInto*[T: SomeFloat](a: CPUSeq[T], dst: var CPUSeq[T]) =
+  ## Element-wise square root into `dst`.
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] = sqrt(a.data.data[a.startIdx + i])
+ 
+proc expInto*[T: SomeFloat](a: CPUSeq[T], dst: var CPUSeq[T]) =
+  ## Element-wise e^x into `dst`.
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] = exp(a.data.data[a.startIdx + i])
+ 
+proc lnInto*[T: SomeFloat](a: CPUSeq[T], dst: var CPUSeq[T]) =
+  ## Element-wise natural logarithm into `dst`.
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] = ln(a.data.data[a.startIdx + i])
+ 
+proc absInto*[T](a: CPUSeq[T], dst: var CPUSeq[T]) =
+  ## Element-wise absolute value into `dst`.  Works on integers and floats.
+  dst.length = a.length
+  dst.ensureLen()
+  for i in 0..<a.length:
+    dst.data.data[dst.startIdx + i] = abs(a.data.data[a.startIdx + i])
+ 
+##########################################################################################################################################################
+## COMPOUND-ASSIGNMENT OPERATORS — CPUSeq OP CPUSeq
+##########################################################################################################################################################
+##
+## All operators mutate the left-hand side in place without allocating a new seq.
+## Unlike OpenCL 1.2, self-aliasing (`a += a`) is safe here because the CPU
+## executes element operations sequentially with no parallelism hazard.
+ 
+proc `+=`*[T](a: var CPUSeq[T], b: CPUSeq[T]) =
+  ## In-place element-wise addition: a[i] += b[i].
+  assert a.length == b.length, "+= : length mismatch"
+  for i in 0..<a.length:
+    a.data.data[a.startIdx + i] += b.data.data[b.startIdx + i]
+ 
+proc `-=`*[T](a: var CPUSeq[T], b: CPUSeq[T]) =
+  ## In-place element-wise subtraction: a[i] -= b[i].
+  assert a.length == b.length, "-= : length mismatch"
+  for i in 0..<a.length:
+    a.data.data[a.startIdx + i] -= b.data.data[b.startIdx + i]
+ 
+proc `*=`*[T](a: var CPUSeq[T], b: CPUSeq[T]) =
+  ## In-place element-wise multiplication: a[i] *= b[i].
+  assert a.length == b.length, "*= : length mismatch"
+  for i in 0..<a.length:
+    a.data.data[a.startIdx + i] *= b.data.data[b.startIdx + i]
+ 
+proc `/=`*[T](a: var CPUSeq[T], b: CPUSeq[T]) =
+  ## In-place element-wise division: a[i] /= b[i].
+  assert a.length == b.length, "/= : length mismatch"
+  for i in 0..<a.length:
+    a.data.data[a.startIdx + i] /= b.data.data[b.startIdx + i]
+ 
+##########################################################################################################################################################
+## COMPOUND-ASSIGNMENT OPERATORS — CPUSeq OP scalar
+##########################################################################################################################################################
+ 
+proc `+=`*[T](a: var CPUSeq[T], scalar: T) =
+  ## In-place scalar addition: a[i] += scalar.
+  for i in 0..<a.length:
+    a.data.data[a.startIdx + i] += scalar
+ 
+proc `-=`*[T](a: var CPUSeq[T], scalar: T) =
+  ## In-place scalar subtraction: a[i] -= scalar.
+  for i in 0..<a.length:
+    a.data.data[a.startIdx + i] -= scalar
+ 
+proc `*=`*[T](a: var CPUSeq[T], scalar: T) =
+  ## In-place scalar multiplication: a[i] *= scalar.
+  for i in 0..<a.length:
+    a.data.data[a.startIdx + i] *= scalar
+ 
+proc `/=`*[T](a: var CPUSeq[T], scalar: T) =
+  ## In-place scalar division: a[i] /= scalar.
+  for i in 0..<a.length:
+    a.data.data[a.startIdx + i] /= scalar
+ 
+##########################################################################################################################################################
+## COMMUTATIVE MISSING VARIANTS — n - seq, n / seq
+##########################################################################################################################################################
+ 
+proc `-`*[T](n: SomeNumber, a: CPUSeq[T]): CPUSeq[T] =
+  ## Scalar minus seq: result[i] = n - a[i].
+  ##
+  ## The symmetric `n + seq` and `n * seq` forms are already provided by the
+  ## existing CPU backend; only subtraction and division are asymmetric and thus
+  ## require their own implementations.
+  result = newCPUSeq[T](a.length)
+  for i in 0..<a.length:
+    result.data.data[result.startIdx + i] = T(n) - a.data.data[a.startIdx + i]
+ 
+proc `/`*[T](n: SomeNumber, a: CPUSeq[T]): CPUSeq[T] =
+  ## Scalar divided by seq: result[i] = n / a[i].
+  result = newCPUSeq[T](a.length)
+  for i in 0..<a.length:
+    result.data.data[result.startIdx + i] = T(n) / a.data.data[a.startIdx + i]
+ 
+proc `-`*[N: static int, T](n: SomeNumber, a: CPUArray[N, T]): CPUArray[N, T] =
+  ## Scalar minus array: result[i] = n - a[i].
+  result = newCPUArray[N, T]()
+  for i in 0..<N:
+    result.data.data[result.startIdx + i] = T(n) - a.data.data[a.startIdx + i]
+ 
+proc `/`*[N: static int, T](n: SomeNumber, a: CPUArray[N, T]): CPUArray[N, T] =
+  ## Scalar divided by array: result[i] = n / a[i].
+  result = newCPUArray[N, T]()
+  for i in 0..<N:
+    result.data.data[result.startIdx + i] = T(n) / a.data.data[a.startIdx + i]
+ 
+## Helpers — check all lengths match the first operand.
+proc checkAllLengths[T](ops: openArray[CPUSeq[T]]) =
+  for i in 1..<ops.len:
+    assert ops[i].length == ops[0].length,
+      "Many-op length mismatch at index " & $i &
+      ": " & $ops[i].length & " vs " & $ops[0].length
+
+proc addMany*[T](operands: varargs[CPUSeq[T]]): CPUSeq[T] =
+  ## Element-wise sum of any number of CPUSeq in a single pass.
+  ## All operands must share the same logical length.
+  ##
+  ## Equivalent to operands[0] + operands[1] + … but with no intermediate
+  ## allocations and only one iteration over the data.
+  assert operands.len >= 2, "addMany requires at least 2 operands"
+  checkAllLengths(operands)
+  let n = operands[0].length
+  result = newCPUSeq[T](n)
+  for i in 0..<n:
+    var acc = operands[0].data.data[operands[0].startIdx + i]
+    for k in 1..<operands.len:
+      acc += operands[k].data.data[operands[k].startIdx + i]
+    result.data.data[result.startIdx + i] = acc
+
+proc subMany*[T](operands: varargs[CPUSeq[T]]): CPUSeq[T] =
+  ## Element-wise left-fold subtraction: op[0] - op[1] - op[2] - …
+  ## All operands must share the same logical length.
+  assert operands.len >= 2, "subMany requires at least 2 operands"
+  checkAllLengths(operands)
+  let n = operands[0].length
+  result = newCPUSeq[T](n)
+  for i in 0..<n:
+    var acc = operands[0].data.data[operands[0].startIdx + i]
+    for k in 1..<operands.len:
+      acc -= operands[k].data.data[operands[k].startIdx + i]
+    result.data.data[result.startIdx + i] = acc
+
+proc mulMany*[T](operands: varargs[CPUSeq[T]]): CPUSeq[T] =
+  ## Element-wise product of any number of CPUSeq in a single pass.
+  assert operands.len >= 2, "mulMany requires at least 2 operands"
+  checkAllLengths(operands)
+  let n = operands[0].length
+  result = newCPUSeq[T](n)
+  for i in 0..<n:
+    var acc = operands[0].data.data[operands[0].startIdx + i]
+    for k in 1..<operands.len:
+      acc *= operands[k].data.data[operands[k].startIdx + i]
+    result.data.data[result.startIdx + i] = acc
+
+proc divMany*[T](operands: varargs[CPUSeq[T]]): CPUSeq[T] =
+  ## Element-wise left-fold division: op[0] / op[1] / op[2] / …
+  assert operands.len >= 2, "divMany requires at least 2 operands"
+  checkAllLengths(operands)
+  let n = operands[0].length
+  result = newCPUSeq[T](n)
+  for i in 0..<n:
+    var acc = operands[0].data.data[operands[0].startIdx + i]
+    for k in 1..<operands.len:
+      acc /= operands[k].data.data[operands[k].startIdx + i]
+    result.data.data[result.startIdx + i] = acc
+
+## "Into" variants — write into a caller-supplied buffer (zero allocation).
+
+proc addManyInto*[T](operands: openArray[CPUSeq[T]], dst: var CPUSeq[T]) =
+  ## addMany with explicit destination buffer — no allocation.
+  assert operands.len >= 2, "addManyInto requires at least 2 operands"
+  checkAllLengths(operands)
+  dst.length = operands[0].length
+  dst.ensureLen()
+  for i in 0..<operands[0].length:
+    var acc = operands[0].data.data[operands[0].startIdx + i]
+    for k in 1..<operands.len:
+      acc += operands[k].data.data[operands[k].startIdx + i]
+    dst.data.data[dst.startIdx + i] = acc
+
+proc subManyInto*[T](operands: openArray[CPUSeq[T]], dst: var CPUSeq[T]) =
+  ## subMany with explicit destination buffer — no allocation.
+  assert operands.len >= 2, "subManyInto requires at least 2 operands"
+  checkAllLengths(operands)
+  dst.length = operands[0].length
+  dst.ensureLen()
+  for i in 0..<operands[0].length:
+    var acc = operands[0].data.data[operands[0].startIdx + i]
+    for k in 1..<operands.len:
+      acc -= operands[k].data.data[operands[k].startIdx + i]
+    dst.data.data[dst.startIdx + i] = acc
+
+proc mulManyInto*[T](operands: openArray[CPUSeq[T]], dst: var CPUSeq[T]) =
+  ## mulMany with explicit destination buffer — no allocation.
+  assert operands.len >= 2, "mulManyInto requires at least 2 operands"
+  checkAllLengths(operands)
+  dst.length = operands[0].length
+  dst.ensureLen()
+  for i in 0..<operands[0].length:
+    var acc = operands[0].data.data[operands[0].startIdx + i]
+    for k in 1..<operands.len:
+      acc *= operands[k].data.data[operands[k].startIdx + i]
+    dst.data.data[dst.startIdx + i] = acc
+
+proc divManyInto*[T](operands: openArray[CPUSeq[T]], dst: var CPUSeq[T]) =
+  ## divMany with explicit destination buffer — no allocation.
+  assert operands.len >= 2, "divManyInto requires at least 2 operands"
+  checkAllLengths(operands)
+  dst.length = operands[0].length
+  dst.ensureLen()
+  for i in 0..<operands[0].length:
+    var acc = operands[0].data.data[operands[0].startIdx + i]
+    for k in 1..<operands.len:
+      acc /= operands[k].data.data[operands[k].startIdx + i]
+    dst.data.data[dst.startIdx + i] = acc
+
+##########################################################################################################################################################
+## $ — string representation
+##########################################################################################################################################################
+ 
+proc `$`*[T](c: CPUSeq[T]): string =
+  ## Return a human-readable representation of the logical slice of `c`.
+  ##
+  ## Matches the OpenCL backend's format: ``CPUSeq(@[1, 2, 3])``.
+  "CPUSeq(" & $c.toSeq() & ")"
+ 
+proc `$`*[N: static int, T](c: CPUArray[N, T]): string =
+  ## Return a human-readable representation of the fixed-size array `c`.
+  ##
+  ## Matches the OpenCL backend's format: ``CPUArray([1, 2, 3])``.
+  "CPUArray(" & $c.toArray() & ")"

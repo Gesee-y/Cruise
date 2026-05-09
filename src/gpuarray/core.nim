@@ -6,7 +6,8 @@ import logging, atomics, strformat
 
 type
   SomeInteger = int8 | int16 | int32 | int64 | int | uint8 | uint16 | uint32 | uint64 | uint
-  SomeFLoat = float32 | float64 | float
+  SomeFloat = float32 | float64 | float
+  SomeNumber = SomeInteger | SomeFloat
 
   ScalarIndexingMode* = enum
     ScalarDisallowed, ScalarAllowed, ScalarWarn

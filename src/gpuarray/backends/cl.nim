@@ -44,7 +44,7 @@
 
 import math, strutils, tables
 import ../gpuarrays
-import ../../../externalLib/nimopencl/src/opencl   ## raw OpenCL 1.2 bindings (the wrapper you already have)
+import ../../../externalLib/nimopencl/src/opencl   ## raw OpenCL 1.2 bindings
 
 ##########################################################################################################################################################
 ## CONTEXT
@@ -1066,6 +1066,114 @@ __kernel void $1(
   check setKernelArg(k, 5, sizeof(cint), addr cnt)
   var gs = a.length
   check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
+
+## Generate source for a many-operand kernel.
+## `opSym`  — one of "+", "-", "*", "/"
+## `opName` — used in the kernel name ("add", "sub", "mul", "div")
+## `count`  — number of input buffers
+## `clTy`   — OpenCL scalar type string ("float", "double", …)
+proc manyOpKernelSrc(opSym, opName, clTy: string, count: int): string =
+  let kernName = opName & "Many_" & $count & "_" & clTy
+
+  # Parameter list: one __global const pointer per operand + offsets
+  var params = ""
+  for k in 0..<count:
+    params &= "    __global const " & clTy & "* a" & $k & ",\n"
+    params &= "    const int off" & $k & ",\n"
+  params &= "    __global " & clTy & "* out,\n"
+  params &= "    const int outOff,\n"
+  params &= "    const int n"
+
+  # Body: accumulate with the chosen operator
+  var body = "a0[off0 + i]"
+  for k in 1..<count:
+    body &= " " & opSym & " a" & $k & "[off" & $k & " + i]"
+
+  result = "__kernel void " & kernName & "(\n" & params & ")\n{\n"
+  result &= "    int i = get_global_id(0);\n"
+  result &= "    if (i < n) out[outOff + i] = " & body & ";\n"
+  result &= "}\n"
+
+## Core dispatcher — writes result into `dst`, reusing its cl_mem when possible.
+proc dispatchManyOpInto[T](
+    operands: openArray[CLSeq[T]],
+    opSym, opName: string,
+    dst: var CLSeq[T]) =
+
+  assert operands.len >= 2, opName & "Many requires at least 2 operands"
+  for i in 1..<operands.len:
+    assert operands[i].length == operands[0].length,
+      opName & "Many length mismatch at index " & $i
+
+  let clTy    = clTypeName(T)
+  let count   = operands.len
+  let kernName = opName & "Many_" & $count & "_" & clTy
+  let src     = manyOpKernelSrc(opSym, opName, clTy, count)
+  let k       = getKernel(src, kernName)
+
+  dst.length = operands[0].length
+  dst.ensureLen()
+
+  # Set kernel args: for each operand → (Pmem, offset cint)
+  var argIdx: uint32 = 0
+  for op in operands:
+    var mem = op.data.mem
+    var off = op.startIdx.cint
+    check setKernelArg(k, argIdx,     sizeof(Pmem), addr mem)
+    check setKernelArg(k, argIdx + 1, sizeof(cint), addr off)
+    argIdx += 2
+
+  # Output buffer + offset + n
+  var outOff = dst.startIdx.cint
+  var n      = operands[0].length.cint
+  check setKernelArg(k, argIdx,     sizeof(Pmem), addr dst.data.mem)
+  check setKernelArg(k, argIdx + 1, sizeof(cint), addr outOff)
+  check setKernelArg(k, argIdx + 2, sizeof(cint), addr n)
+
+  var gs = operands[0].length
+  check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
+
+## Allocating wrappers — mirror the CPU API exactly.
+
+proc addMany*[T](operands: varargs[CLSeq[T]]): CLSeq[T] =
+  ## Element-wise sum of any number of CLSeq in a single GPU kernel.
+  ## All operands must share the same logical length.
+  result = newCLSeq[T](operands[0].length)
+  dispatchManyOpInto(operands, "+", "add", result)
+
+proc subMany*[T](operands: varargs[CLSeq[T]]): CLSeq[T] =
+  ## Element-wise left-fold subtraction in a single GPU kernel.
+  result = newCLSeq[T](operands[0].length)
+  dispatchManyOpInto(operands, "-", "sub", result)
+
+proc mulMany*[T](operands: varargs[CLSeq[T]]): CLSeq[T] =
+  ## Element-wise product of any number of CLSeq in a single GPU kernel.
+  result = newCLSeq[T](operands[0].length)
+  dispatchManyOpInto(operands, "*", "mul", result)
+
+proc divMany*[T](operands: varargs[CLSeq[T]]): CLSeq[T] =
+  ## Element-wise left-fold division in a single GPU kernel.
+  result = newCLSeq[T](operands[0].length)
+  dispatchManyOpInto(operands, "/", "div", result)
+
+## "Into" variants — zero allocation on the GPU hot path.
+
+proc addManyInto*[T](operands: openArray[CLSeq[T]], dst: var CLSeq[T]) =
+  ## addMany into a caller-supplied buffer — no cl_mem allocation.
+  dispatchManyOpInto(operands, "+", "add", dst)
+
+proc subManyInto*[T](operands: openArray[CLSeq[T]], dst: var CLSeq[T]) =
+  ## subMany into a caller-supplied buffer — no cl_mem allocation.
+  dispatchManyOpInto(operands, "-", "sub", dst)
+
+proc mulManyInto*[T](operands: openArray[CLSeq[T]], dst: var CLSeq[T]) =
+  ## mulMany into a caller-supplied buffer — no cl_mem allocation.
+  dispatchManyOpInto(operands, "*", "mul", dst)
+
+proc divManyInto*[T](operands: openArray[CLSeq[T]], dst: var CLSeq[T]) =
+  ## divMany into a caller-supplied buffer — no cl_mem allocation.
+  dispatchManyOpInto(operands, "/", "div", dst)
+
 
 ##########################################################################################################################################################
 ## $ — string representation (blocking read-back)

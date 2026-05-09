@@ -38,7 +38,7 @@ template getType(d: CDevice): CDeviceType = d.descriptor.itype
 template getInterface(d: CDevice): CDeviceInterface = d.descriptor.devInterface
 template getAddress(d: CDevice): string = d.descriptor.address
 template getInner(d: CDevice): untyped = d.data
-template getStream(d: CDevice) {.error: "Backend must implement this function".}
+template getStream(d: CDevice): untyped = error("Backend must implement this function")
 template supportInput(d: CDevice): bool = d.getDirection in {cddInput, cddDuplex}
 template supportOutput(d: CDevice): bool = d.getDirection in {cddOutput, cddDuplex}
 

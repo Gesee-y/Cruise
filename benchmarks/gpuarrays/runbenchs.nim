@@ -104,8 +104,8 @@ proc benchBinaryOps() =
     # GPU
     let ga = toGPU[CLSData[float32], float32](data)   ## CLSeq
     let gb = toGPU[CLSData[float32], float32](data)
-    let gpuAdd = bench("add", n): discard ga + gb
-    let gpuMul = bench("mul", n): discard ga * gb
+    let gpuAdd = bench("add", n): (discard ga + gb; clWaitForCPU())
+    let gpuMul = bench("mul", n): (discard ga * gb; clWaitForCPU())
 
     printResult("add", sizeName(n), float(n), cpuAdd, gpuAdd)
     printResult("mul", sizeName(n), float(n), cpuMul, gpuMul)
@@ -122,11 +122,11 @@ proc benchScalarOps() =
     let ga = toGPU[CLSData[float32], float32](data)
 
     let cpuMul = bench("scalar *", n): discard ca * 2.0f32
-    let gpuMul = bench("scalar *", n): discard ga * 2.0f32
+    let gpuMul = bench("scalar *", n): (discard ga * 2.0f32; clWaitForCPU())
     printResult("scalar *", sizeName(n), float(n), cpuMul, gpuMul)
 
     let cpuAdd = bench("scalar +", n): discard ca + 0.5f32
-    let gpuAdd = bench("scalar +", n): discard ga + 0.5f32
+    let gpuAdd = bench("scalar +", n): (discard ga + 0.5f32; clWaitForCPU())
     printResult("scalar +", sizeName(n), float(n), cpuAdd, gpuAdd)
 
 ##########################################################################################################################################################
@@ -141,15 +141,15 @@ proc benchUnaryOps() =
     let ga = toGPU[CLSData[float32], float32](data)
 
     let cpuSin  = bench("sin",  n): discard ca.sin()
-    let gpuSin  = bench("sin",  n): discard ga.sin()
+    let gpuSin  = bench("sin",  n): (discard ga.sin(); clWaitForCPU())
     printResult("sin", sizeName(n), float(n), cpuSin, gpuSin)
 
     let cpuSqrt = bench("sqrt", n): discard ca.sqrt()
-    let gpuSqrt = bench("sqrt", n): discard ga.sqrt()
+    let gpuSqrt = bench("sqrt", n): (discard ga.sqrt(); clWaitForCPU())
     printResult("sqrt", sizeName(n), float(n), cpuSqrt, gpuSqrt)
 
     let cpuExp  = bench("exp",  n): discard ca.exp()
-    let gpuExp  = bench("exp",  n): discard ga.exp()
+    let gpuExp  = bench("exp",  n): (discard ga.exp(); clWaitForCPU())
     printResult("exp", sizeName(n), float(n), cpuExp, gpuExp)
 
 ##########################################################################################################################################################
@@ -166,7 +166,7 @@ proc benchChainedAlloc() =
     let gb = ga; let gc = ga; let gd = ga
 
     let cpuT = bench("chain-alloc", n): discard (ca + cb) * cc - cd
-    let gpuT = bench("chain-alloc", n): discard (ga + gb) * gc - gd
+    let gpuT = bench("chain-alloc", n): (discard (ga + gb) * gc - gd; clWaitForCPU())
     printResult("(a+b)*c-d  alloc", sizeName(n), float(n), cpuT, gpuT)
 
 ##########################################################################################################################################################
@@ -198,6 +198,7 @@ proc benchChainedInto() =
       add(ga, gb, tmp1)        ## tmp1 = a + b   — zero allocation
       mul(tmp1, gc, tmp2)      ## tmp2 = tmp1 * c — zero allocation
       sub(tmp2, gd, tmp3)      ## tmp3 = tmp2 - d — zero allocation
+      clWaitForCPU()
 
     printResult("(a+b)*c-d  into", sizeName(n), float(n), cpuT, gpuT)
 
@@ -241,7 +242,7 @@ proc benchDot() =
       var s = 0.0f32
       let sa = ca.toSeq; let sb = cb.toSeq
       for i in 0..<n: s += sa[i] * sb[i]
-    let gpuDot = bench("dot", n): discard ga.dot(gb)
+    let gpuDot = bench("dot", n): (discard ga.dot(gb); clWaitForCPU())
     printResult("dot", sizeName(n), float(n), cpuDot, gpuDot)
 
 ##########################################################################################################################################################
@@ -262,8 +263,8 @@ proc benchInPlace() =
     # GPU — true in-place, zero allocation
     var ga = toGPU[CLSData[float32], float32](data)
     let gb = ga
-    let gpuAddEq = bench("+=", n): ga += gb
-    let gpuMulEq = bench("*=", n): ga *= 2.0f32
+    let gpuAddEq = bench("+=", n): (ga += gb; clWaitForCPU())
+    let gpuMulEq = bench("*=", n): (ga *= 2.0f32; clWaitForCPU())
 
     printResult("+=", sizeName(n), float(n), cpuAddEq, gpuAddEq)
     printResult("*= scalar", sizeName(n), float(n), cpuMulEq, gpuMulEq)
@@ -287,20 +288,253 @@ proc benchCLArray() =
   let clB  = clA
 
   let cpuAdd  = bench("CLArray +",   N): discard cpuA + cpuB
-  let gpuAdd  = bench("CLArray +",   N): discard clA  + clB
+  let gpuAdd  = bench("CLArray +",   N): (discard clA  + clB; clWaitForCPU())
   printResult("CLArray[1024] +", "FIXED", float(N), cpuAdd, gpuAdd)
 
   let cpuSin  = bench("CLArray sin", N): discard cpuA.sin()
-  let gpuSin  = bench("CLArray sin", N): discard clA.sin()
+  let gpuSin  = bench("CLArray sin", N): (discard clA.sin(); clWaitForCPU())
   printResult("CLArray[1024] sin", "FIXED", float(N), cpuSin, gpuSin)
 
   let cpuMul  = bench("CLArray *s",  N): discard cpuA * 3.0f32
-  let gpuMul  = bench("CLArray *s",  N): discard clA  * 3.0f32
+  let gpuMul  = bench("CLArray *s",  N): (discard clA  * 3.0f32; clWaitForCPU())
   printResult("CLArray[1024] * scalar", "FIXED", float(N), cpuMul, gpuMul)
 
 ##########################################################################################################################################################
-## MAIN
+## 10. MANY-OPERAND OPS — allocating  addMany / mulMany / subMany / divMany
 ##########################################################################################################################################################
+##
+## Compares addMany(a,b,c,d) (single pass / kernel) against the equivalent
+## chained binary ops (a+b)+c)+d  which allocate N-1 temporaries.
+##
+## Operand counts tested: 2, 4, 8
+## (count=2 is the baseline — should match the plain binary bench overhead)
+
+proc benchManyAlloc() =
+  echo "\n=== 10. Many-operand ops — allocating: addMany / mulMany / subMany / divMany ==="
+  for n in SIZES:
+    let data = makeFloatSeq(n)
+
+    # ── build operand arrays once ────────────────────────────────────────────
+    let cpuOps2 = [
+      toGPU[CPUSData[float32], float32](data),
+      toGPU[CPUSData[float32], float32](data)]
+    let cpuOps4 = [cpuOps2[0], cpuOps2[1], cpuOps2[0], cpuOps2[1]]
+    let cpuOps8 = [cpuOps2[0], cpuOps2[1], cpuOps2[0], cpuOps2[1],
+                   cpuOps2[0], cpuOps2[1], cpuOps2[0], cpuOps2[1]]
+
+    let gpuOps2 = [
+      toGPU[CLSData[float32], float32](data),
+      toGPU[CLSData[float32], float32](data)]
+    let gpuOps4 = [gpuOps2[0], gpuOps2[1], gpuOps2[0], gpuOps2[1]]
+    let gpuOps8 = [gpuOps2[0], gpuOps2[1], gpuOps2[0], gpuOps2[1],
+                   gpuOps2[0], gpuOps2[1], gpuOps2[0], gpuOps2[1]]
+
+    # ── addMany ─────────────────────────────────────────────────────────────
+    block:
+      # CPU reference: equivalent chained binary ops
+      let cpuChain2 = bench("addMany-chain-2",  n): discard cpuOps2[0] + cpuOps2[1]
+      let cpuChain4 = bench("addMany-chain-4",  n): discard ((cpuOps4[0] + cpuOps4[1]) + cpuOps4[2]) + cpuOps4[3]
+      let cpuChain8 = bench("addMany-chain-8",  n):
+        discard ((((((cpuOps8[0] + cpuOps8[1]) + cpuOps8[2]) + cpuOps8[3]) +
+                     cpuOps8[4]) + cpuOps8[5]) + cpuOps8[6]) + cpuOps8[7]
+
+      let cpuMany2  = bench("addMany-2",  n): discard addMany(cpuOps2[0], cpuOps2[1])
+      let cpuMany4  = bench("addMany-4",  n): discard addMany(cpuOps4[0], cpuOps4[1], cpuOps4[2], cpuOps4[3])
+      let cpuMany8  = bench("addMany-8",  n): discard addMany(cpuOps8[0], cpuOps8[1], cpuOps8[2], cpuOps8[3],
+                                                               cpuOps8[4], cpuOps8[5], cpuOps8[6], cpuOps8[7])
+
+      let gpuMany2  = bench("addMany-2",  n): (discard addMany(gpuOps2[0], gpuOps2[1]); clWaitForCPU())
+      let gpuMany4  = bench("addMany-4",  n): (discard addMany(gpuOps4[0], gpuOps4[1], gpuOps4[2], gpuOps4[3]); clWaitForCPU())
+      let gpuMany8  = bench("addMany-8",  n): (discard addMany(gpuOps8[0], gpuOps8[1], gpuOps8[2], gpuOps8[3],
+                                                                gpuOps8[4], gpuOps8[5], gpuOps8[6], gpuOps8[7]); clWaitForCPU())
+
+      printResult("addMany(2)  vs chain", sizeName(n), float(n), cpuChain2, gpuMany2)
+      printResult("addMany(4)  vs chain", sizeName(n), float(n), cpuChain4, gpuMany4)
+      printResult("addMany(8)  vs chain", sizeName(n), float(n), cpuChain8, gpuMany8)
+      echo ""
+      printResult("addMany(2)  CPU many vs chain", sizeName(n), float(n), cpuMany2,  cpuChain2)
+      printResult("addMany(4)  CPU many vs chain", sizeName(n), float(n), cpuMany4,  cpuChain4)
+      printResult("addMany(8)  CPU many vs chain", sizeName(n), float(n), cpuMany8,  cpuChain8)
+
+    echo ""
+
+    # ── mulMany ─────────────────────────────────────────────────────────────
+    block:
+      let cpuChain4 = bench("mulMany-chain-4", n): discard ((cpuOps4[0] * cpuOps4[1]) * cpuOps4[2]) * cpuOps4[3]
+      let cpuMany4  = bench("mulMany-4",       n): discard mulMany(cpuOps4[0], cpuOps4[1], cpuOps4[2], cpuOps4[3])
+      let gpuMany4  = bench("mulMany-4",       n): (discard mulMany(gpuOps4[0], gpuOps4[1], gpuOps4[2], gpuOps4[3]); clWaitForCPU())
+      printResult("mulMany(4)  CPU many vs chain", sizeName(n), float(n), cpuMany4, cpuChain4)
+      printResult("mulMany(4)  GPU vs chain",      sizeName(n), float(n), cpuChain4, gpuMany4)
+
+    echo ""
+
+    # ── subMany ─────────────────────────────────────────────────────────────
+    block:
+      let cpuChain4 = bench("subMany-chain-4", n): discard ((cpuOps4[0] - cpuOps4[1]) - cpuOps4[2]) - cpuOps4[3]
+      let cpuMany4  = bench("subMany-4",       n): discard subMany(cpuOps4[0], cpuOps4[1], cpuOps4[2], cpuOps4[3])
+      let gpuMany4  = bench("subMany-4",       n): (discard subMany(gpuOps4[0], gpuOps4[1], gpuOps4[2], gpuOps4[3]); clWaitForCPU())
+      printResult("subMany(4)  CPU many vs chain", sizeName(n), float(n), cpuMany4, cpuChain4)
+      printResult("subMany(4)  GPU vs chain",      sizeName(n), float(n), cpuChain4, gpuMany4)
+
+    echo ""
+
+    # ── divMany ─────────────────────────────────────────────────────────────
+    block:
+      let cpuChain4 = bench("divMany-chain-4", n): discard ((cpuOps4[0] / cpuOps4[1]) / cpuOps4[2]) / cpuOps4[3]
+      let cpuMany4  = bench("divMany-4",       n): discard divMany(cpuOps4[0], cpuOps4[1], cpuOps4[2], cpuOps4[3])
+      let gpuMany4  = bench("divMany-4",       n): (discard divMany(gpuOps4[0], gpuOps4[1], gpuOps4[2], gpuOps4[3]); clWaitForCPU())
+      printResult("divMany(4)  CPU many vs chain", sizeName(n), float(n), cpuMany4, cpuChain4)
+      printResult("divMany(4)  GPU vs chain",      sizeName(n), float(n), cpuChain4, gpuMany4)
+
+    echo "----"
+
+##########################################################################################################################################################
+## 11. MANY-OPERAND OPS — buffer reuse via `into`
+##########################################################################################################################################################
+##
+## Same workloads as section 10 but using the ManyInto variants so no
+## cl_mem / seq allocation happens on the hot path.
+##
+## For the CPU we compare ManyInto against the pre-existing `into` binary procs
+## (add / sub / mul / divInto) chained through a temporary buffer, which is the
+## cheapest possible alternative without ManyInto.
+
+proc benchManyInto() =
+  echo "\n=== 11. Many-operand ops — into (buffer reuse): addManyInto / mulManyInto ==="
+  for n in SIZES:
+    let data = makeFloatSeq(n)
+
+    let cpuOps4 = [
+      toGPU[CPUSData[float32], float32](data),
+      toGPU[CPUSData[float32], float32](data),
+      toGPU[CPUSData[float32], float32](data),
+      toGPU[CPUSData[float32], float32](data)]
+    let cpuOps8 = [
+      cpuOps4[0], cpuOps4[1], cpuOps4[2], cpuOps4[3],
+      cpuOps4[0], cpuOps4[1], cpuOps4[2], cpuOps4[3]]
+
+    let gpuOps4 = [
+      toGPU[CLSData[float32], float32](data),
+      toGPU[CLSData[float32], float32](data),
+      toGPU[CLSData[float32], float32](data),
+      toGPU[CLSData[float32], float32](data)]
+    let gpuOps8 = [
+      gpuOps4[0], gpuOps4[1], gpuOps4[2], gpuOps4[3],
+      gpuOps4[0], gpuOps4[1], gpuOps4[2], gpuOps4[3]]
+
+    # ── addManyInto ──────────────────────────────────────────────────────────
+    block:
+      # CPU baseline: binary `into` chained through one tmp buffer
+      var cpuTmp  = newCPUSeq[float32](n)
+      var cpuTmp2 = newCPUSeq[float32](n)
+      var cpuDst4 = newCPUSeq[float32](n)
+      var cpuDst8 = newCPUSeq[float32](n)
+
+      let cpuChain4 = bench("addInto-chain-4", n):
+        add(cpuOps4[0], cpuOps4[1], cpuTmp)   ## tmp  = op0 + op1
+        add(cpuTmp,     cpuOps4[2], cpuTmp2)  ## tmp2 = tmp + op2
+        add(cpuTmp2,    cpuOps4[3], cpuDst4)  ## dst  = tmp2 + op3
+
+      let cpuChain8 = bench("addInto-chain-8", n):
+        add(cpuOps8[0], cpuOps8[1], cpuTmp)
+        add(cpuTmp,     cpuOps8[2], cpuTmp2)
+        add(cpuTmp2,    cpuOps8[3], cpuTmp)
+        add(cpuTmp,     cpuOps8[4], cpuTmp2)
+        add(cpuTmp2,    cpuOps8[5], cpuTmp)
+        add(cpuTmp,     cpuOps8[6], cpuTmp2)
+        add(cpuTmp2,    cpuOps8[7], cpuDst8)
+
+      let cpuMany4 = bench("addManyInto-4", n):
+        addManyInto(cpuOps4, cpuDst4)
+
+      let cpuMany8 = bench("addManyInto-8", n):
+        addManyInto(cpuOps8, cpuDst8)
+
+      # GPU baseline: binary `into` chained
+      var gpuTmp  = newCLSeq[float32](n)
+      var gpuTmp2 = newCLSeq[float32](n)
+      var gpuDst4 = newCLSeq[float32](n)
+      var gpuDst8 = newCLSeq[float32](n)
+
+      let gpuChain4 = bench("addInto-chain-4 GPU", n):
+        add(gpuOps4[0], gpuOps4[1], gpuTmp)
+        add(gpuTmp,     gpuOps4[2], gpuTmp2)
+        add(gpuTmp2,    gpuOps4[3], gpuDst4)
+        clWaitForCPU()
+
+      let gpuChain8 = bench("addInto-chain-8 GPU", n):
+        add(gpuOps8[0], gpuOps8[1], gpuTmp)
+        add(gpuTmp,     gpuOps8[2], gpuTmp2)
+        add(gpuTmp2,    gpuOps8[3], gpuTmp)
+        add(gpuTmp,     gpuOps8[4], gpuTmp2)
+        add(gpuTmp2,    gpuOps8[5], gpuTmp)
+        add(gpuTmp,     gpuOps8[6], gpuTmp2)
+        add(gpuTmp2,    gpuOps8[7], gpuDst8)
+        clWaitForCPU()
+
+      let gpuMany4 = bench("addManyInto-4 GPU", n):
+        addManyInto(gpuOps4, gpuDst4)
+        clWaitForCPU()
+
+      let gpuMany8 = bench("addManyInto-8 GPU", n):
+        addManyInto(gpuOps8, gpuDst8)
+        clWaitForCPU()
+
+      # CPU: manyInto vs chained-into
+      printResult("addManyInto(4) CPU  many vs chain", sizeName(n), float(n), cpuMany4,  cpuChain4)
+      printResult("addManyInto(8) CPU  many vs chain", sizeName(n), float(n), cpuMany8,  cpuChain8)
+      echo ""
+      # GPU: manyInto vs chained-into
+      printResult("addManyInto(4) GPU  many vs chain", sizeName(n), float(n), gpuChain4, gpuMany4)
+      printResult("addManyInto(8) GPU  many vs chain", sizeName(n), float(n), gpuChain8, gpuMany8)
+      echo ""
+      # GPU manyInto vs CPU manyInto
+      printResult("addManyInto(4) GPU vs CPU",         sizeName(n), float(n), cpuMany4,  gpuMany4)
+      printResult("addManyInto(8) GPU vs CPU",         sizeName(n), float(n), cpuMany8,  gpuMany8)
+
+    echo ""
+
+    # ── mulManyInto ──────────────────────────────────────────────────────────
+    block:
+      var cpuTmp  = newCPUSeq[float32](n)
+      var cpuTmp2 = newCPUSeq[float32](n)
+      var cpuDst  = newCPUSeq[float32](n)
+      var gpuTmp  = newCLSeq[float32](n)
+      var gpuTmp2 = newCLSeq[float32](n)
+      var gpuDst  = newCLSeq[float32](n)
+
+      let cpuChain4 = bench("mulInto-chain-4", n):
+        mul(cpuOps4[0], cpuOps4[1], cpuTmp)
+        mul(cpuTmp,     cpuOps4[2], cpuTmp2)
+        mul(cpuTmp2,    cpuOps4[3], cpuDst)
+
+      let cpuMany4 = bench("mulManyInto-4", n):
+        mulManyInto(cpuOps4, cpuDst)
+
+      let gpuChain4 = bench("mulInto-chain-4 GPU", n):
+        mul(gpuOps4[0], gpuOps4[1], gpuTmp)
+        mul(gpuTmp,     gpuOps4[2], gpuTmp2)
+        mul(gpuTmp2,    gpuOps4[3], gpuDst)
+        clWaitForCPU()
+
+      let gpuMany4 = bench("mulManyInto-4 GPU", n):
+        mulManyInto(gpuOps4, gpuDst)
+        clWaitForCPU()
+
+      printResult("mulManyInto(4) CPU  many vs chain", sizeName(n), float(n), cpuMany4,  cpuChain4)
+      printResult("mulManyInto(4) GPU  many vs chain", sizeName(n), float(n), gpuChain4, gpuMany4)
+      printResult("mulManyInto(4) GPU vs CPU",         sizeName(n), float(n), cpuMany4,  gpuMany4)
+
+    echo "----"
+
+##########################################################################################################################################################
+## MAIN (extension) — append these calls after benchCLArray()
+##########################################################################################################################################################
+##
+## In your existing benchmark file, add to the `when isMainModule` block:
+##
+##   benchManyAlloc()
+##   benchManyInto()
 
 when isMainModule:
   echo "Initialising OpenCL..."
@@ -320,6 +554,8 @@ when isMainModule:
   benchDot()
   benchInPlace()
   benchCLArray()
+  #benchManyAlloc()
+  benchManyInto()
 
   echo "\n===================================================================================="
   echo "  Done."
