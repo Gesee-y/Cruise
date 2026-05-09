@@ -42,13 +42,20 @@
 ##   For the common case (a += b where a ≠ b) this is always safe.  If you need
 ##   to support `a += a`, clone `a` first.
 
-import math, strutils, tables
+import math, strutils, tables, dynlib
 import ../gpuarrays
 import ../../../externalLib/nimopencl/src/opencl   ## raw OpenCL 1.2 bindings
 
 ##########################################################################################################################################################
 ## CONTEXT
 ##########################################################################################################################################################
+
+when defined(windows):
+  const clDll = "OpenCL.dll"
+elif defined(linux):
+  const clDll = "libOpenCL.so.1"
+elif defined(macosx):
+  const clDll = "libOpenCL.dylib"  # deprecated mais existe encore
 
 type
   CLContext* = object
@@ -60,6 +67,12 @@ type
     queue*:     Pcommand_queue
 
 var gCL* {.threadvar.}: CLContext  ## Process-wide default context.
+
+proc isOpenCLAvailable*(): bool =
+  let lib = loadLib(clDll)
+  if lib == nil: return false
+  freeLib(lib)
+  return true
 
 proc initOpenCL*(deviceType: TDeviceType = DEVICE_TYPE_GPU) =
   ## Initialise the default OpenCL context.
