@@ -1,146 +1,109 @@
-import std/monotimes
-import std/times
-import std/algorithm
-
-# --- Configuration & Types ---
+########################################################################################################################################################
+################################################################### ECS COMMAND BUFFERS ################################################################
+########################################################################################################################################################
 
 const
-  MAX_COMMANDS = 2_000_000
-  MAP_CAPACITY = 16384
-  INITIAL_CAPACITY = 64
+  ECENTITY_KIND_POS = 5
+  ECBASE_POS = 7
+  ECDEST_POS = 23
+  ECCUSTOM_POS = 39
 
 type
-  EntityId = uint64
-  Payload = object
-    eid: uint32
-    gen: uint16
-    data: pointer
-    size: uint32
+  # Describe which kind of command we are dealing with.
+  # eckAddComponent and eckRemComponent are specific to the sparse storage
+  # eckMigrate is specific to the dense storage
+  ECommandKind = enum
+    eckAddEntity
+    eckRemEntity
+    eckAddComponent
+    eckRemComponent
+    eckMigrate
 
-  CommandKey = uint64
+  # Allows to distinguish (for a command that deal with both dense and sparse entities) which entities we are dealing with 
+  ECommandEntityKind = enum
+    ecekDense, ecekSparse
 
-  BatchEntry = object
-    key: CommandKey
-    count: uint32
-    capacity: uint32
-    when defined(js):
-      data: seq[Payload]
-    else:
-      data: ptr UncheckedArray[Payload]
-  BatchMap = object
-    when defined(js):
-      entries: seq[BatchEntry]
-    else:
-      entries: ptr UncheckedArray[BatchEntry]
-    currentGeneration: uint8
-    activeSignatures: seq[uint32]
+  # Command id are of the forms 5 bits -> CommandKind, 2 bits -> EntityKind, 16 bits -> base archetype id
+  # 16 bits -> destination archetype, 19 bits ->  Custom 
+  ECommand = object
+    custom: int 
+    kind: ECommandKind
+    destArch: uint16
+    baseArch: uint16
+    case entityKind: ECommandEntityKind
+    of ecekDense:
+      dEntities: seq[DenseHandle]
+    of ecekSparse:
+      sEntities: seq[SparseHandle]
 
-  CommandBuffer* = object
-    map: BatchMap
-    cursor: int
+  ECommandBuffer = object
+    denseEntityAdded: CSparseSet[ECommand] # Only indexed through `destArch`
+    sparseEntityAdded: CSparseSet[ECommand] # Only indexed through `destArch`
+    denseEntityRemoved: CSparseSet[ECommand] # Only indexed through `baseArch`
+    sparseEntityRemoved: CSparseSet[ECommand] # Only indexed through `baseArch`
+    denseEntityMigrate: CSparseSet[CSparseSet[ECommand]] # Only indexed through `destArch + baseArch`
+    sparseComponentsAdded: CSparseSet[ECommand] # Only indexed through `custom`
+    sparseComponentsRemoved: CSparseSet[ECommand] # Only indexed through `custom`
+    
+########################################################################################################################################################
+##################################################################### UTILITIES ########################################################################
+########################################################################################################################################################
 
-func makeSignature(op: range[0..15], arch: range[0..65535], flags: range[
-    0..1023]): uint32 {.inline.} =
-  uint32((op shl 28) or (arch shl 12) or (flags shl 2))
+template getKind(_: DenseHandle): ECommandEntityKind = ecekDense
+template getKind(_: SparseHandle): ECommandEntityKind = ecekSparse
 
-func getOp(s: uint32): uint32 = s shr 28
-func getArchetype(s: uint32): uint32 = (s shr 12) and ((1'u32 shl 12) - 1)
+proc newCommand(h: DenseHandle | SparseHandle, kind: static ECommandKind, destArch: uint16, custom: int = 0) =
+  var cmd = ECommand(custom: custom, kind: kind, entityKind: h.getKind, baseArch: h.archID, destArch: destArch)
+  cmd
 
-proc resize(entry: ptr BatchEntry) =
-  let newCap = INITIAL_CAPACITY*(entry.capacity == 0).uint32 + entry.capacity * 2'u32
-  when defined(js):
-    entry.data.setLen(newCap.int)
+proc clear(eb: var ECommandBuffer) =
+  eb.denseEntityAdded.clear()
+  eb.sparseEntityAdded.clear()
+  eb.denseEntityRemoved.clear()
+  eb.sparseEntityRemoved.clear()
+  eb.denseEntityMigrate.clear()  
+  eb.sparseComponentsAdded.clear()
+  eb.sparseComponentsRemoved.clear()
+
+proc addEntity(c: var ECommand, h: DenseHandle | SparseHandle) =
+  case h.kind:
+    of ecekDense:
+      c.dEntities.add(h)
+    of ecekSparse:
+      c.sEntities.add(h)
+
+template addOrNew(cmds, i, newKind: untyped) =
+  if i in cmds:
+    cmds[i].addEntity(h)
   else:
-    let size = newCap * sizeof(Payload).uint32
-    entry.data = cast[ptr UncheckedArray[Payload]](realloc(entry.data, size))
-    check(entry.data != nil,
-      "CommandBuffer resize: realloc returned nil — out of memory. " &
-      "Requested " & $size & " bytes (" & $newCap & " x " & $sizeof(Payload) & " bytes/Payload).")
-  entry.capacity = newCap
+    cmds[i] = newCommand(h, eckAddEntity, i)
 
-proc initBatchMap(): BatchMap =
-  when defined(js):
-    result.entries = newSeq[BatchEntry](MAP_CAPACITY)
-  else:
-    let size = sizeof(BatchEntry) * MAP_CAPACITY
-    result.entries = cast[ptr UncheckedArray[BatchEntry]](alloc0(size))
-    check(result.entries != nil, "Failed to allocate memory for BatchMap entries")
-  result.currentGeneration = 1
-  result.activeSignatures = newSeqOfCap[uint32](1024)
+proc addCommand(eb: var ECommandBuffer, kind: ECommandKind, h: DenseHandle | SparseHandle, destArch: uint16 = 0, comp: int = 0) =
+  case kind:
+    of eckAddEntity:
+      let i = destArch.int
+      eb.denseEntityAdded.addOrNew(i, eckAddEntity)
+    of eckRemEntity:
+      let i = h.archID.int
+      eb.denseEntityRemoved.addOrNew(i, eckRemEntity)
+    of eckMigrate:
+      let i = h.archID.int
+      let j = destArch.int
 
-proc destroy(map: var BatchMap) =
-  when not defined(js):
-    for i in 0..<MAP_CAPACITY:
-      if map.entries[i].data != nil:
-        dealloc(map.entries[i].data)
-    dealloc(map.entries)
-  else:
-    map.entries = @[]
+      if i notin eb.denseEntityMigrate:
+        eb.denseEntityMigrate[i] = CSparseSet()
 
-proc initCommandBuffer(): CommandBuffer =
-  result.map = initBatchMap()
+      eb.denseEntityMigrate[i].addOrNew(j, eckMigrate)
+    of eckAddComponent:
+      if comp notin eb.sparseComponentAdded:
+        eb.sparseComponentAdded[comp] = newCommand(h, eckAddComponent, destArch, comp)
+      else:
+        eb.sparseComponentAdded[comp].addEntity(h)
+    of eckRemComponent:
+      if comp notin eb.sparseComponentRemoved:
+        eb.sparseComponentRemoved[comp] = newCommand(h, eckRemoveComponent, destArch, comp)
+      else:
+        eb.sparseComponentRemoved[comp].addEntity(h)
 
-proc destroy(cb: var CommandBuffer) =
-  cb.map.destroy()
 
-proc addCommand(cb: var CommandBuffer, op: range[0..15], arch: uint16,
-    flags: uint32, payload: Payload) {.inline.} =
-  let sig = makeSignature(op, arch, flags)
-
-  let targetKey = (CommandKey(cb.map.currentGeneration) shl 32) or CommandKey(sig)
-
-  let mask = MAP_CAPACITY - 1
-  let idx = int(sig) and mask
-
-  let entryPtr = addr(cb.map.entries[idx])
-
-  if entryPtr.key == targetKey:
-
-    if entryPtr.count >= entryPtr.capacity:
-      resize(entryPtr)
-
-    entryPtr.data[entryPtr.count] = payload
-    entryPtr.count.inc
-  else:
-
-    if entryPtr.key == 0:
-      entryPtr.key = targetKey
-      entryPtr.count = 0
-      entryPtr.capacity = 0
-      when not defined(js):
-        entryPtr.data = nil
-      cb.map.activeSignatures.add(sig)
-
-      if entryPtr.count >= entryPtr.capacity: resize(entryPtr)
-      entryPtr.data[entryPtr.count] = payload
-      entryPtr.count.inc
-    else:
-
-      var scanIdx = idx
-      var probeSteps = 0
-      while true:
-        scanIdx = (scanIdx + 1) and mask
-        probeSteps += 1
-        check(probeSteps <= mask,
-          "addCommand: linear probe exhausted all " & $(mask + 1) &
-          " slots (MAP_CAPACITY=" & $MAP_CAPACITY & "). " &
-          "All BatchMap entries are occupied by distinct signatures. " &
-          "Increase MAP_CAPACITY or reduce concurrent deferred operation types.")
-        let scanEntry = addr(cb.map.entries[scanIdx])
-
-        if scanEntry.key == targetKey:
-          if scanEntry.count >= scanEntry.capacity: resize(scanEntry)
-          scanEntry.data[scanEntry.count] = payload
-          scanEntry.count.inc
-          return
-        elif scanEntry.key == 0:
-          scanEntry.key = targetKey
-          scanEntry.count = 0
-          scanEntry.capacity = 0
-          when not defined(js):
-            scanEntry.data = nil
-          cb.map.activeSignatures.add(sig)
-          if scanEntry.count >= scanEntry.capacity: resize(scanEntry)
-          scanEntry.data[scanEntry.count] = payload
-          scanEntry.count.inc
-          return
+  

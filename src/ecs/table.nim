@@ -66,6 +66,7 @@ template onDanger*(code: untyped) =
   when not defined(danger):
     code
 
+include "sparseset.nim"
 include "hibitset.nim"
 
 type
@@ -80,7 +81,6 @@ type
 
 include "fragment.nim"
 include "entity.nim"
-include "commands.nim"
 include "mask.nim"
 include "registry.nim"
 
@@ -109,7 +109,6 @@ type
   ECSWorld* = ref object
     registry:ComponentRegistry
     entities*:seq[Entity]
-    commandBufs:seq[CommandBuffer]
     evmanager: pointer
     handles*:seq[uint32]
     generations:seq[uint16]
@@ -124,6 +123,7 @@ type
 
 include "handles.nim"
 include "entity_wrappers.nim"
+include "commands.nim"
 include "events.nim"
 
 template newECSWorld*(max_entities:int=1000000):ECSWorld =
@@ -201,14 +201,6 @@ template makeId(i:untyped):uint32 =
   let idx = i.uint32 mod DEFAULT_BLK_SIZE.uint32
 
   (bid shl ID_SHIFT) or idx
-
-proc newCommandBuffer*(w: var ECSWorld):int =
-  let c = initCommandBuffer()
-  w.commandBufs.add(c)
-  return w.commandBufs.len-1
-
-proc getCommandBuffer*(w: var ECSWorld, id:int):CommandBuffer =
-  return w.commandBufs[id]
 
 proc isAlive*(w:ECSWorld, d:DenseHandle):bool =
   return d.gen == w.generations[d.wid]
@@ -294,71 +286,19 @@ include "sparse.nim"
 include "query.nim"
 include "operations.nim"
 
-proc process(world: var ECSWorld, cb: var CommandBuffer) =
-  if cb.map.activeSignatures.len == 0: return
-
-  cb.map.activeSignatures.sort()
-
-  let genKey = CommandKey(cb.map.currentGeneration) shl 32
-
-  for sig in cb.map.activeSignatures:
-    let targetKey = genKey or CommandKey(sig)
-    
-    var idx = int(sig) and (MAP_CAPACITY - 1)
-    var next_idx = (idx + 1) and (MAP_CAPACITY - 1)
-    var probeCount = 0
-    while cb.map.entries[idx].key != targetKey and next_idx != 0:
-      idx = (idx + 1) and (MAP_CAPACITY - 1)
-      next_idx = (idx + 1) and (MAP_CAPACITY - 1)
-      probeCount += 1
-      check(probeCount < MAP_CAPACITY,
-        "CommandBuffer process: linear probe exhausted all " & $MAP_CAPACITY &
-        " slots for signature=" & $sig &
-        ". BatchMap is full or corrupted. Increase MAP_CAPACITY.")
-    
-    let batch = addr(cb.map.entries[idx])
-    
-    let dataPtr = batch.data
-    var ents = newSeqofCap[DenseHandle](batch.count)
-
-    for i in 0..<batch.count:
-      ents.add(DenseHandle(widx:dataPtr[i].eid, gen:dataPtr[i].gen))
-
-    case sig.getOp():
-      of 0:
-        for i in 0..<ents.len:
-          var e = ents[i]
+proc process(world: var ECSWorld, cb: var ECommandBuffer) =
+  for cmd in cb.denseEntityRemoved:
+    case cmd.entityKind:
+      of ecekDense:
+        for e in cmd.dEntities:
           world.deleteEntity(e)
-      of 1:
-        world.migrateEntity(ents, world.archGraph.nodes[sig.getArchetype()])
-      else: discard
-
-  for sig in cb.map.activeSignatures:
-    let targetKey = genKey or CommandKey(sig)
-    var idx = int(sig) and (MAP_CAPACITY - 1)
-    var probeCount2 = 0
-    while cb.map.entries[idx].key != targetKey:
-      idx = (idx + 1) and (MAP_CAPACITY - 1)
-      probeCount2 += 1
-      check(probeCount2 < MAP_CAPACITY,
-        "CommandBuffer flush/cleanup: linear probe exhausted all " & $MAP_CAPACITY &
-        " slots. BatchMap state is corrupted.")
-    cb.map.entries[idx].count = 0
+      of ecekSparse:
+        for e in cmd.sEntities:
+          world.deleteEntity(e)
   
-  cb.map.activeSignatures.setLen(0)
-  
-  if cb.map.currentGeneration == 255: 
-    # Rare case : total reset
-    for i in 0..<MAP_CAPACITY:
-      if cb.map.entries[i].key != 0:
-        cb.map.entries[i].key = 0
-    cb.map.currentGeneration = 1
-  else:
-    inc cb.map.currentGeneration
-
-proc flush*(w:var ECSWorld) =
-  for i in 0..<w.commandBufs.len:
-    w.process(w.commandBufs[i])
+  for i, cmds in cb.denseEntityMigrate.pairs:
+    for j, cmd in cmds.pairs:    
+      world.migrateEntity(cmd.dEntities, world.archGraph.nodes[j])
 
 proc clearDenseChanges*(w: var ECSWorld) =
   for entry in w.registry.entries:
@@ -375,5 +315,3 @@ proc clearChanges*(w: var ECSWorld) =
 proc destroy*(w: var ECSWorld) =
   var ev = w.events
   GC_unref(ev)
-  for cb in mitems(w.commandBufs):
-    cb.destroy()

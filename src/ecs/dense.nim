@@ -293,7 +293,7 @@ template changePartition(
 ## Moves multiple entities while minimizing component copies.
 template changePartition(
   table: var ECSWorld,
-  ids: var openArray[DenseHandle],
+  ids: openArray[DenseHandle],
   oldArch: uint16,
   newArch: ArchetypeNode
 ):(seq[uint32], seq[uint32], seq[uint32]) =

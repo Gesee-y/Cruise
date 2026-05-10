@@ -143,11 +143,9 @@ template deleteEntity*(dw: var DWEntity) =
 ## @param world: The mutable `ECSWorld` instance.
 ## @param d: The `DenseHandle` of the entity to delete.
 ## @param buffer_id: The ID of the command buffer to use.
-template deleteEntityDefer*(world: var ECSWorld, d: DenseHandle,
-    buffer_id: int) =
+template deleteEntityDefer*(buffer: var ECommandBuffer, d: DenseHandle) =
   # Add a DeleteOp command with the source archetype ID and the entity's world index (widx).
-  world.commandBufs[buffer_id].addCommand(DeleteOp.int, d.obj.archetypeId,
-      0'u32, PayLoad(eid: d.widx, gen: d.gen))
+  buffer.addCommand(eckRemEntity, d)
 
 ## Defers the deletion of an entity using a DWEntity.
 template deleteEntityDefer*(dw: var DWEntity, buffer_id: int) =
@@ -213,7 +211,7 @@ proc migrateEntity*(world: var ECSWorld, d: DenseHandle, archNode: ArchetypeNode
 ## @param world: The mutable `ECSWorld` instance.
 ## @param ents: An open array of `DenseHandle` to migrate.
 ## @param archNode: The target `ArchetypeNode`.
-template migrateEntity*(world: var ECSWorld, ents: var openArray[DenseHandle],
+template migrateEntity*(world: var ECSWorld, ents: openArray[DenseHandle],
     archNode: ArchetypeNode) =
   if ents.len != 0:
     check(not archNode.isNil, "migrateEntity batch: target ArchetypeNode is nil.")
@@ -256,16 +254,10 @@ template migrateEntity*(ents: var openArray[DWEntity],
 ## @param d: The `DenseHandle` of the entity to migrate.
 ## @param archNode: The target `ArchetypeNode`.
 ## @param buffer_id: The ID of the command buffer.
-template migrateEntityDefer*(world: var ECSWorld, d: DenseHandle,
-    archNode: ArchetypeNode, buffer_id: int) =
+template migrateEntityDefer*(buffer: var ECommandBuffer, d: DenseHandle,
+    archNode: ArchetypeNode) =
   # Add a MigrateOp command: Destination Archetype ID, Source Archetype ID, Payload.
-  world.commandBufs[buffer_id].addCommand(MigrateOp.int, archNode.id,
-      d.obj.archetypeId.uint32, PayLoad(eid: d.obj.widx.uint, obj: d))
-
-## Defers the migration of an entity using a DWEntity.
-template migrateEntityDefer*(dw: var DWEntity, archNode: ArchetypeNode,
-    buffer_id: int) =
-  migrateEntityDefer(dw.w, dw.handle, archNode, buffer_id)
+  buffer.addCommand(eckRemEntity, d, archNode.id)
 
 ## Adds components to an existing entity (Dense storage).
 ##
@@ -583,7 +575,7 @@ macro removeComponent*(
 ##
 ## @param w: The mutable `ECSWorld` instance.
 ## @param s: The `SparseHandle` of the entity to delete.
-proc deleteEntity*(w: var ECSWorld, s: var SparseHandle) =
+proc deleteEntity*(w: var ECSWorld, s: SparseHandle) =
   var ev = w.events
   ev.emitSparseEntityDestroyed(s)
   w.deleteSparseRow(s.id, w.archGraph.nodes[s.archID].componentIds)
