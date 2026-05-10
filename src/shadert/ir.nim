@@ -2,19 +2,24 @@
 ############################################################ TRANPILER NIM -> CRUISE IR ##################################################################
 ##########################################################################################################################################################
 
+import sets, macros, tables, strutils
+
 type 
+  ParsingContext = enum
+    pcNone, pcReturn, pcWhile, pcFor, pcIf
+
   CIRNodeKind = enum
     cnkStmtList
-    cnkDecl
+    cnkDecl, cnkFuncSig, cnkFuncDef
     cnkCall
     cnkObjConstr
     cnkBracketExpr
     cnkDotExpr
-    cnkIfStmt
+    cnkIfStmt, cnkElifBranch
     cnkForStmt
     cnkWhileStmt
     cnkReturnStmt
-    cnkSym
+    cnkSym, cnkUniform, cnkBuffer, cnkSampler, cnkImage
     cnkHiddenDeref
     cnkIntLit
     cnkFloatLit
@@ -36,6 +41,8 @@ type
     cnkStmtListExpr
     cnkEmpty
     cnkDiscardStmt
+    cnkWritOnly, cnkReadOnly
+    cnkVarTy
   
   CIRNode = object
     case kind: CIRNodeKind
@@ -45,30 +52,108 @@ type
       intVal: int
     of cnkFloatLit:
       floatVal: float
-    of cnkDiscardStmt, cnkEmpty, cnkContinueStmt, cnkReturnStmt: discard
+    of cnkDiscardStmt, cnkEmpty, cnkContinueStmt, cnkWritOnly, cnkReadOnly: discard
     else:
       args: seq[CIRNode]
 
   CIRContext = object
-    types: CIRNode
+    typeDecl: CIRNode
     forwardDecl: CIRNode
     funcDef: CIRNode
     body: CIRNode
+    emittedTypes: HashSet[string] ## Already emitted type
+    emittedFuncs: HashSet[string]
 
 ##########################################################################################################################################################
 ################################################################## UTILITIES #############################################################################
 ##########################################################################################################################################################
 
-proc normalizeTypes(name: string): string =
-  
-  
-
 proc newCIRNode*(kind: static CIRNodeKind): CIRNode = CIRNode(kind: kind)
 proc add*(a: var CIRNode, b: CIRNode) = a.args.add(b)
 proc newCIRSym(name: string): CIRNode = CIRNode(kind: cnkSym, name: name)
+proc newCIRIntLit(i: int): CIRNode = CIRNode(kind: cnkIntLit, intVal: i)
+proc newCIRFloatLit(i: float): CIRNode = CIRNode(kind: cnkFloatLit, floatVal: i)
+
+proc processNode(ctx: var CIRContext, node: NimNode, pc: ParsingContext= pcNone): CIRNode
+
+proc isPrimitiveType(name: string): bool =
+  name in ["int", "float", "string", "cstring", "seq", "set"]
+
+var irTypeTable {.compileTime.} = initTable[string, string]()
+var irFuncTable {.compileTime.} = initTable[string, string]()
+var irUniformTable {.compileTime.} = initTable[string, string]()
+
+macro registerUniformType*(ty: typed, glslName: string): untyped =
+  irUniformTable[$ty] = glslName.strVal
+
+macro registerIRType*(ty: typed, irName: string): untyped =
+  irTypeTable[ty.repr] = irName.strVal
+
+macro registerIRFunc*(nimFunc: typed, irName: string): untyped =
+  irFuncTable[nimFunc.strVal] = irName.strVal
+
+proc normalizeTypes(name: string): string =
+  case name:
+  of "int", "int32":   return "int"
+  of "float", "float32": return "float"
+  of "float64":        return "double"
+  of "bool":           return "bool"
+  of "uint32":         return "uint"
+  else:
+    if name in irTypeTable:
+      return irTypeTable[name]
+    else: ""
+
+proc getIRType(ctx: var CIRContext, typeName: string): CIRNode {.compileTime.} =
+  if typeName in ctx.emittedTypes: return newCIRSym(typeName)
+
+  let res = normalizeTypes(typeName)
+
+  return newCIRSym(typeName)
+
+proc isWrapperType(typeName: string): bool {.compileTime.} =
+  typeName.startsWith("Uniform[")      or
+  typeName.startsWith("UniformReadOnly[") or
+  typeName.startsWith("UniformWriteOnly[") or
+  typeName in irUniformTable or
+  typeName == "Sampler2D"
+
+proc emitQualifiedVar(ctx: var CIRContext, typeName: string,
+                      paramName: string): CIRNode {.compileTime.} =
+  ## Emit the correct GLSL header declaration for a qualified variable.
+  ## typeName is the full Nim generic name e.g. "Uniform[float32]"
+
+  let innerPos = typeName.find("[")
+  let tyName = if innerPos != -1: typeName[0..<innerPos] else: typeName
+  let irVal = if tyName in irUniformTable: irUniformTable[tyName] else: tyName
+  let innerName = if innerPos != -1: typeName[(innerPos+1)..^2] else: ""
+
+  if typeName.startsWith("Uniform["):
+    let inner = ctx.getIRType(innerName)
+    return CIRNode(kind: cnkUniform, args: @[CIRNode(kind: cnkEmpty), newCIRSym(paramName), inner])
+
+  elif irVal == "SSBO":
+    let inner = ctx.getIRType(innerName)
+    return CIRNode(kind: cnkBuffer, args: @[CIRNode(kind: cnkEmpty), newCIRSym(paramName), inner])
+
+  elif typeName.startsWith("UniformReadOnly["):
+    let inner = ctx.getIRType(innerName)
+    return CIRNode(kind: cnkUniform, args: @[CIRNode(kind: cnkReadOnly), newCIRSym(paramName), inner])
+
+  elif typeName.startsWith("UniformWriteOnly["):
+    let inner = ctx.getIRType(innerName)
+    return CIRNode(kind: cnkUniform, args: @[CIRNode(kind: cnkWritOnly), newCIRSym(paramName), inner])
+
+  elif typeName.startsWith("Image2D["):
+    let inner = ctx.getIRType(innerName)
+    return CIRNode(kind: cnkImage, args: @[newCIRIntLit(2), newCIRSym(paramName), inner])
+
+  elif typeName == "Sampler2D":
+    return CIRNode(kind: cnkSampler, args: @[newCIRIntLit(2), newCIRSym(paramName)])
+  else: return
 
 proc emitStruct(ctx: var CIRContext, ty: NimNode): CIRNode =
-  ## Generate a GLSL type from a Nim object
+  ## Generate a IR type from a Nim object
   result = newCIRNode(cnkTypeDef)
   result.add(newCIRSym(ty.strVal))
   let impl = ty.getImpl()
@@ -76,12 +161,42 @@ proc emitStruct(ctx: var CIRContext, ty: NimNode): CIRNode =
   for field in impl[2][2]:  # fields
     var def = newCIRNode(cnkIdentDef)
     def.add(newCIRSym(field[0].strVal))
+
+    var fieldType = ctx.getIRType(field[0].repr)
     def.add(newCIRSym(field[0].strVal))
     
-    let fieldName = field[0].strVal
-    let fieldType = getGLSLType(ctx, field[1])
-    result &= "  " & fieldType & " " & fieldName & ";\n"
-  result &= "};\n"
+    result.add def
+
+proc getIRType(ctx: var CIRContext, node: NimNode): CIRNode =
+  var sym = node.getTypeInst()
+  if sym.kind == nnkVarTy: sym = sym[0]
+  let typeName = if sym.kind == nnkBracketExpr: sym[1].repr else: sym.repr
+  let paramName = node.strVal
+
+  if isWrapperType(typeName):
+    if paramName notin ctx.emittedTypes:
+      return emitQualifiedVar(ctx, typeName, paramName)
+
+  if typeName in ctx.emittedTypes: return newCIRSym(typeName)
+
+  # Our known primitive types
+  case typeName:
+  of "int", "int32":   return newCIRSym "int"
+  of "float", "float32": return newCIRSym "float"
+  of "float64":        return newCIRSym "double"
+  of "bool":           return newCIRSym "bool"
+  of "uint32":         return newCIRSym "uint"
+  else:
+    if typeName in irTypeTable:
+      return newCIRSym irTypeTable[typeName]
+
+    let symb = if sym.kind == nnkBracketExpr: sym[0] else: sym
+    if not symb.strVal.isPrimitiveType:
+      let s = emitStruct(ctx, sym)
+      ctx.typeDecl.add(s)
+      ctx.emittedTypes.incl(typeName)
+
+    return newCIRSym typeName
 
 proc ensureStmtList(node: NimNode): NimNode =
   if node.kind in {nnkStmtList, nnkStmtListExpr}:
@@ -89,256 +204,249 @@ proc ensureStmtList(node: NimNode): NimNode =
   result = newNimNode(nnkStmtList)
   result.add(node)
 
-proc remapFunc(ctx: var GLSLContext, name: string, node: NimNode): string =
-  ## Resolve a function call to its GLSL name.
+proc remapFunc(ctx: var CIRContext, name: string, node: NimNode): CIRNode =
+  ## Resolve a function call to its IR name.
   ## If the function is unknown, transpile its Nim implementation
   ## and emit it to the header (once).
 
   # 1. Explicit mapping registered by user
-  if name in glslFuncTable:
-    return glslFuncTable[name]
+  if name in irFuncTable:
+    return newCIRSym irFuncTable[name]
 
   # 2. Already emitted in a previous call, reuse
   if name in ctx.emittedFuncs:
-    return name
+    return newCIRSym name
 
   # 3. Unknown function: transpile its body and emit to header
   let impl = node.getImpl()
   if impl.isNil or impl.kind == nnkNilLit:
-    error("GLSL Transpiler: unknown function '" & name & "' has no Nim implementation to transpile.\n" &
+    error("Cruise IR Transpiler: unknown function '" & name & "' has no Nim implementation to transpile.\n" &
           "  Hint: add it to the function mapping table or provide a Nim implementation.", node)
 
   let params = impl[3]
-  let returnType = if params[0].kind == nnkEmpty: "void"
-                   else: ctx.getGLSLType(params[0])
+  let returnType = if params[0].kind == nnkEmpty: newCIRSym "void"
+                   else: ctx.getIRType(params[0])
+  var signature = newCIRNode(cnkFuncSig)
+  signature.add(newCIRSym name)
+  signature.add(returnType)
 
-  var args: seq[string]
   for i in 1..<params.len:
     let param = params[i]
-    let glslType = ctx.getGLSLType(param[^2])
+    var idnt = newCIRNode(cnkIdentDef)
+    let irType = ctx.getIRType(param[^2])
     for j in 0..<param.len - 2:  ## handle a, b: float32
-      args.add(glslType & " " & param[j].strVal)
+      idnt.add(newCIRSym param[j].strVal)
+      idnt.add(irType)
 
-  let signature = returnType & " " & name & "(" & args.join(", ") & ")"
+    signature.add(idnt)
 
-  ctx.forwardDecl = signature & ";\n" & ctx.forwardDecl
+
+  ctx.forwardDecl.add(signature)
   ctx.emittedFuncs.incl(name) # Include the name early to avoid infinite recursions
   # Emit dependencies first (recursive calls inside this func)
   # processNode will call remapFunc again for any calls found inside,
   # which will recursively emit their definitions before this one.
-  var funcCtx = GLSLContext()  ## inherit type/func tables
+  var funcCtx = CIRContext()  ## inherit type/func tables
   funcCtx.emittedTypes = ctx.emittedTypes
   funcCtx.emittedFuncs = ctx.emittedFuncs
 
   var glslBody = ""
   var body = impl[6].ensureStmtList
   
-  let fbody = processNode(funcCtx, body)
-  ctx.typeDecl &= funcCtx.typeDecl
-  ctx.forwardDecl = funcCtx.forwardDecl & "\n" & ctx.forwardDecl
-  ctx.funcDef &= funcCtx.funcDef
-  glslBody &= funcCtx.body
+  let irBody = processNode(funcCtx, body)
+  ctx.typeDecl.args.add(funcCtx.typeDecl.args)
+  ctx.forwardDecl.args.add(funcCtx.forwardDecl.args)
+  ctx.funcDef.args.add(funcCtx.funcDef.args)
   
-  case impl[6].kind:
-    of nnkStmtList, nnkStmtListExpr: discard
-    else: glslBody = "   " & fbody
-
-  ## Last expression → return result
-  #if returnType != "void":
-  #  glslBody &= "\n  return result;\n"
-
   ctx.emittedTypes = funcCtx.emittedTypes  ## propagate newly discovered types
   ctx.emittedFuncs = funcCtx.emittedFuncs
+   
+  var res = CIRNode(kind:cnkFuncDef, args: @[signature, irbody])
 
-  # Emit to header BEFORE marking as done (handles mutual recursion guard)
-  ctx.funcDef &= signature & " {\n" & glslBody & "\n}\n"
+  return newCIRSym name
 
-  return name
-
-proc processDeclaration(ctx: var GLSLContext, node: NimNode): string =
-  var res = ""
+proc processDeclaration(ctx: var CIRContext, node: NimNode): CIRNode =
+  var res = newCIRNode(cnkDecl)
+  var idnt = newCIRNode(cnkIdentDef)
   let name = node[0].strVal
   let tyNode = if node[1].kind == nnkEmpty: node[0] else: node[1]
 
-  let ty = getGLSLType(ctx, node[0])
+  let ty = getIRType(ctx, node[0])
   let expr = processNode(ctx, node[2])
+  idnt.add(newCIRSym name)
+  idnt.add(ty)
+  res.add(expr)
 
-  res.add ty & " " & name
-  if expr != "": res.add " = " & expr
   res
 
-proc processNode(ctx: var GLSLContext, node: NimNode, depth: int = 0, pc: ParsingContext= pcNone): string =
-  ## Recursively transpile a Nim AST node to GLSL.
+proc processNode(ctx: var CIRContext, node: NimNode, pc: ParsingContext= pcNone): CIRNode =
+  ## Recursively transpile a Nim AST node to Cruise IR.
   ## Writes type/struct definitions to ctx.header,
   ## returns the GLSL expression/statement for the current node.
-  let idnts = "    "
-  let idnt = repeat(idnts, depth)
   case node.kind:
   of nnkStmtList:
+    result = newCIRNode(cnkStmtList)
     for n in node:
-      result &= processNode(ctx, n, depth+1) & ";\n"
-      ctx.body &= result
+      result.add processNode(ctx, n)
 
   of nnkVarSection, nnkLetSection:
     for n in node:
-      let tyNode = if n[1].kind == nnkEmpty: n[0] else: n[1]
-      ## Detect fixed-size array declarations → header
-      if tyNode.kind == nnkBracketExpr and
-         tyNode.getTypeInst().kind == nnkBracketExpr and
-         tyNode.getTypeInst()[0].strVal == "array":
-        let name   = n[0].strVal
-        
-        let size   = tyNode[1].intVal
-        let glslTy = ctx.getGLSLType(tyNode.getTypeInst()[2])
-        let expr   = if n[2].kind != nnkEmpty: " = " & processNode(ctx, n[2], depth) else: ""
-        ## Local fixed arrays stay in body, global ones go to header
-        result = idnt & glslTy & " " & name & "[" & $size & "]" & expr
-      else:
-        result = idnt & ctx.processDeclaration(n)
+      result = ctx.processDeclaration(n)
 
   of nnkCall, nnkCommand:
     ## Function call: remap name if needed, recurse on args
+    result = newCIRNode(cnkCall)
     let funcName = ctx.remapFunc(node[0].strVal, node[0])  ## e.g. "abs" -> "abs", custom -> mapped
-    var args: seq[string]
+    
+    result.add(funcName)
     for i in 1..<node.len:
-      args.add processNode(ctx, node[i])
-    result = funcName & "(" & args.join(", ") & ")"
-
+      result.add processNode(ctx, node[i])
+    
   of nnkObjConstr:
     ## Object construction: MyVec(x: 1.0, y: 2.0) -> vec2(1.0, 2.0)
-    let glslType = ctx.getGLSLType(node[0])
-    var args: seq[string]
+    result = newCIRNode(cnkCall)
+    let irType = ctx.getIRType(node[0])
+
+    result.add irType
     for i in 1..<node.len:
-      args.add processNode(ctx, node[i][1])  ## node[i] is nnkExprColonExpr
-    result = glslType & "(" & args.join(", ") & ")"
+      result.add processNode(ctx, node[i][1])  # node[i] is nnkExprColonExpr
 
   of nnkBracketExpr:
     ## Array indexing: buf[i] -> buf[i]
-    result = processNode(ctx, node[0]) & "[" & processNode(ctx, node[1]) & "]"
-
+    result = newCIRNode(cnkBracketExpr)
+    result.add processNode(ctx, node[0])
+    result.add processNode(ctx, node[1])
+    
   of nnkDotExpr:
     ## Field access: pos.x -> pos.x
-    result = processNode(ctx, node[0]) & "." & node[1].strVal
+    result = newCIRNode(cnkDotExpr)
+    result.add processNode(ctx, node[0])
+    result.add newCIRSym(node[1].strVal)
 
   of nnkIfStmt, nnkIfExpr:
     ## if/elif/else
+    result = newCIRNode(cnkIfStmt)
     for i, branch in node:
       if branch.kind == nnkElifBranch:
-        let keyword = if i == 0: "if" else: "else if"
-        result &= idnt & keyword & " (" & processNode(ctx, branch[0]) & ") {\n"
-        result &= processNode(ctx, branch[1].ensureStmtList, depth) & "\n" & idnt & "}"
+        var el = newCIRNode(cnkElifBranch)
+        el.add processNode(ctx, branch[0])
+        el.add processNode(ctx, branch[1].ensureStmtList)
       elif branch.kind == nnkElse:
-        result &= " else {\n" & processNode(ctx, branch[0].ensureStmtList, depth) & "\n" & idnt & "}"
+        var el = newCIRNode(cnkElse)
+        el.add processNode(ctx, branch[0].ensureStmtList)
 
   of nnkForStmt:
     ## for i in a..<b -> for(int i = a; i < b; i++)
     ## Only supports range iteration, rejects anything else
+    result = newCIRNode(cnkForStmt)
+    result.add newCIRSym(node[0].strVal)
+
     let iter = node[1]
     if iter.kind != nnkInfix or iter[0].strVal != "..<":
-      error("GLSL Transpiler: only range iteration (a..<b) is supported in for loops", node)
-    let varName = node[0].strVal
-    let lo = processNode(ctx, iter[1])
-    let hi = processNode(ctx, iter[2])
-    result = idnt & "for (int " & varName & " = " & lo & "; " &
-             varName & " < " & hi & "; " & varName & "++) {\n"
-    result &= processNode(ctx, node[2].ensureStmtList, depth) & "\n" & idnt & "}"
-
+      error("Cruise IR Transpiler: only range iteration (a..<b) is supported in for loops", node)
+    
+    result.add processNode(ctx, iter[1])
+    result.add processNode(ctx, iter[2])
+    result.add processNode(ctx, node[2].ensureStmtList) 
+    
   of nnkWhileStmt:
     ## while cond: body -> while (cond) { body }
-    result = idnt & "while (" & processNode(ctx, node[0]) & ") {\n"
-    result &= processNode(ctx, node[1].ensureStmtList, depth) & "\n" & idnt & "}"
+    result = newCIRNode(cnkWhileStmt)
+
+    result.add processNode(ctx, node[0])
+    result.add processNode(ctx, node[1].ensureStmtList)
 
   of nnkReturnStmt:
-    result = idnt & "return " & processNode(ctx, node[0], pc=pcReturn)
+    result = CIRNode(kind: cnkReturnStmt, args: @[processNode(ctx, node[0], pc=pcReturn)])
 
   of nnkSym, nnkIdent:
-    result = node.strVal
+    result = newCIRSym node.strVal
   of nnkHiddenDeref:
     result = processNode(ctx, node[0])
-  of nnkIntLit:    result = $node.intVal
-  of nnkFloatLit:  result = $node.floatVal
+  of nnkIntLit:    result = newCIRIntLit node.intVal
+  of nnkFloatLit:  result = newCIRFloatLit node.floatVal
   of nnkInfix:
-    result = processNode(ctx, node[1]) & " " & node[0].strVal & " " & processNode(ctx, node[2])
+    result = newCIRNode(cnkInfix)
+    result.add newCIRSym(node[0].strVal)
+    result.add processNode(ctx, node[1])
+    result.add processNode(ctx, node[2])
   of nnkPrefix:
-    result = node[0].strVal & processNode(ctx, node[1])
+    result = newCIRNode(cnkPrefix)
+    result.add newCIRSym(node[0].strVal)
+    result.add processNode(ctx, node[1])
   of nnkAsgn:
     if pc == pcReturn:
       result = processNode(ctx, node[1])
     else:
-      result = idnt & processNode(ctx, node[0]) & " = " & processNode(ctx, node[1])
+      result = newCIRNode(cnkAsgn)
+      result.add processNode(ctx, node[0])
+      result.add processNode(ctx, node[1])
   of nnkBreakStmt:
-    result = idnt & "break"
+    result = newCIRNode(cnkBreakStmt)
 
   of nnkContinueStmt:
-    result = idnt & "continue"
+    result = newCIRNode(cnkContinueStmt)
 
   of nnkCast:
     ## cast[float32](x) → float(x)
-    let glslTy = ctx.getGLSLType(node[0])
-    result = glslTy & "(" & processNode(ctx, node[1], depth) & ")"
+    result = newCIRNode(cnkCast)
+    let irTy = ctx.getIRType(node[0])
+    result.add irTy
+    result.add processNode(ctx, node[1])
 
   of nnkConv:
     ## float32(x) → float(x)
-    let glslTy = ctx.getGLSLType(node[0])
-    result = glslTy & "(" & processNode(ctx, node[1], depth) & ")"
+    result = newCIRNode(cnkConv)
+    let irTy = ctx.getIRType(node[0])
+    result.add irTy
+    result.add processNode(ctx, node[1])
 
   of nnkBracket:
     ## Fixed-size array literal: [1.0, 2.0, 3.0]
-    var elems: seq[string]
+    result = newCIRNode(cnkBracket)
     for elem in node:
-      elems.add processNode(ctx, elem, depth)
-    result = "{" & elems.join(", ") & "}"
-
-  of nnkConstDef, nnkTypeDef:
-    ## Fixed-size array type declaration → goes to header, not body
-    ## array[N, T] → const T name[N];
-    let name = node[0].strVal
-    let tyNode = node[1]
-    if tyNode.kind == nnkBracketExpr and tyNode[0].strVal == "array":
-      let size    = processNode(ctx, tyNode[1], depth)  ## N
-      let glslTy  = ctx.getGLSLType(tyNode[2])          ## T
-      ## Array declarations belong in the header, not the body
-      ctx.header &= "const " & glslTy & " " & name & "[" & size & "];\n"
-    else:
-      error("GLSL Transpiler: only fixed-size array types are supported at top level", node)
-
+      result.add processNode(ctx, elem)
+  
   of nnkCaseStmt:
     ## case x:
     ##   of 1: ...
     ##   of 2: ...
     ##   else: ...
     ## → switch(x) { case 1: ... break; default: ... }
-    result = idnt & "switch (" & processNode(ctx, node[0], depth) & ") {\n"
+    result = newCIRNode(cnkCaseStmt)
+    result.add processNode(ctx, node[0])
     for i in 1..<node.len:
       let branch = node[i]
       case branch.kind:
       of nnkOfBranch:
+        var ob = newCIRNode(cnkOfBranch)
         ## May have multiple values: of 1, 2: ...
         for j in 0..<branch.len - 1:
-          result &= idnt & "  case " & processNode(ctx, branch[j], depth) & ":\n"
-        result &= processNode(ctx, branch[^1], depth + 1)
-        result &= idnt & "    break;\n"
+          ob.add processNode(ctx, branch[j])
+        ob.add processNode(ctx, branch[^1])
+        result.add ob
       of nnkElse:
-        result &= idnt & "  default:\n"
-        result &= processNode(ctx, branch[0], depth + 1)
-        result &= idnt & "    break;\n"
+        var el = newCIRNode(cnkElse)
+        el.add processNode(ctx, branch[0])
       else:
-        error("GLSL Transpiler: unsupported case branch kind: " & $branch.kind, branch)
-    result &= idnt & "}"
+        error("Cruise IR Transpiler: unsupported case branch kind: " & $branch.kind, branch)
+
   of nnkHiddenStdConv:
     ## Implicit standard type conversion e.g. int literal → float32
     ## The actual value is in node[1], node[0] is the target type
-    result = processNode(ctx, node[1], depth)
+    result = processNode(ctx, node[1])
 
   of nnkHiddenSubConv:
     ## Implicit subtype conversion — same treatment
-    result = processNode(ctx, node[1], depth)
+    result = processNode(ctx, node[1])
 
   of nnkHiddenCallConv:
     ## Implicit conversion via a constructor call e.g. SomeType(x)
     ## node[0] is the constructor, node[1..] are the args
-    let glslTy = ctx.getGLSLType(node[0])
-    result = glslTy & "(" & processNode(ctx, node[1], depth) & ")"
+    result = newCIRNode(cnkHiddenCallConv)
+    let irTy = ctx.getIRType(node[0])
+    result.add irTy
+    result.add processNode(ctx, node[1])
   of nnkStmtListExpr:
     ## A statement list used as an expression — the last node is the value.
     ## Generated by template expansion, e.g:
@@ -347,31 +455,25 @@ proc processNode(ctx: var GLSLContext, node: NimNode, depth: int = 0, pc: Parsin
     ##     tmp                 ## ← returned value
     ##
     ## Emit all statements except the last, then return the last as expression.
+    result = newCIRNode(cnkStmtListExpr)
     for i in 0..<node.len - 1:
-      let stmt = processNode(ctx, node[i], depth)
-      if stmt != "":
-        ctx.body &= idnt & stmt & ";\n"
+      result.add processNode(ctx, node[i])
+    
     ## Last node is the expression value
-    result = processNode(ctx, node[^1], depth)
-  of nnkEmpty: discard
-  of nnkDiscardStmt: result = "discard"
+    result.add processNode(ctx, node[^1])
+  of nnkEmpty: result = newCIRNode(cnkEmpty)
+  of nnkDiscardStmt: result = newCIRNode(cnkDiscardStmt)
   else:
-    error("Unsupported AST node in GLSL Transpiler: " & $node.kind & "\n" &
-          "  This Nim construct cannot be transpiled to GLSL.", node)
+    error("Unsupported AST node in Cruise IR Transpiler: " & $node.kind & "\n" &
+          "  This Nim construct cannot be transpiled to IR.", node)
 
-proc processParams(ctx: var GLSLContext, params: NimNode): bool =
-  ## Parse function parameters and emit GLSL header declarations.
-  ## - var T parameters    → writeonly SSBO / out variable
-  ## - Uniform[T]          → uniform declaration
-  ## - SSBO[T]             → shader storage buffer
-  ## - plain T             → in variable (read-only)
-  ##
-  ## First var parameter is treated as the output buffer by convention.
-
+proc processParams(ctx: var CIRContext, params: NimNode): seq[CIRNode] =
   var firstVar = true
   var isCompute = true
 
   for i in 1..<params.len:   ## skip [0] which is return type
+    var res = newCIRNode(cnkIdentDef)
+    var current: CIRNode
     let identDef = params[i]
     let paramName = identDef[0].strVal
     let tyNode    = identDef[1]           ## [1] is type, [0] is name
@@ -380,29 +482,48 @@ proc processParams(ctx: var GLSLContext, params: NimNode): bool =
     let innerTy = identDef[0]
     let typeName = innerTy.getTypeInst().repr
 
+    if isVar:
+      current = newCIRNode(cnkVarTy)
+
     if isWrapperType(typeName):
       ## Uniform[T], SSBO[T] etc. — emitQualifiedVar handles the header line
-      ctx.header &= emitQualifiedVar(ctx, typeName, paramName)
+      current = emitQualifiedVar(ctx, typeName, paramName)
     elif isVar:
-      ## var T → output buffer
-      ## First var param gets binding 0 by convention
-      let glslTy = ctx.getGLSLType(innerTy)
-      let bid = getBinding(paramName)
-      if firstVar:
-        ctx.header &= "layout(std430, binding = " & $bid & ") buffer OutBlock {\n" &
-                      "  " & glslTy & " " & paramName & "[];\n};\n"
-        if glslTy == "vec4": isCompute = false
-        firstVar = false
-      else:
-        ctx.header &= "layout(std430, binding = " & $bid & ") buffer Block" &
-                      $bid & " {\n  " & glslTy & " " & paramName & "[];\n};\n"
+      let irTy = ctx.getIRType(innerTy)
+      current.add(irTy)
     else:
       ## Plain T → uniform in variable
-      let glslTy = ctx.getGLSLType(innerTy)
-      if not isWrapperType(typeName):
-        ctx.header &= "uniform " & glslTy & " " & paramName & ";\n"
+      let irTy = ctx.getIRType(innerTy)
+      current = irTy
 
-  return isCompute
+    res.add newCIRSym(paramName)
+    res.add(current)
 
+    result.add(res)
+
+macro compileToIR*(fn: typed): CIRContext =
+  var ctx = CIRContext()
+  let impl = fn.getImpl
+  let name = impl[0]
+  let params = impl[3]
+  var body = impl[6]
+
+  var irMain = newCIRNode(cnkFuncDef)
+  var signature = newCIRNode(cnkFuncSig)
+  signature.add(newCIRSym name.strVal)
+  signature.add(newCIRNode(cnkEmpty))
+
+  let args = ctx.processParams(params)
+  signature.args.add(args)
+
+  body = body.ensureStmtList
   
+  let irBody = processNode(ctx, body)
+
+  irMain.add signature
+  irMain.add irBody
+
+  ctx.body = irMain
+
+  return quote do: `ctx`
 

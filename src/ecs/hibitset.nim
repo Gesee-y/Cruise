@@ -1,22 +1,6 @@
-########################################################################################################################################
-######################################################### CRUISE HIBITSETS #############################################################
-########################################################################################################################################
-
-import std/[bitops, times, strformat]
-## Hierarchical BitSets (HiBitSet) for Nim — 3-Level Implementation
-##
-## This module provides two implementations of 3-level hierarchical bitsets:
-##   - HiBitSet:       Dense implementation with fixed memory allocation.
-##   - SparseHiBitSet: Sparse implementation using sparse sets; only allocates non-zero blocks.
-##
-## Both use a 3-level hierarchy:
-##   layer2  →  summarises 64 blocks of layer1  (top)
-##   layer1  →  summarises 64 blocks of layer0  (middle)
-##   layer0  →  holds the actual bits            (bottom)
-##
-## Maximum addressable index (native, 64-bit):
-##   64 * 64 * 64 = 262 144 blocks of 64 bits  →  ~16 million bits per L2 block
-##   Practically unlimited with dynamic growth.
+#########################################################################################################################################################
+######################################################### CRUISE HIBITSETS ##############################################################################
+#########################################################################################################################################################
 
 when defined(js):
   const
@@ -74,7 +58,6 @@ template ensureCapacity(h: var HiBitSet, i: untyped) =
 
 template set*(h: var HiBitSet, i: untyped) =
   ## Sets the bit at `idx` to 1. Grows automatically.
-  ## Time complexity: O(1)
   let idx = i.int
   h.ensureCapacity(idx)
   let l0Idx  = idx   shr L0_SHIFT
@@ -90,7 +73,6 @@ template set*(h: var HiBitSet, i: untyped) =
 template unset*(h: var HiBitSet, idx: int) =
   ## Sets the bit at `idx` to 0.
   ## Propagates the clearing up through layer1 / layer2 when a block empties.
-  ## Time complexity: O(1)
   if idx < h.len:
     let l0Idx  = idx   shr L0_SHIFT
     let bitPos = idx   and L0_MASK
@@ -105,7 +87,7 @@ template unset*(h: var HiBitSet, idx: int) =
         h.layer2[l2Idx] = h.layer2[l2Idx] and not (BitBlock(1) shl (l1Idx and L0_MASK))
 
 proc setL0Block*(h: var HiBitSet, l0Idx: int, value: BitBlock) {.inline.} =
-  ## Sets an entire layer0 block and updates layer1 / layer2 accordingly. O(1).
+  ## Sets an entire layer0 block and updates layer1 / layer2 accordingly..
   if (l0Idx + 1) > h.layer0.len:
     h.ensureCapacity(l0Idx shl L0_SHIFT)
 
