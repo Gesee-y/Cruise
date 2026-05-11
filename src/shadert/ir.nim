@@ -5,10 +5,10 @@
 import sets, macros, tables, strutils, strformat
 
 type 
-  ParsingContext = enum
+  ParsingContext* = enum
     pcNone, pcReturn, pcWhile, pcFor, pcIf
 
-  CIRNodeKind = enum
+  CIRNodeKind* = enum
     cnkStmtList
     cnkDecl, cnkFuncSig, cnkFuncDef
     cnkCall
@@ -44,25 +44,25 @@ type
     cnkWritOnly, cnkReadOnly
     cnkVarTy
   
-  CIRNode = object
-    case kind: CIRNodeKind
+  CIRNode* = object
+    case kind*: CIRNodeKind
     of cnkSym:
-      name: string
+      name*: string
     of cnkIntLit:
-      intVal: int
+      intVal*: int
     of cnkFloatLit:
-      floatVal: float
+      floatVal*: float
     of cnkDiscardStmt, cnkEmpty, cnkContinueStmt, cnkWritOnly, cnkReadOnly: discard
     else:
-      args: seq[CIRNode]
+      args*: seq[CIRNode]
 
-  CIRContext = object
-    typeDecl: CIRNode
-    forwardDecl: CIRNode
-    funcDef: CIRNode
-    body: CIRNode
-    emittedTypes: HashSet[string] ## Already emitted type
-    emittedFuncs: HashSet[string]
+  CIRContext* = object
+    typeDecl*: CIRNode
+    forwardDecl*: CIRNode
+    funcDef*: CIRNode
+    body*: CIRNode
+    emittedTypes*: HashSet[string] ## Already emitted type
+    emittedFuncs*: HashSet[string]
 
 ##########################################################################################################################################################
 ################################################################## UTILITIES #############################################################################
@@ -70,9 +70,9 @@ type
 
 proc newCIRNode*(kind: static CIRNodeKind): CIRNode = CIRNode(kind: kind)
 proc add*(a: var CIRNode, b: CIRNode) = a.args.add(b)
-proc newCIRSym(name: string): CIRNode = CIRNode(kind: cnkSym, name: name)
-proc newCIRIntLit(i: int): CIRNode = CIRNode(kind: cnkIntLit, intVal: i)
-proc newCIRFloatLit(i: float): CIRNode = CIRNode(kind: cnkFloatLit, floatVal: i)
+proc newCIRSym*(name: string): CIRNode = CIRNode(kind: cnkSym, name: name)
+proc newCIRIntLit*(i: int): CIRNode = CIRNode(kind: cnkIntLit, intVal: i)
+proc newCIRFloatLit*(i: float): CIRNode = CIRNode(kind: cnkFloatLit, floatVal: i)
 
 proc processNode(ctx: var CIRContext, node: NimNode, pc: ParsingContext= pcNone): CIRNode
 
