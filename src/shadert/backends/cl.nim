@@ -13,13 +13,13 @@ proc emitType(node: CIRNode): string =
   of "double": "double"
   of "bool":   "bool"
   of "uint":   "uint"
-  # types vecteur OpenCL
+  
   of "vec2":   "float2"
   of "vec3":   "float3"
   of "vec4":   "float4"
   of "ivec2":  "int2"
   of "uvec4":  "uint4"
-  else:        node.name   # struct custom, passé tel quel
+  else:        node.name
 
 proc emitQualifier(node: CIRNode): string =
   case node.kind:
