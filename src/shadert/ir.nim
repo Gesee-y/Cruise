@@ -2,7 +2,7 @@
 ############################################################ TRANPILER NIM -> CRUISE IR ##################################################################
 ##########################################################################################################################################################
 
-import sets, macros, tables, strutils
+import sets, macros, tables, strutils, strformat
 
 type 
   ParsingContext = enum
@@ -19,7 +19,7 @@ type
     cnkForStmt
     cnkWhileStmt
     cnkReturnStmt
-    cnkSym, cnkUniform, cnkBuffer, cnkSampler, cnkImage
+    cnkSym, cnkUniform, cnkBuffer, cnkSampler, cnkImage, cnkArray
     cnkHiddenDeref
     cnkIntLit
     cnkFloatLit
@@ -115,6 +115,7 @@ proc isWrapperType(typeName: string): bool {.compileTime.} =
   typeName.startsWith("Uniform[")      or
   typeName.startsWith("UniformReadOnly[") or
   typeName.startsWith("UniformWriteOnly[") or
+  typeName.startsWith("array") or
   typeName in irUniformTable or
   typeName == "Sampler2D"
 
@@ -130,26 +131,31 @@ proc emitQualifiedVar(ctx: var CIRContext, typeName: string,
 
   if typeName.startsWith("Uniform["):
     let inner = ctx.getIRType(innerName)
-    return CIRNode(kind: cnkUniform, args: @[CIRNode(kind: cnkEmpty), newCIRSym(paramName), inner])
+    return CIRNode(kind: cnkUniform, args: @[CIRNode(kind: cnkEmpty), inner])
+  elif typeName.startsWith("array"):
+    let cm = innerName.split(",")
+    let val = newCIRIntLit((&"{cm[0][^1]}").parseInt + 1)
+    let inner = ctx.getIRType(cm[1])
+    return CIRNode(kind: cnkArray, args: @[val, inner])
 
   elif irVal == "SSBO":
     let inner = ctx.getIRType(innerName)
-    return CIRNode(kind: cnkBuffer, args: @[CIRNode(kind: cnkEmpty), newCIRSym(paramName), inner])
+    return CIRNode(kind: cnkBuffer, args: @[CIRNode(kind: cnkEmpty), inner])
 
   elif typeName.startsWith("UniformReadOnly["):
     let inner = ctx.getIRType(innerName)
-    return CIRNode(kind: cnkUniform, args: @[CIRNode(kind: cnkReadOnly), newCIRSym(paramName), inner])
+    return CIRNode(kind: cnkUniform, args: @[CIRNode(kind: cnkReadOnly), inner])
 
   elif typeName.startsWith("UniformWriteOnly["):
     let inner = ctx.getIRType(innerName)
-    return CIRNode(kind: cnkUniform, args: @[CIRNode(kind: cnkWritOnly), newCIRSym(paramName), inner])
+    return CIRNode(kind: cnkUniform, args: @[CIRNode(kind: cnkWritOnly), inner])
 
   elif typeName.startsWith("Image2D["):
     let inner = ctx.getIRType(innerName)
-    return CIRNode(kind: cnkImage, args: @[newCIRIntLit(2), newCIRSym(paramName), inner])
+    return CIRNode(kind: cnkImage, args: @[newCIRIntLit(2), inner])
 
   elif typeName == "Sampler2D":
-    return CIRNode(kind: cnkSampler, args: @[newCIRIntLit(2), newCIRSym(paramName)])
+    return CIRNode(kind: cnkSampler, args: @[newCIRIntLit(2)])
   else: return
 
 proc emitStruct(ctx: var CIRContext, ty: NimNode): CIRNode =
@@ -168,7 +174,7 @@ proc emitStruct(ctx: var CIRContext, ty: NimNode): CIRNode =
     result.add def
 
 proc getIRType(ctx: var CIRContext, node: NimNode): CIRNode =
-  var sym = node.getTypeInst()
+  var sym = if node.kind == nnkSym: node.getTypeInst() else: node
   if sym.kind == nnkVarTy: sym = sym[0]
   let typeName = if sym.kind == nnkBracketExpr: sym[1].repr else: sym.repr
   let paramName = node.strVal
@@ -363,8 +369,8 @@ proc processNode(ctx: var CIRContext, node: NimNode, pc: ParsingContext= pcNone)
     result = newCIRSym node.strVal
   of nnkHiddenDeref:
     result = processNode(ctx, node[0])
-  of nnkIntLit:    result = newCIRIntLit node.intVal
-  of nnkFloatLit:  result = newCIRFloatLit node.floatVal
+  of nnkIntLit, nnkInt64Lit, nnkInt32Lit:    result = newCIRIntLit node.intVal
+  of nnkFloatLit, nnkFloat64Lit, nnkFloat32Lit:  result = newCIRFloatLit node.floatVal
   of nnkInfix:
     result = newCIRNode(cnkInfix)
     result.add newCIRSym(node[0].strVal)
@@ -472,7 +478,6 @@ proc processParams(ctx: var CIRContext, params: NimNode): seq[CIRNode] =
   var isCompute = true
 
   for i in 1..<params.len:   ## skip [0] which is return type
-    var res = newCIRNode(cnkIdentDef)
     var current: CIRNode
     let identDef = params[i]
     let paramName = identDef[0].strVal
@@ -482,24 +487,26 @@ proc processParams(ctx: var CIRContext, params: NimNode): seq[CIRNode] =
     let innerTy = identDef[0]
     let typeName = innerTy.getTypeInst().repr
 
-    if isVar:
-      current = newCIRNode(cnkVarTy)
+    for j in 0..<identDef.len - 2:  ## handle a, b: float32
+      var res = newCIRNode(cnkIdentDef)
+      res.add(newCIRSym identDef[j].strVal)
 
-    if isWrapperType(typeName):
-      ## Uniform[T], SSBO[T] etc. — emitQualifiedVar handles the header line
-      current = emitQualifiedVar(ctx, typeName, paramName)
-    elif isVar:
-      let irTy = ctx.getIRType(innerTy)
-      current.add(irTy)
-    else:
-      ## Plain T → uniform in variable
-      let irTy = ctx.getIRType(innerTy)
-      current = irTy
+      if isWrapperType(typeName):
+        ## Uniform[T], SSBO[T] etc. — emitQualifiedVar handles the header line
+        current = emitQualifiedVar(ctx, typeName, identDef[j].strVal)
+      else:
+        ## Plain T → uniform in variable
+        let irTy = ctx.getIRType(innerTy)
+        current = irTy
 
-    res.add newCIRSym(paramName)
-    res.add(current)
+      if isVar:
+        var v = newCIRNode(cnkVarTy)
+        v.add current
+        current = v
+    
+      res.add(current)
 
-    result.add(res)
+      result.add(res)
 
 macro compileToIR*(fn: typed): CIRContext =
   var ctx = CIRContext()
