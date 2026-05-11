@@ -33,7 +33,7 @@ type
     cnkBracket
     cnkConstDef, cnkTypeDef, cnkIdentDef
     cnkCaseStmt
-    cnkOfBranch
+    cnkOfBranch, cnkDefaultBranch
     cnkElse
     cnkHiddenStdConv
     cnkHiddenSubConv 
@@ -42,7 +42,7 @@ type
     cnkEmpty
     cnkDiscardStmt
     cnkWritOnly, cnkReadOnly
-    cnkVarTy
+    cnkVarTy, cnkGlobalIndex
   
   CIRNode* = object
     case kind*: CIRNodeKind
@@ -74,6 +74,7 @@ proc newCIRSym*(name: string): CIRNode = CIRNode(kind: cnkSym, name: name)
 proc newCIRIntLit*(i: int): CIRNode = CIRNode(kind: cnkIntLit, intVal: i)
 proc newCIRFloatLit*(i: float): CIRNode = CIRNode(kind: cnkFloatLit, floatVal: i)
 
+proc globalIndex[T](data: T): T = data
 proc processNode(ctx: var CIRContext, node: NimNode, pc: ParsingContext= pcNone): CIRNode
 
 proc isPrimitiveType(name: string): bool =
@@ -103,6 +104,46 @@ proc normalizeTypes(name: string): string =
     if name in irTypeTable:
       return irTypeTable[name]
     else: ""
+
+proc initDefaultFuncMappings() {.compileTime.} =
+  const mappings = [
+    ("sin",        "sin"),
+    ("cos",        "cos"),
+    ("tan",        "tan"),
+    ("arcsin",     "asin"),
+    ("arccos",     "acos"),
+    ("arctan",     "atan"),
+    ("arctan2",    "atan"),
+    ("sqrt",       "sqrt"),
+    ("pow",        "pow"),
+    ("exp",        "exp"),
+    ("log",        "log"),
+    ("abs",        "abs"),
+    ("sign",       "sign"),
+    ("floor",      "floor"),
+    ("ceil",       "ceil"),
+    ("round",      "round"),
+    ("mod",        "mod"),
+    ("fract",      "fract"),
+    ("min",        "min"),
+    ("max",        "max"),
+    ("clamp",      "clamp"),
+    ("mix",        "mix"),
+    ("step",       "step"),
+    ("smoothstep", "smoothstep"),
+    ("dot",        "dot"),
+    ("cross",      "cross"),
+    ("length",     "length"),
+    ("distance",   "distance"),
+    ("normalize",  "normalize"),
+    ("reflect",    "reflect"),
+    ("refract",    "refract"),
+  ]
+  for (nim, ir) in mappings:
+    irFuncTable[nim] = ir
+
+static: initDefaultFuncMappings()  
+static: initDefaultFuncMappings()
 
 proc getIRType(ctx: var CIRContext, typeName: string): CIRNode {.compileTime.} =
   if typeName in ctx.emittedTypes: return newCIRSym(typeName)
@@ -281,6 +322,7 @@ proc processDeclaration(ctx: var CIRContext, node: NimNode): CIRNode =
   let expr = processNode(ctx, node[2])
   idnt.add(newCIRSym name)
   idnt.add(ty)
+  res.add(idnt)
   res.add(expr)
 
   res
@@ -300,14 +342,20 @@ proc processNode(ctx: var CIRContext, node: NimNode, pc: ParsingContext= pcNone)
       result = ctx.processDeclaration(n)
 
   of nnkCall, nnkCommand:
-    ## Function call: remap name if needed, recurse on args
-    result = newCIRNode(cnkCall)
-    let funcName = ctx.remapFunc(node[0].strVal, node[0])  ## e.g. "abs" -> "abs", custom -> mapped
-    
-    result.add(funcName)
-    for i in 1..<node.len:
-      result.add processNode(ctx, node[i])
-    
+    let nFuncName = node[0].strVal
+
+    if nFuncName == "globalIndex":
+      result = newCIRNode(cnkGlobalIndex)
+      if node[1].kind != nnkSym:
+        error("Cruise IR Transpiler: only identifiers are allowed in global indexing", node[1])
+      result.add(ctx.getIRType(node[1])) 
+    else:
+      result = newCIRNode(cnkCall)
+      let funcName = ctx.remapFunc(nFuncName, node[0])
+      result.add(funcName)
+      for i in 1..<node.len:
+        result.add processNode(ctx, node[i])
+  
   of nnkObjConstr:
     ## Object construction: MyVec(x: 1.0, y: 2.0) -> vec2(1.0, 2.0)
     result = newCIRNode(cnkCall)
@@ -333,13 +381,16 @@ proc processNode(ctx: var CIRContext, node: NimNode, pc: ParsingContext= pcNone)
     ## if/elif/else
     result = newCIRNode(cnkIfStmt)
     for i, branch in node:
+      var el: CIRNode
       if branch.kind == nnkElifBranch:
-        var el = newCIRNode(cnkElifBranch)
+        el = newCIRNode(cnkElifBranch)
         el.add processNode(ctx, branch[0])
         el.add processNode(ctx, branch[1].ensureStmtList)
       elif branch.kind == nnkElse:
-        var el = newCIRNode(cnkElse)
+        el = newCIRNode(cnkElse)
         el.add processNode(ctx, branch[0].ensureStmtList)
+
+      result.add(el)
 
   of nnkForStmt:
     ## for i in a..<b -> for(int i = a; i < b; i++)
@@ -429,11 +480,12 @@ proc processNode(ctx: var CIRContext, node: NimNode, pc: ParsingContext= pcNone)
         ## May have multiple values: of 1, 2: ...
         for j in 0..<branch.len - 1:
           ob.add processNode(ctx, branch[j])
-        ob.add processNode(ctx, branch[^1])
+        ob.add processNode(ctx, branch[^1].ensureStmtList)
         result.add ob
       of nnkElse:
-        var el = newCIRNode(cnkElse)
-        el.add processNode(ctx, branch[0])
+        var el = newCIRNode(cnkDefaultBranch)
+        el.add processNode(ctx, branch[0].ensureStmtList)
+        result.add el
       else:
         error("Cruise IR Transpiler: unsupported case branch kind: " & $branch.kind, branch)
 
