@@ -66,7 +66,7 @@ let c = a.cross(b)
 
 - **[Backend agnostic rendering](https://github.com/Gesee-y/Cruise/tree/main/src/render)**: Command buffer based renderer, an everything as resource philosophy, 
 
-- **[Nim Shaders]**: Cruise allows you to write your shader in nim, compile them to GLSL 4.3, then use [shaderc](https://github.com/RowDaBoat/shadercnim) to compile it to other shading backend. This even allows you to test your shader on CPU!
+- **[Nim Shaders]**: Cruise allows you to write your shader in nim, compile them to OpenCL or ~~GLSL 4.3, then use [shaderc](https://github.com/RowDaBoat/shadercnim) to compile it to other shading backend~~. This even allows you to test your shader on CPU!
 
 ```nim
 proc myShader(fragCoord: MyVec4, uv: MyVec2) =
