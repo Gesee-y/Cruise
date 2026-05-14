@@ -114,8 +114,8 @@ proc `>`*(a, b: NodePos): bool  = b < a
 
 ## Forward declarations required by mutual recursion between processNode / remapFunc.
 proc processNode(ctx: var CIRContext, node: NimNode,
-                 pc: ParsingContext = pcNone,
-                 line: int = 0, pos: var int): CIRNode
+                 pc: ParsingContext = pcNone, parent: ptr CIRNode = nil,
+                 line: var int, pos: var int): CIRNode
 
 proc isPrimitiveType(name: string): bool =
   name in ["int", "float", "string", "cstring", "seq", "set"]
@@ -304,7 +304,7 @@ proc ensureStmtList(node: NimNode): NimNode =
   result.add(node)
 
 proc remapFunc(ctx: var CIRContext, name: string, node: NimNode,
-               line: int, pos: var int): CIRNode =
+               line: var int, pos: var int): CIRNode =
   ## Resolve a Nim function call to its IR name.
   ##
   ## Resolution order:
@@ -358,7 +358,8 @@ proc remapFunc(ctx: var CIRContext, name: string, node: NimNode,
 
   var body    = impl[6].ensureStmtList
   var helperPos = 0   # helper bodies start their own position counter at 0
-  let irBody  = processNode(funcCtx, body, line = 0, pos = helperPos)
+  var rootLine = 0
+  let irBody  = processNode(funcCtx, body, line = rootLine, pos = helperPos)
 
   # Propagate any newly discovered types / functions back to the parent context.
   ctx.typeDecl.args.add(funcCtx.typeDecl.args)
@@ -376,24 +377,30 @@ proc remapFunc(ctx: var CIRContext, name: string, node: NimNode,
 ##########################################################################################################################################################
 
 proc processDeclaration(ctx: var CIRContext, node: NimNode,
-                        line: int, pos: var int): CIRNode =
+                        line: var int, pos: var int): CIRNode =
   ## Transpile a single `var` / `let` binding to a `cnkDecl` IR node.
   var res  = newCIRNode(cnkDecl)
+  res.stamp(line, pos)
+
   var idnt = newCIRNode(cnkIdentDef)
+  idnt.stamp(line, pos)
+  
   let name = node[0].strVal
   let ty   = getIRType(ctx, node[0])
   let expr = processNode(ctx, node[2], line = line, pos = pos)
   idnt.add(newCIRSym name)
-  idnt.stamp(line, pos) 
+  idnt.args[^1].src = idnt.src
+
   idnt.add(ty)
+  idnt.args[^1].src = idnt.src
+  
   res.add(idnt)
   res.add(expr)
-  res.stamp(line, pos)
   res
 
 proc processNode(ctx: var CIRContext, node: NimNode,
-                 pc: ParsingContext = pcNone,
-                 line: int = 0, pos: var int): CIRNode =
+                 pc: ParsingContext = pcNone, parent: ptr CIRNode = nil,
+                 line: var int, pos: var int): CIRNode =
   ## Recursively transpile a Nim AST node to a Cruise IR node.
   ##
   ## `line` is the index of the enclosing top-level statement and is held
@@ -416,12 +423,14 @@ proc processNode(ctx: var CIRContext, node: NimNode,
     result.stamp(line, pos)
     for i, n in node:
       var stmtPos = 0
-      result.add processNode(ctx, n, line = line + i, pos = stmtPos)
+      result.add processNode(ctx, n, line = line, pos = stmtPos, parent = addr result)
+      inc line
 
   of nnkVarSection, nnkLetSection:
     var stmtPos = 0
-    for n in node:
+    for i,n in node:
       result = ctx.processDeclaration(n, line = line, pos = stmtPos)
+      if i>0: inc line
 
   of nnkCall, nnkCommand:
     let nFuncName = node[0].strVal
@@ -543,9 +552,23 @@ proc processNode(ctx: var CIRContext, node: NimNode,
       result = processNode(ctx, node[1], line = line, pos = pos)
     else:
       result = newCIRNode(cnkAsgn)
-      result.stamp(line, pos)
-      result.add processNode(ctx, node[0], line = line, pos = pos)
-      result.add processNode(ctx, node[1], line = line, pos = pos)
+
+      if line == 0 and node[1].kind == nnkStmtListExpr and node[0].strVal == "result":
+        result = newCIRNode(cnkReturnStmt)
+        result.stamp(line, pos)
+      else:
+        result.stamp(line, pos)
+        result.add processNode(ctx, node[0], line = line, pos = pos)
+
+      var rhs = processNode(ctx, node[1], line = line, pos = pos)
+
+      if rhs.kind == cnkStmtList:
+        for n in rhs.args[0..^2]:
+          parent.args.add(n)
+
+        rhs = rhs.args[^1]
+
+      result.add rhs
 
   of nnkBreakStmt:
     result = newCIRNode(cnkBreakStmt)
@@ -618,14 +641,16 @@ proc processNode(ctx: var CIRContext, node: NimNode,
   of nnkStmtListExpr:
     ## Statement list used as an expression (produced by template expansion).
     ## All nodes except the last are statements; the last is the result value.
-    result = newCIRNode(cnkStmtListExpr)
+    result = newCIRNode(cnkStmtList)
     result.stamp(line, pos)
     for i in 0..<node.len - 1:
       var stmtPos = 0
-      result.add processNode(ctx, node[i], line = line+i, pos = stmtPos)
-
-    var stmtPos = 0
-    result.add processNode(ctx, node[^1], line = line, pos = stmtPos)
+      result.add processNode(ctx, node[i], line = line, pos = stmtPos)
+      inc line
+    ## Last node = value, emitted normally
+    var lastPos = 0
+    result.add processNode(ctx, node[^1], pc = pc,
+                            line = line, pos = lastPos)
 
   of nnkEmpty:
     result = newCIRNode(cnkEmpty)
@@ -704,7 +729,8 @@ macro compileToIR*(fn: typed): CIRContext =
   signature.args.add(args)
 
   var rootPos = 0
-  let irBody  = processNode(ctx, body, line = 0, pos = rootPos)
+  var rootLine = 0
+  let irBody  = processNode(ctx, body, line = rootLine, pos = rootPos)
 
   irMain.add signature
   irMain.add irBody
