@@ -15,18 +15,11 @@ This module gives you a **persistent in-memory mirror** of a directory tree that
 
 - **OS-agnostic file watching**: The OS signal is used as a wake-up trigger to diff the repertory. 
 
-- **Burst grouping**  
-When multiple files change in rapid succession (e.g. a shader compiler writing several
-outputs at once), the watcher drains all pending OS signals before diffing. The result
-is a single batched event set instead of a flood of individual callbacks.
+- **Burst grouping**: When multiple files change in rapid succession (e.g. a shader compiler writing several outputs at once), the watcher drains all pending OS signals before diffing. The result is a single batched event set instead of a flood of individual callbacks.
 
-- **Extension filter**  
-`newWatcher(tree, ext = ".png")` limits file callbacks to a specific extension.
-Directory events always pass through regardless of the filter.
+- **Extension filter**: `newWatcher(tree, ext = ".png")` limits file callbacks to a specific extension. Directory events always pass through regardless of the filter.
 
-- **Game-loop friendly**  
-`poll(timeout = 0)` is non-blocking and safe to call every frame. No threads are spawned.
-The caller owns the loop.
+- **Game-loop friendly**: `poll(timeout = 0)` is non-blocking and safe to call every frame. No threads are spawned. The caller owns the loop.
 
 ## Quick start
 

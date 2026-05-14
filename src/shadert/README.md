@@ -21,19 +21,19 @@ type
   MyType = object
     x, y, z, w: float32
 
-# Mapping Nim types to GLSL built-ins
-registerGLSLType(MyVec2, "vec2")
-registerGLSLType(MyVec4, "vec4")
+# Mapping Nim types to IR built-ins
+registerIRType(MyVec2, "vec2")
+registerIRType(MyVec4, "vec4")
 
 proc myAdd(a, b: float32): float32 = a + b
 
 proc myFunc(frag: var MyVec4, uv: MyVec2) =
-  var t: MyType # This custom type is automatically generated in the shader
+  var t: MyType # This custom type is automatically generated in the IR
   frag.x = uv.x
   frag.y = uv.y
-  frag.z = myAdd(uv.x, uv.y) # myAdd is recursively added to the GLSL source
+  frag.z = myAdd(uv.x, uv.y) # myAdd is recursively added to the IR source
 
-let shader = compileToGLSL(myFunc)
-echo shader.result
-
+var ir = compileToIR(myFunc)
+let shader = emitGLSL(myFunc)
+echo shader
 ```

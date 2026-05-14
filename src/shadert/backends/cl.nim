@@ -157,25 +157,27 @@ proc emitOpenCL*(ctx: CIRContext): string =
   result &= emitCL(ctx.funcDef)
   result &= emitCL(ctx.body, isKernel = true) 
 
-proc tester(x: int, y: int) =
-  var c = x + y
-  var d = x - y
-  let f = d + c
+when isMainModule:
 
-  if c == 2:
-    d = c * f
-  elif c == 3:
-    d = f + 2
-  else:
-    c = 5
+  proc tester(x: int, y: int) =
+    var c = x + y
+    var d = x - y
+    let f = d + c
 
-  case d:
-    of 1: c += 1
-    of 2: c += 6
-    else: discard
+    if c == 2:
+      d = c * f
+    elif c == 3:
+      d = f + 2
+    else:
+      c = 5
 
-  for i in 0..<8:
-    d += i
+    case d:
+      of 1: c += 1
+      of 2: c += 6
+      else: discard
 
-var ctx = compileToIR(tester)
-echo emitOpenCL(ctx)
+    for i in 0..<8:
+      d += i
+
+  var ctx = compileToIR(tester)
+  echo emitOpenCL(ctx)
