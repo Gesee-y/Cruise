@@ -6,7 +6,10 @@ So here is **Cruise**, not a game engine in the regular sense (you can't have a 
 
 ## Why Cruise
 
-So, why bother using Cruise ? What does it offer the plethora of game engines out there doesn't offer ? It's simple.
+So, why bother using Cruise ? What does it offer the plethora of game engines out there doesn't offer ? It's simple and can be covered in multiple point.
+
+~~A **Shader VM** entirely built in Nim. This is a shader program that interprets other shader program. Through Nim metaprogramming capabilities, Cruise builds his own IR that convert your program to your shader language and to a custom bytecode. That bytecode can then be loaded in the interpreter shader to execute your original shader **without recompilation**. **No more compilation stutter**, **No more ubershaders**, **No more loading screens for shaders**.~~ 
+
 A flexible, extensible, performant, and simple core architecture.
 All that through a **Dual DAG** (Direct Acyclic Graph) architecture.
 First, Dual DAG architecture is a model where game systems are modeled as vertices and bounded by 2 set of contraints:
