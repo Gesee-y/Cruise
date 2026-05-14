@@ -20,7 +20,7 @@
 type
   CLiveness = object
     birth: NodePos
-    dead: NodePos
+    death: NodePos
 
 # Reverse liveness analysis.
 proc getLiveness(ctx: CIRContext): Table[string, CLiveness] =
@@ -32,20 +32,26 @@ proc getLiveness(ctx: CIRContext): Table[string, CLiveness] =
 
     case current.kind:
       of cnkIntLit, cnkFloatLit, cnkEmpty: continue
-      of cnkDecl:
-        if current.args[0] in result:
-          result[current.args[0]].birth = current.src
+      of cnkIdentDef:
+        let name = current.args[0].name
+        if name in result:
+          result[name].birth = current.src
+      of cnkForStmt:
+        let name = current.args[0].name
+        if name in result:
+          result[name].birth = current.src
+
+        for n in current.args[1..^1]:
+          stack.add(n)
       of cnkSym:
         if current.name notin result:
           result[current.name] = CLiveness(death: current.src)
-      of cnkCall:
+      of cnkCall, cnkInfix, cnkPrefix, cnkConv:
         # Exclude functions name so they are not counted in the analysis
         for n in current.args[1..^1]:
           stack.add(n)
       else:
         for n in current.args:
           stack.add(n)
-
-  result
 
 

@@ -107,6 +107,11 @@ proc newCIRSym*(name: string): CIRNode = CIRNode(kind: cnkSym, name: name)
 proc newCIRIntLit*(i: int): CIRNode   = CIRNode(kind: cnkIntLit,   intVal:   i)
 proc newCIRFloatLit*(i: float): CIRNode = CIRNode(kind: cnkFloatLit, floatVal: i)
 
+proc `<`*(a, b: NodePos): bool =
+  a.line < b.line or (a.line == b.line and a.pos < b.pos)
+proc `<=`*(a, b: NodePos): bool = a < b or a == b
+proc `>`*(a, b: NodePos): bool  = b < a
+
 ## Forward declarations required by mutual recursion between processNode / remapFunc.
 proc processNode(ctx: var CIRContext, node: NimNode,
                  pc: ParsingContext = pcNone,
@@ -379,6 +384,7 @@ proc processDeclaration(ctx: var CIRContext, node: NimNode,
   let ty   = getIRType(ctx, node[0])
   let expr = processNode(ctx, node[2], line = line, pos = pos)
   idnt.add(newCIRSym name)
+  idnt.stamp(line, pos) 
   idnt.add(ty)
   res.add(idnt)
   res.add(expr)
@@ -410,7 +416,7 @@ proc processNode(ctx: var CIRContext, node: NimNode,
     result.stamp(line, pos)
     for i, n in node:
       var stmtPos = 0
-      result.add processNode(ctx, n, line = i, pos = stmtPos)
+      result.add processNode(ctx, n, line = line + i, pos = stmtPos)
 
   of nnkVarSection, nnkLetSection:
     var stmtPos = 0
@@ -476,7 +482,11 @@ proc processNode(ctx: var CIRContext, node: NimNode,
     ## Only range iteration (`a..<b`) is supported.
     result = newCIRNode(cnkForStmt)
     result.stamp(line, pos)
-    result.add newCIRSym(node[0].strVal)
+    
+    var loopVar = newCIRSym(node[0].strVal)
+    loopVar.stamp(line, pos)
+    result.add loopVar
+    
     let iter = node[1]
     if iter.kind != nnkInfix or iter[0].strVal != "..<":
       error("Cruise IR Transpiler: only range iteration (a..<b) is supported in for loops", node)
@@ -513,6 +523,8 @@ proc processNode(ctx: var CIRContext, node: NimNode,
 
   of nnkInfix:
     ## Binary operator: `a + b`, `a * b`, etc.
+    var sym = newCIRSym(node[0].strVal)
+    sym.stamp(line, pos)
     result = newCIRNode(cnkInfix)
     result.stamp(line, pos)
     result.add newCIRSym(node[0].strVal)
@@ -609,8 +621,11 @@ proc processNode(ctx: var CIRContext, node: NimNode,
     result = newCIRNode(cnkStmtListExpr)
     result.stamp(line, pos)
     for i in 0..<node.len - 1:
-      result.add processNode(ctx, node[i], line = line, pos = pos)
-    result.add processNode(ctx, node[^1], line = line, pos = pos)
+      var stmtPos = 0
+      result.add processNode(ctx, node[i], line = line+i, pos = stmtPos)
+
+    var stmtPos = 0
+    result.add processNode(ctx, node[^1], line = line, pos = stmtPos)
 
   of nnkEmpty:
     result = newCIRNode(cnkEmpty)
@@ -697,4 +712,5 @@ macro compileToIR*(fn: typed): CIRContext =
 
   return quote do: `ctx`
 
-  include "irOps.nim"
+include "irOps.nim"
+
