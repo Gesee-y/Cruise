@@ -8,9 +8,9 @@ So here is **Cruise**, not a game engine in the regular sense (you can't have a 
 
 So, why bother using Cruise ? What does it offer the plethora of game engines out there doesn't offer ? It's simple and can be covered in multiple point.
 
-~~A **Shader VM** entirely built in Nim. This is a shader program that interprets other shader program. Through Nim metaprogramming capabilities, Cruise builds his own IR that convert your program to your shader language and to a custom bytecode. That bytecode can then be loaded in the interpreter shader to execute your original shader **without recompilation**. **No more compilation stutter**, **No more ubershaders**, **No more loading screens for shaders**.~~ 
+* ~~A **Shader VM** entirely built in Nim. This is a shader program that interprets other shader program. Through Nim metaprogramming capabilities, Cruise builds his own IR that convert your program to your shader language and to a custom bytecode. That bytecode can then be loaded in the interpreter shader to execute your original shader **without recompilation**, giving you time to load the original, specific and optimized shader asynchronously without object magically popping from nowhere. **No more compilation stutter**, **No more ubershaders**, **No more loading screens for shaders**. The interpreter is written in Nim, you shader written in Nim, the bytecode from Nim. One language and target any shader language.~~ [Ongoing]
 
-A flexible, extensible, performant, and simple core architecture.
+* A flexible, extensible, performant, and simple core architecture.
 All that through a **Dual DAG** (Direct Acyclic Graph) architecture.
 First, Dual DAG architecture is a model where game systems are modeled as vertices and bounded by 2 set of contraints:
   - Dependecies between systems which forms the **Dependency DAG**
@@ -28,6 +28,8 @@ This architecture offers several advantages:
   - **Architectural liberty**: Each plugin encapsulate his own way to work, game developers aren't constricted by any given architecture.
   - **Optimal parallelism**: Topological order ensure game systems run in the best possible way.
   - **Easy to extend**: Plugins are just a small chunk of code that should performs specific task well.
+
+* A powerful ECS based on a fragmented storage that can mimick sparse set or archetypes following how you organize data. It also introduces **abstract queries**, which are queries for anything. Since queries are basicaly predicate to categorize your entities following 2 categories. So Cruise ECS distinguish 3 cases: **virtual queries** (checking a predicate at each entities), **soft materialized queries** (having **hibitsets** to enocde which entities match the predicate) and **hard materialized queries** (matching the predicate means being in a special place in memory, a.k.a archetypes). So using soft materialized queries, Cruise ECS produces **pluggable views** which allows you to plug an interpretation of the ECS storage. For example you can built a scene tree as a pair (entity, children query) where children query is a soft materialized query, then you obtain an optimized scene tree that just reinterpret your ECS
 
 ## Features
 
