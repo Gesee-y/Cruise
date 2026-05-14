@@ -553,7 +553,7 @@ proc processNode(ctx: var CIRContext, node: NimNode,
     else:
       result = newCIRNode(cnkAsgn)
 
-      if line == 0 and node[1].kind == nnkStmtListExpr and node[0].strVal == "result":
+      if node[1].kind == nnkStmtListExpr and node[0].strVal == "result":
         result = newCIRNode(cnkReturnStmt)
         result.stamp(line, pos)
       else:
