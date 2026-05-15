@@ -2,17 +2,25 @@
 ############################################################ TRANSPILER NIM -> CRUISE IR #################################################################
 ##########################################################################################################################################################
 
-import sets, macros, tables, strutils, strformat
+import sets, macros, tables, strutils, strformat, hashes
 
 ##########################################################################################################################################################
 ################################################################## TYPES #################################################################################
 ##########################################################################################################################################################
 
 type
+  Uniform*[T]       = distinct T  ## uniform T name;
+  UniformReadOnly*[T]  = distinct T  ## layout(...) readonly buffer
+  UniformWriteOnly*[T] = distinct T  ## layout(...) writeonly buffer
+  SSBO*[T]          = distinct T  ## layout(std430) buffer { T name[]; };
+  Image2D*[T]       = distinct T  ## layout(rgba32f) writeonly uniform image2D
+  Sampler2D*        = object      ## uniform sampler2D name;
+
   ParsingContext* = enum
     pcNone, pcReturn, pcWhile, pcFor, pcIf
 
   CIRNodeKind* = enum
+    cnkNone
     cnkStmtList
     cnkDecl, cnkFuncSig, cnkFuncDef
     cnkCall
@@ -25,6 +33,7 @@ type
     cnkReturnStmt
     cnkSym, cnkUniform, cnkBuffer, cnkSampler, cnkImage, cnkArray
     cnkHiddenDeref
+    cnkPar
     cnkIntLit
     cnkFloatLit
     cnkInfix
@@ -111,6 +120,7 @@ proc `<`*(a, b: NodePos): bool =
   a.line < b.line or (a.line == b.line and a.pos < b.pos)
 proc `<=`*(a, b: NodePos): bool = a < b or a == b
 proc `>`*(a, b: NodePos): bool  = b < a
+proc hash(n: NodePos): int = hash(n.line) and hash(n.pos)
 
 ## Forward declarations required by mutual recursion between processNode / remapFunc.
 proc processNode(ctx: var CIRContext, node: NimNode,
@@ -426,6 +436,12 @@ proc processNode(ctx: var CIRContext, node: NimNode,
       result.add processNode(ctx, n, line = line, pos = stmtPos, parent = addr result)
       inc line
 
+  of nnkPar:
+    result = newCIRNode(cnkPar)
+    result.stamp(line, pos)
+    for n in node:
+      result.add processNode(ctx, n, line = line, pos = pos, parent = addr result)
+
   of nnkVarSection, nnkLetSection:
     var stmtPos = 0
     for i,n in node:
@@ -492,9 +508,16 @@ proc processNode(ctx: var CIRContext, node: NimNode,
     result = newCIRNode(cnkForStmt)
     result.stamp(line, pos)
     
+    var idnt = newCIRNode(cnkIdentDef)
     var loopVar = newCIRSym(node[0].strVal)
+    var loopVarTy = getIRType(ctx, node[0])
+
+    idnt.add(loopVar)
+    idnt.add(loopVarTy)
+
+    idnt.stamp(line, pos)
     loopVar.stamp(line, pos)
-    result.add loopVar
+    result.add idnt
     
     let iter = node[1]
     if iter.kind != nnkInfix or iter[0].strVal != "..<":

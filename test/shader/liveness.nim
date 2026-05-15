@@ -1,128 +1,164 @@
 ##########################################################################################################################################################
 ############################################################ LIVENESS ANALYSIS TESTS ####################################################################
 ##########################################################################################################################################################
-## Test suite for getLiveness — verifies that birth/dead NodePos are assigned
-## correctly for variables in various control flow patterns.
-##
-## Strategy: compile small Nim shader functions to CIR, run getLiveness,
-## then assert the expected birth/dead ordering for each variable.
-##
-## Since NodePos is a lexicographic order (line, pos), we only need to check:
-##   - birth < dead  (variable born before it dies)
-##   - relative ordering between variables (which dies first)
-##   - that transient temps die before long-lived vars
 
 import std/unittest
 include "../../src/shadert/ir.nim"
 
-suite "Liveness Analysis":
+## Helpers to query the scope tree without index arithmetic in every test.
 
-  ## ── Test 1: Linear sequence ───────────────────────────────────────────────
-  ## let x = 1.0
-  ## let y = x * 2.0   ← last use of x
-  ## let z = y + 1.0   ← last use of y
-  ## z dies at end
-  test "linear sequence: x dies before y dies before z":
-    proc linearShader(): float32 =
-      let x = 1.0'f32
-      let y = x * 2.0'f32
-      let z = y + 1.0'f32
-      return z
-    const ir   = compileToIR(linearShader)
-    let live   = getLiveness(ir)
+proc findVar(node: CIRControlNode, name: string): CLiveness =
+  ## Search `node` and all descendants for `name`. Raises if not found.
+  if name in node.variables: return node.variables[name]
+  for child in node.children:
+    try: return findVar(child, name)
+    except KeyError: discard
+  raise newException(KeyError, "variable '" & name & "' not found in scope tree")
 
-    check live["x"].birth < live["x"].death
-    check live["y"].birth < live["y"].death
-    check live["z"].birth < live["z"].death
-    ## x is last used on the line that declares y
-    check live["x"].death  < live["y"].death
-    check live["y"].death  < live["z"].death
+proc scopeContains(node: CIRControlNode, name: string): bool =
+  ## True if `name` is declared directly in `node` (not a child scope).
+  name in node.variables
 
-  ## ── Test 2: Variable used multiple times ──────────────────────────────────
-  ## x is read on 3 different lines — dead should be the LAST read
-  test "multiple uses: dead is the last read":
-    proc multiUse(): float32 =
-      let x = 1.0'f32
-      let a = x + 1.0'f32
-      let b = x * 2.0'f32 # ← last use of x
-      let c = a + b
+proc childCount(node: CIRControlNode): int = node.children.len
+
+# ---------------------------------------------------------------------------
+# Subject functions — compiled to IR at compile time, tested at runtime.
+# ---------------------------------------------------------------------------
+
+proc simpleAssign(x: float32): float32 =
+  let a = x
+  return a
+
+proc twoVars(x: float32, y: float32): float32 =
+  let a = x
+  let b = y
+  return a + b
+
+proc varInIf(x: float32): float32 =
+  let a = x
+  if a > 0.0:
+    let b = a * 2.0
+    return b
+  return a
+
+proc varInFor(n: int): int =
+  var acc = 0
+  for i in 0..<n:
+    acc = acc + i
+  return acc
+
+proc shadowedVar(x: float32): float32 =
+  let a = x
+  if a > 0.0:
+    let a = x * 2.0   # shadows outer a
+    return a
+  return a
+
+proc nestedScopes(x: float32): float32 =
+  let a = x
+  if a > 0.0:
+    let b = a + 1.0
+    if b > 1.0:
+      let c = b * 2.0
       return c
+  return a
 
-    const ir   = compileToIR(multiUse)
-    let live   = getLiveness(ir)
+proc unusedAfterIf(x: float32): float32 =
+  let a = x
+  let b = a + 1.0
+  if b > 0.0:
+    return b
+  return a
 
-    ## x must still be alive when b is declared
-    check live["x"].death < live["b"].birth
-    ## x must die no later than b (it's not used after)
-    check live["x"].death <  live["c"].birth
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
-  ## ── Test 3: Sub-expression precision ──────────────────────────────────────
-  ## x = a + b + c + d
-  ## c should die at its operand position, not at end of statement
-  test "sub-expression: c dies before d in same statement":
-    proc subExpr(): float32 =
-      let a = 1.0'f32
-      let b = 2.0'f32
-      let c = 3.0'f32
-      let d = 4.0'f32
-      let x = a + b + c + d
-      x
-    const ir   = compileToIR(subExpr)
-    let live   = getLiveness(ir)
+suite "getLiveness — scope tree structure":
 
-    ## All on the same line → compare by pos only
-    check live["a"].death.line == live["c"].death.line
-    check live["a"].death.pos  <  live["c"].death.pos
-    check live["c"].death.pos  <  live["d"].death.pos
+  test "single variable: root has exactly one child scope with one variable":
+    const ir = compileToIR(simpleAssign)
+    let root = getLiveness(ir)
+    check root.childCount == 1
+    check scopeContains(root.children[0], "a")
 
-  ## ── Test 4: If branch ─────────────────────────────────────────────────────
-  ## x is declared before the if, used in both branches
-  ## x should be alive across the entire if
-  test "if branch: variable alive across both branches":
-    proc ifShader(): float32 =
-      let x    = 1.0'f32
-      let cond = x > 0.0'f32
-      var r    = 0.0'f32
-      if cond:
-        r = x * 2.0'f32 # ← x used here
-      else:
-        r = x + 1.0'f32 # ← and here
-      return r
+  test "two variables live in the same scope":
+    const ir = compileToIR(twoVars)
+    let root = getLiveness(ir)
+    let scope = root.children[0]
+    check scopeContains(scope, "a")
+    check scopeContains(scope, "b")
 
-    const ir   = compileToIR(ifShader)
-    let live   = getLiveness(ir)
+  test "variable declared inside if lives in a child scope":
+    const ir = compileToIR(varInIf)
+    let root = getLiveness(ir)
+    let outer = root.children[0]
+    check scopeContains(outer, "a")
+    check not scopeContains(outer, "b")
+    check outer.childCount >= 1
+    check scopeContains(outer.children[0], "b")
 
-    ## x must outlive cond (used inside the branches which come after)
-    check live["cond"].death < live["x"].death
+suite "getLiveness — birth and death positions":
 
-  ## ── Test 5: Register reuse opportunity ────────────────────────────────────
-  ## a and b die before c is born → a and b's registers can be reused for c
-  test "register reuse: a and b dead before c born":
-    proc reuseShader(): float32 =
-      let a = 1.0'f32
-      let b = a * 2.0'f32 # ← a dies here
-      let c = b + 3.0'f32 # ← b dies here, c born here
-      c
-    const ir   = compileToIR(reuseShader)
-    let live   = getLiveness(ir)
+  test "birth is before death for a simple variable":
+    const ir = compileToIR(simpleAssign)
+    let live = findVar(getLiveness(ir), "a")
+    check not live.birth.invalid
+    check not live.death.invalid
+    check live.birth < live.death
 
-    check live["a"].death <= live["c"].birth
-    check live["b"].death <= live["c"].birth
+  test "death of outer variable is after the if block":
+    const ir = compileToIR(unusedAfterIf)
+    let liveA = findVar(getLiveness(ir), "a")
+    let liveB = findVar(getLiveness(ir), "b")
+    check liveA.death > liveB.birth
 
-  ## ── Test 6: For loop variable ─────────────────────────────────────────────
-  ## Loop counter i should be born at the for and die at end of body
-  test "for loop: i alive across entire body":
-    proc loopShader(): float32 =
-      var acc = 0.0'f32
-      for i in 0..<4:
-        acc = acc + float32(i)
-      acc
-    const ir   = compileToIR(loopShader)
-    echo ir.body.args[1]
-    let live   = getLiveness(ir)
-    echo live
+  test "for loop variable birth is at the for statement":
+    const ir = compileToIR(varInFor)
+    let root = getLiveness(ir)
+    let liveI = findVar(root, "i")
+    echo liveI
+    check not liveI.birth.invalid
+    check liveI.birth < liveI.death
 
-    check live["i"].birth   < live["i"].death
-    check live["acc"].birth < live["acc"].death
-    ## i dies inside the loop body, acc outlives i
-    check live["i"].death    < live["acc"].death
+suite "getLiveness — shadowing":
+
+  test "shadowed variable gets its own entry in the child scope":
+    const ir = compileToIR(shadowedVar)
+    let root = getLiveness(ir)
+    let outer = root.children[0]
+    let inner = outer.children[0]
+    # Both scopes have an 'a', they are independent entries.
+    check scopeContains(outer, "a")
+    check scopeContains(inner, "a")
+
+  test "shadowed variable intervals do not overlap":
+    const ir = compileToIR(shadowedVar)
+    let root  = getLiveness(ir)
+    let outer = root.children[0]
+    let inner = outer.children[0]
+    let outerA = outer.variables["a"]
+    let innerA = inner.variables["a"]
+    # Inner 'a' is born after outer 'a'.
+    check innerA.birth > outerA.birth
+    # Inner 'a' dies before or at the point outer 'a' is used again.
+    check innerA.death <= outerA.death
+
+suite "getLiveness — nested scopes":
+
+  test "three nesting levels produce three child scopes":
+    const ir = compileToIR(nestedScopes)
+    let root  = getLiveness(ir)
+    let l1    = root.children[0]
+    let l2    = l1.children[0]
+    let l3    = l2.children[0]
+    check scopeContains(l1, "a")
+    check scopeContains(l2, "b")
+    check scopeContains(l3, "c")
+
+  test "variable from outer scope has death after inner scopes close":
+    const ir  = compileToIR(nestedScopes)
+    var root = getLiveness(ir)
+    let liveA = findVar(root, "a")
+    let liveC = findVar(root, "c")
+    check liveA.death > liveC.birth

@@ -37,3 +37,13 @@ var ir = compileToIR(myFunc)
 let shader = emitGLSL(myFunc)
 echo shader
 ```
+
+## Shader VM
+
+The shader VM is a shader built to interpret other shader. This allows you to play any shader without actually compiling it, the time for the real shader to compile asynchronously and replace the VM.
+
+How does it works ?
+It's a mix of static constraint imposed by the shader lang and optimizations.
+First building the IR from Nim code (standard, 1:1, just with some rough edges like implicit returns), storing line informations to allow better register allocations.
+Then compute liveness for each variable through a simple syntactical analysis, knowing aliasing is impossible in shader, it greatly simplify liveness analysis.
+Then registers allocation and optimization following each object liveness. Each type in your shader is assigned a set of register.
