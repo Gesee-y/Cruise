@@ -13,7 +13,9 @@ type
   UniformReadOnly*[T] = distinct T ## layout(...) readonly buffer
   UniformWriteOnly*[T] = distinct T ## layout(...) writeonly buffer
   SSBO*[T] = distinct T ## layout(std430) buffer { T name[]; };
-  GlobalIndex*[T] = distinct T
+  GlobalIndex*[N:static int, T] = distinct T
+  LocalIndex*[N:static int, T] = distinct T
+  LocalSize*[N:static int, T] = distinct T
   Image2D*[T] = distinct T ## layout(rgba32f) writeonly uniform image2D
   Sampler2D* = object ## uniform sampler2D name;
 
@@ -56,7 +58,7 @@ type
     cnkEmpty
     cnkDiscardStmt
     cnkWritOnly, cnkReadOnly
-    cnkVarTy, cnkGlobalIndex
+    cnkVarTy, cnkGlobalIndex, cnkLocalIndex, cnkLocalSize
 
   NodePos* = object
     ## Source position within the IR, used for liveness analysis.
@@ -118,36 +120,90 @@ proc add*(a: var CIRNode, b: CIRNode) = a.args.add(b)
 proc newCIRSym*(name: string): CIRNode = CIRNode(kind: cnkSym, name: name)
 proc newCIRIntLit*(i: int): CIRNode = CIRNode(kind: cnkIntLit, intVal: i)
 proc newCIRFloatLit*(i: float): CIRNode = CIRNode(kind: cnkFloatLit, floatVal: i)
-proc `[]`*[T,G](container: seq[T], id: GlobalIndex[G]): T = container[cast[G](id)]
-proc `[]`*[N,T,G](container: array[N,T], id: GlobalIndex[G]): T = container[cast[G](id)]
-proc `[]=`*[T,G](container: var seq[T], id: GlobalIndex[G], v: T) = (container[cast[G](id)] = v)
-proc `[]=`*[N,T,G](container: var array[N,T], id: GlobalIndex[G], v: T) = (container[cast[G](id)] = v)
 
-proc `<`*[G](g1, g2: GlobalIndex[G]): bool = cast[G](g1) < cast[G](g2)
-proc `>`*[G](g1, g2: GlobalIndex[G]): bool = cast[G](g1) > cast[G](g2)
-proc `==`*[G](g1, g2: GlobalIndex[G]): bool = cast[G](g1) == cast[G](g2)
+proc `<`*[N1,N2:static int,G](g1: GlobalIndex[N1,G], g2: GlobalIndex[N2, G]): bool = cast[G](g1) < cast[G](g2)
+proc `>`*[N1,N2:static int,G](g1: GlobalIndex[N1,G], g2: GlobalIndex[N2, G]): bool = cast[G](g1) > cast[G](g2)
+proc `==`*[N1,N2:static int,G](g1: GlobalIndex[N1,G], g2: GlobalIndex[N2, G]): bool = cast[G](g1) == cast[G](g2)
 
-proc `+`*[G](g1, g2: GlobalIndex[G]): G = cast[G](g1) + cast[G](g2)
-proc `+`*[G](g: GlobalIndex[G], n: G): G = cast[G](g) + n
-proc `+`*[G](n: G, g: GlobalIndex[G]): G = n + cast[G](g)
-proc `+`*[G](g: GlobalIndex[G]): G = +cast[G](g)
-proc `-`*[G](g1, g2: GlobalIndex[G]): G = cast[G](g1) - cast[G](g2)
-proc `-`*[G](g: GlobalIndex[G], n: G): G = cast[G](g) - n
-proc `-`*[G](n: G, g: GlobalIndex[G]): G = n - cast[G](g)
-proc `-`*[G](g: GlobalIndex[G]): G = -cast[G](g)
-proc `*`*[G](g1, g2: GlobalIndex[G]): G = cast[G](g1) * cast[G](g2)
-proc `*`*[G](g: GlobalIndex[G], n: G): G = cast[G](g) * n
-proc `*`*[G](n: G, g: GlobalIndex[G]): G = n * cast[G](g)
-proc `/`*[G](g1, g2: GlobalIndex[G]): G = cast[G](g1) / cast[G](g2)
-proc `/`*[G](g: GlobalIndex[G], n: G): G = cast[G](g) / n
-proc `/`*[G](n: G, g: GlobalIndex[G]): G = n / cast[G](g)
-proc `div`*[G](g1, g2: GlobalIndex[G]): G = cast[G](g1) div cast[G](g2)
-proc `div`*[G](g: GlobalIndex[G], n: G): G = cast[G](g) div n
-proc `div`*[G](n: G, g: GlobalIndex[G]): G = n div cast[G](g)
-proc `mod`*[G](g1, g2: GlobalIndex[G]): G = cast[G](g1) mod cast[G](g2)
-proc `mod`*[G](g: GlobalIndex[G], n: G): G = cast[G](g) mod n
-proc `mod`*[G](n: G, g: GlobalIndex[G]): G = n mod cast[G](g)
+proc `+`*[N1,N2:static int,G](g1: GlobalIndex[N1,G], g2: GlobalIndex[N2,G]): G = cast[G](g1) + cast[G](g2)
+proc `+`*[N:static int,G](g: GlobalIndex[N,G], n: G): G = cast[G](g) + n
+proc `+`*[N:static int,G](n: G, g: GlobalIndex[N,G]): G = n + cast[G](g)
+proc `+`*[N:static int,G](g: GlobalIndex[N,G]): G = +cast[G](g)
+proc `-`*[N1,N2:static int,G](g1: GlobalIndex[N1,G], g2: GlobalIndex[N2,G]): G = cast[G](g1) - cast[G](g2)
+proc `-`*[N:static int,G](g: GlobalIndex[N,G], n: G): G = cast[G](g) - n
+proc `-`*[N:static int,G](n: G, g: GlobalIndex[N,G]): G = n - cast[G](g)
+proc `-`*[N:static int,G](g: GlobalIndex[N,G]): G = -cast[G](g)
+proc `*`*[N1,N2:static int,G](g1: GlobalIndex[N1,G], g2: GlobalIndex[N2,G]): G = cast[G](g1) * cast[G](g2)
+proc `*`*[N:static int,G](g: GlobalIndex[N,G], n: G): G = cast[G](g) * n
+proc `*`*[N:static int,G](n: G, g: GlobalIndex[N,G]): G = n * cast[G](g)
+proc `/`*[N1,N2:static int,G](g1: GlobalIndex[N1,G], g2: GlobalIndex[N2,G]): G = cast[G](g1) / cast[G](g2)
+proc `/`*[N:static int,G](g: GlobalIndex[N,G], n: G): G = cast[G](g) / n
+proc `/`*[N:static int,G](n: G, g: GlobalIndex[N,G]): G = n / cast[G](g)
+proc `div`*[N1,N2:static int,G](g1: GlobalIndex[N1,G], g2: GlobalIndex[N2,G]): G = cast[G](g1) div cast[G](g2)
+proc `div`*[N:static int,G](g: GlobalIndex[N,G], n: G): G = cast[G](g) div n
+proc `div`*[N:static int,G](n: G, g: GlobalIndex[N,G]): G = n div cast[G](g)
+proc `mod`*[N1,N2:static int,G](g1: GlobalIndex[N1,G], g2: GlobalIndex[N2,G]): G = cast[G](g1) mod cast[G](g2)
+proc `mod`*[N:static int,G](g: GlobalIndex[N,G], n: G): G = cast[G](g) mod n
+proc `mod`*[N:static int,G](n: G, g: GlobalIndex[N,G]): G = n mod cast[G](g)
 
+proc `[]`*[N: static int,T,G](container: seq[T], id: GlobalIndex[N,G]): T = container[cast[G](id)]
+proc `[]`*[N,N2: static int,T,G](container: array[N,T], id: GlobalIndex[N2,G]): T = container[cast[G](id)]
+proc `[]=`*[N: static int,T,G](container: var seq[T], id: GlobalIndex[N,G], v: T) = (container[cast[G](id)] = v)
+proc `[]=`*[N,N2: static int,T,G](container: var array[N,T], id: GlobalIndex[N2,G], v: T) = (container[cast[G](id)] = v)
+
+###### Local Index
+
+proc `<`*[N1,N2:static int,G](g1: LocalIndex[N1,G], g2: LocalIndex[N2,G]): bool = cast[G](g1) < cast[G](g2)
+proc `>`*[N1,N2:static int,G](g1: LocalIndex[N1,G], g2: LocalIndex[N2,G]): bool = cast[G](g1) > cast[G](g2)
+proc `==`*[N1,N2:static int,G](g1: LocalIndex[N1,G], g2: LocalIndex[N2,G]): bool = cast[G](g1) == cast[G](g2)
+
+proc `+`*[N1,N2:static int,G](g1: LocalIndex[N1,G], g2: LocalIndex[N2,G]): G = cast[G](g1) + cast[G](g2)
+proc `+`*[N:static int,G](g: LocalIndex[N,G], n: G): G = cast[G](g) + n
+proc `+`*[N:static int,G](n: G, g: LocalIndex[N,G]): G = n + cast[G](g)
+proc `+`*[N:static int,G](g: LocalIndex[N,G]): G = +cast[G](g)
+proc `-`*[N1,N2:static int,G](g1: LocalIndex[N1,G], g2: LocalIndex[N2,G]): G = cast[G](g1) - cast[G](g2)
+proc `-`*[N:static int,G](g: LocalIndex[N,G], n: G): G = cast[G](g) - n
+proc `-`*[N:static int,G](n: G, g: LocalIndex[N,G]): G = n - cast[G](g)
+proc `-`*[N:static int,G](g: LocalIndex[N,G]): G = -cast[G](g)
+proc `*`*[N1,N2:static int,G](g1: LocalIndex[N1,G], g2: LocalIndex[N2,G]): G = cast[G](g1) * cast[G](g2)
+proc `*`*[N:static int,G](g: LocalIndex[N,G], n: G): G = cast[G](g) * n
+proc `*`*[N:static int,G](n: G, g: LocalIndex[N,G]): G = n * cast[G](g)
+proc `/`*[N1,N2:static int,G](g1: LocalIndex[N1,G], g2: LocalIndex[N2,G]): G = cast[G](g1) / cast[G](g2)
+proc `/`*[N:static int,G](g: LocalIndex[N,G], n: G): G = cast[G](g) / n
+proc `/`*[N:static int,G](n: G, g: LocalIndex[N,G]): G = n / cast[G](g)
+proc `div`*[N1,N2:static int,G](g1: LocalIndex[N1,G], g2: LocalIndex[N2,G]): G = cast[G](g1) div cast[G](g2)
+proc `div`*[N:static int,G](g: LocalIndex[N,G], n: G): G = cast[G](g) div n
+proc `div`*[N:static int,G](n: G, g: LocalIndex[N,G]): G = n div cast[G](g)
+proc `mod`*[N1,N2:static int,G](g1: LocalIndex[N1,G], g2: LocalIndex[N2,G]): G = cast[G](g1) mod cast[G](g2)
+proc `mod`*[N:static int,G](g: LocalIndex[N,G], n: G): G = cast[G](g) mod n
+proc `mod`*[N:static int,G](n: G, g: LocalIndex[N,G]): G = n mod cast[G](g)
+
+######## Local size
+
+proc `<`*[N1,N2:static int,G](g1: LocalSize[N1,G], g2: LocalSize[N2,G]): bool = cast[G](g1) < cast[G](g2)
+proc `>`*[N1,N2:static int,G](g1: LocalSize[N1,G], g2: LocalSize[N2,G]): bool = cast[G](g1) > cast[G](g2)
+proc `==`*[N1,N2:static int,G](g1: LocalSize[N1,G], g2: LocalSize[N2,G]): bool = cast[G](g1) == cast[G](g2)
+
+proc `+`*[N1,N2:static int,G](g1: LocalSize[N1,G], g2: LocalSize[N2,G]): G = cast[G](g1) + cast[G](g2)
+proc `+`*[N:static int,G](g: LocalSize[N,G], n: G): G = cast[G](g) + n
+proc `+`*[N:static int,G](n: G, g: LocalSize[N,G]): G = n + cast[G](g)
+proc `+`*[N:static int,G](g: LocalSize[N,G]): G = +cast[G](g)
+proc `-`*[N1,N2:static int,G](g1: LocalSize[N1,G], g2: LocalSize[N2,G]): G = cast[G](g1) - cast[G](g2)
+proc `-`*[N:static int,G](g: LocalSize[N,G], n: G): G = cast[G](g) - n
+proc `-`*[N:static int,G](n: G, g: LocalSize[N,G]): G = n - cast[G](g)
+proc `-`*[N:static int,G](g: LocalSize[N,G]): G = -cast[G](g)
+proc `*`*[N1,N2:static int,G](g1: LocalSize[N1,G], g2: LocalSize[N2,G]): G = cast[G](g1) * cast[G](g2)
+proc `*`*[N:static int,G](g: LocalSize[N,G], n: G): G = cast[G](g) * n
+proc `*`*[N:static int,G](n: G, g: LocalSize[N,G]): G = n * cast[G](g)
+proc `/`*[N1,N2:static int,G](g1: LocalSize[N1,G], g2: LocalSize[N2,G]): G = cast[G](g1) / cast[G](g2)
+proc `/`*[N:static int,G](g: LocalSize[N,G], n: G): G = cast[G](g) / n
+proc `/`*[N:static int,G](n: G, g: LocalSize[N,G]): G = n / cast[G](g)
+proc `div`*[N1,N2:static int,G](g1: LocalSize[N1,G], g2: LocalSize[N2,G]): G = cast[G](g1) div cast[G](g2)
+proc `div`*[N:static int,G](g: LocalSize[N,G], n: G): G = cast[G](g) div n
+proc `div`*[N:static int,G](n: G, g: LocalSize[N,G]): G = n div cast[G](g)
+proc `mod`*[N1,N2:static int,G](g1: LocalSize[N1,G], g2: LocalSize[N2,G]): G = cast[G](g1) mod cast[G](g2)
+proc `mod`*[N:static int,G](g: LocalSize[N,G], n: G): G = cast[G](g) mod n
+proc `mod`*[N:static int,G](n: G, g: LocalSize[N,G]): G = n mod cast[G](g)
 
 proc `<`*(a, b: NodePos): bool =
   a.line < b.line or (a.line == b.line and a.pos < b.pos)
@@ -296,8 +352,8 @@ proc getIRType(ctx: var CIRContext, node: NimNode): CIRNode =
   let typeName = if sym.kind == nnkBracketExpr: sym[1].repr else: sym.repr
   let paramName = node.strVal
 
-  if typeName.startsWith("GlobalIndex"):
-    return ctx.getIRType(sym[1])
+  if sym.repr.startsWith("GlobalIndex"):
+    return ctx.getIRType(sym[2])
 
   if isWrapperType(typeName):
     if paramName notin ctx.emittedTypes:
@@ -735,10 +791,11 @@ proc processParams(ctx: var CIRContext, params: NimNode): seq[CIRNode] =
     let varSym = identDef[0]
     let typeName = varSym.getTypeInst().repr
 
-    if typeName == "GlobalIndex":
+    if typeName.contains("GlobalIndex"):
       ctx.gIndex = newCIRNode(cnkGlobalIndex)
       ctx.gIndex.add(newCIRSym(varSym.strVal))
       ctx.gIndex.add(ctx.getIRType(varSym))
+      ctx.gIndex.add(newCIRIntLit(varSym.getTypeInst()[1].intVal))
       continue
 
     for j in 0..<identDef.len - 2:
@@ -786,6 +843,8 @@ macro compileToIR*(fn: typed): CIRContext =
   var signature = newCIRNode(cnkFuncSig)
   signature.add(newCIRSym name.strVal)
   signature.add(newCIRNode(cnkEmpty))
+
+  ctx.gIndex = newCIRNode(cnkEmpty)
 
   let args = ctx.processParams(params)
   signature.args.add(args)

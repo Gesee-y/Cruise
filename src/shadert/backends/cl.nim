@@ -30,7 +30,7 @@ proc emitQualifier(node: CIRNode): string =
   of cnkEmpty:     ""
   else:            ""
 
-proc emitCL(node: CIRNode, isKernel = false, depth=1): string =
+proc emitCL(node: CIRNode, isKernel = false, depth=1, ctx: ptr CIRContext = nil): string =
   let indent = repeat(INDENT_SYM, depth)
   case node.kind:
 
@@ -61,6 +61,15 @@ proc emitCL(node: CIRNode, isKernel = false, depth=1): string =
   of cnkSampler:
     "sampler_t " & node.args[1].name
 
+  of cnkGlobalIndex:
+    indent & emitType(node.args[1]) & " " & node.args[0].name & " = get_global_id(" & $node.args[2].intVal & ");\n"
+
+  of cnkLocalIndex:
+    indent & emitType(node.args[1]) & " " & node.args[0].name & " = get_local_id(" & $node.args[2].intVal & ");\n"
+
+  of cnkLocalSize:
+    indent & emitType(node.args[1]) & " " & node.args[0].name & " = get_local_size(" & $node.args[2].intVal & ");\n"
+
   of cnkFuncSig:
     let name     = node.args[0].name
     let retType  = if node.args[1].kind == cnkEmpty: "void"
@@ -72,7 +81,8 @@ proc emitCL(node: CIRNode, isKernel = false, depth=1): string =
   of cnkFuncDef:
     let sig  = emitCL(node.args[0], isKernel)
     let body = emitCL(node.args[1])
-    sig & " {\n" & body & "}\n"
+    let idx = if isKernel and not ctx.isNil and ctx.gIndex.kind == cnkGlobalIndex: emitCL(ctx.gIndex, depth=depth) else: ""
+    sig & " {\n" & idx & body & "}\n"
 
   of cnkInfix:
     emitCL(node.args[1]) & " " & node.args[0].name & " " & emitCL(node.args[2])
@@ -152,14 +162,15 @@ proc emitCL(node: CIRNode, isKernel = false, depth=1): string =
 
 
 proc emitOpenCL*(ctx: CIRContext): string =
+
   result &= emitCL(ctx.typeDecl)
   result &= emitCL(ctx.forwardDecl)
   result &= emitCL(ctx.funcDef)
-  result &= emitCL(ctx.body, isKernel = true) 
+  result &= emitCL(ctx.body, isKernel = true, ctx=addr ctx) 
 
 when isMainModule:
 
-  proc tester(x: int, y: int) =
+  proc tester(x: int, y: int, id: GlobalIndex[0,int]) =
     var c = x + y
     var d = x - y
     let f = d + c
@@ -180,4 +191,5 @@ when isMainModule:
       d += i
 
   var ctx = compileToIR(tester)
+  echo ctx.gIndex
   echo emitOpenCL(ctx)
