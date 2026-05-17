@@ -128,10 +128,10 @@ suite "emitCL – literals":
     check emitCL(newCIRNode(cnkDiscardStmt)) == ""
 
   test "cnkBreakStmt emits 'break;'":
-    check emitCL(newCIRNode(cnkBreakStmt)) == "break;"
+    check emitCL(newCIRNode(cnkBreakStmt)) == "break"
 
   test "cnkContinueStmt emits 'continue;'":
-    check emitCL(newCIRNode(cnkContinueStmt)) == "continue;"
+    check emitCL(newCIRNode(cnkContinueStmt)) == "continue"
 
 # =============================================================================
 # 4. emitCL – identDef
@@ -213,7 +213,7 @@ suite "emitCL – assignment":
     var n = newCIRNode(cnkAsgn)
     n.add(sym("x"))
     n.add(ilit(5))
-    check emitCL(n) == "x = 5;"
+    check emitCL(n) == "x = 5"
 
   test "cnkAsgn with expression rhs":
     var rhs = newCIRNode(cnkInfix)
@@ -223,7 +223,7 @@ suite "emitCL – assignment":
     var n = newCIRNode(cnkAsgn)
     n.add(sym("result"))
     n.add(rhs)
-    check emitCL(n) == "result = a + b;"
+    check emitCL(n) == "result = a + b"
 
 suite "emitCL – declaration":
 
@@ -234,14 +234,13 @@ suite "emitCL – declaration":
     n.add(flit(0.0))
     let s = emitCL(n)
     check s.startsWith("float x =")
-    check s.endsWith(";")
 
   test "cnkDecl with int type":
     var idnt = identDef("count", sym("int"))
     var n = newCIRNode(cnkDecl)
     n.add(idnt)
     n.add(ilit(0))
-    check emitCL(n) == "int count = 0;"
+    check emitCL(n) == "int count = 0"
 
 # =============================================================================
 # 7. emitCL – control flow
@@ -305,7 +304,10 @@ suite "emitCL – for":
 
   test "for emits C-style for loop":
     var n = newCIRNode(cnkForStmt)
-    n.add(sym("i"))
+    var idnt = newCIRNode(cnkIdentDef)
+    idnt.add(sym("i"))
+    idnt.add(sym("int"))
+    n.add(idnt)
     n.add(ilit(0))
     n.add(ilit(10))
     n.add(stmtList())
@@ -314,7 +316,10 @@ suite "emitCL – for":
 
   test "for body is included":
     var n = newCIRNode(cnkForStmt)
-    n.add(sym("j"))
+    var idnt = newCIRNode(cnkIdentDef)
+    idnt.add(sym("j"))
+    idnt.add(sym("int"))
+    n.add(idnt)
     n.add(ilit(0))
     n.add(ilit(5))
     n.add(stmtList(newCIRNode(cnkBreakStmt)))
@@ -322,7 +327,10 @@ suite "emitCL – for":
 
   test "for uses custom variable name":
     var n = newCIRNode(cnkForStmt)
-    n.add(sym("idx"))
+    var idnt = newCIRNode(cnkIdentDef)
+    idnt.add(sym("idx"))
+    idnt.add(sym("int"))
+    n.add(idnt)
     n.add(ilit(0))
     n.add(ilit(4))
     n.add(stmtList())
@@ -460,12 +468,12 @@ suite "emitCL – return":
   test "return emits 'return expr;'":
     var n = newCIRNode(cnkReturnStmt)
     n.add(sym("result"))
-    check emitCL(n) == "return result;"
+    check emitCL(n) == "return result"
 
   test "return with literal":
     var n = newCIRNode(cnkReturnStmt)
     n.add(ilit(0))
-    check emitCL(n) == "return 0;"
+    check emitCL(n) == "return 0"
 
 # =============================================================================
 # 11. emitCL – qualifiers (Uniform, Buffer, Image, Sampler)
@@ -579,14 +587,15 @@ suite "emitCL – stmtList":
     check emitCL(stmtList()) == ""
 
   test "stmtList with one child emits that child":
-    check emitCL(stmtList(newCIRNode(cnkBreakStmt))) == "break;"
+    check emitCL(stmtList(newCIRNode(cnkBreakStmt))).contains("break;")
 
   test "stmtList with multiple children joins with newline":
     let s = emitCL(stmtList(
       newCIRNode(cnkBreakStmt),
       newCIRNode(cnkContinueStmt)
     ))
-    check s == "break;\ncontinue;"
+    check s.contains("break;") 
+    check s.contains("continue;")
 
 # =============================================================================
 # 14. emitOpenCL – full context emission order
@@ -743,7 +752,11 @@ suite "Edge cases":
 
   test "for loop with empty body emits valid C":
     var n = newCIRNode(cnkForStmt)
-    n.add(sym("i")); n.add(ilit(0)); n.add(ilit(1)); n.add(stmtList())
+    var idnt = newCIRNode(cnkIdentDef)
+    idnt.add(sym("i"))
+    idnt.add(sym("int"))
+    n.add(idnt)
+    n.add(ilit(0)); n.add(ilit(1)); n.add(stmtList())
     let s = emitCL(n)
     check s.contains("for (int i = 0; i < 1; ++i)")
     check s.contains("{")

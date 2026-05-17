@@ -44,6 +44,7 @@ proc invalid(n: NodePos): bool = n.line == -1 and n.pos == -1
 # Reverse liveness analysis.
 # This greatly simplify analysis because the first time a symbol is encountered is his death
 # and the declaration is his birth
+# I almost cried on this one
 proc getLiveness(ctx: CIRContext): CIRControlNode =
   # Our stack to do a DFS
   var stack: seq[CIRNode] = @[ctx.body.args[1]]

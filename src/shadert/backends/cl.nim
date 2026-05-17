@@ -101,7 +101,7 @@ proc emitCL(node: CIRNode, isKernel = false, depth=1): string =
 
   of cnkForStmt:
     let forIndent = repeat(INDENT_SYM, depth-1)
-    let v     = node.args[0].name
+    let v     = node.args[0].args[0].name
     let start = emitCL(node.args[1])
     let stop  = emitCL(node.args[2])
     let body  = emitCL(node.args[3], depth=depth)
