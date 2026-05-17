@@ -44,7 +44,7 @@
 
 import math, strutils, tables, dynlib
 import ../gpuarrays
-import ../../../externalLib/nimopencl/src/opencl   ## raw OpenCL 1.2 bindings
+import ../../../externalLib/nimopencl/src/opencl ## raw OpenCL 1.2 bindings
 
 ##########################################################################################################################################################
 ## CONTEXT
@@ -55,18 +55,18 @@ when defined(windows):
 elif defined(linux):
   const clDll = "libOpenCL.so.1"
 elif defined(macosx):
-  const clDll = "libOpenCL.dylib"  # deprecated mais existe encore
+  const clDll = "libOpenCL.dylib" # deprecated mais existe encore
 
 type
   CLContext* = object
     ## Owns the OpenCL platform, device, context, and command queue.
     ## One instance is typically enough for the whole application.
-    platform*:  Pplatform_id
-    device*:    Pdevice_id
-    ctx*:       Pcontext
-    queue*:     Pcommand_queue
+    platform*: Pplatform_id
+    device*: Pdevice_id
+    ctx*: Pcontext
+    queue*: Pcommand_queue
 
-var gCL* {.threadvar.}: CLContext  ## Process-wide default context.
+var gCL* {.threadvar.}: CLContext ## Process-wide default context.
 
 proc isOpenCLAvailable*(): bool =
   let lib = loadLib(clDll)
@@ -95,7 +95,7 @@ proc initOpenCL*(deviceType: TDeviceType = DEVICE_TYPE_GPU) =
     err = getDeviceIDs(gCL.platform, DEVICE_TYPE_CPU, 1, addr gCL.device, nil)
   check err
 
-  gCL.ctx   = createContext(nil, 1, addr gCL.device, nil, nil, addr err)
+  gCL.ctx = createContext(nil, 1, addr gCL.device, nil, nil, addr err)
   check err
   gCL.queue = createCommandQueue(gCL.ctx, gCL.device, 0, addr err)
   check err
@@ -104,7 +104,7 @@ proc shutdownOpenCL*() =
   ## Release the default OpenCL context and command queue.
   ## Call at application exit.
   if gCL.queue != nil: check releaseCommandQueue(gCL.queue)
-  if gCL.ctx   != nil: check releaseContext(gCL.ctx)
+  if gCL.ctx != nil: check releaseContext(gCL.ctx)
   gCL = CLContext()
 
 ##########################################################################################################################################################
@@ -116,13 +116,13 @@ type
     ## Device-side backing store for a CLSeq.
     ## `mem` is a cl_mem buffer of `cap` elements of type T.
     mem*: Pmem
-    cap*: int   ## allocated element count (NOT byte count)
+    cap*: int ## allocated element count (NOT byte count)
 
   CLAData*[N: static int, T] = ref object
     ## Device-side backing store for a CLArray of fixed size N.
     mem*: Pmem
 
-  CLSeq*[T]                  = GPUSeq[CLSData[T], T]
+  CLSeq*[T] = GPUSeq[CLSData[T], T]
   CLArray*[N: static int, T] = GPUArray[N, CLAData[N, T], T]
 
 ##########################################################################################################################################################
@@ -157,9 +157,9 @@ proc ensureLen*[T](c: var CLSeq[T]) =
     check err
     return
 
-  if c.length <= c.data.cap: return   ## already fits
+  if c.length <= c.data.cap: return ## already fits
 
-  let newCap   = max(c.length, c.data.cap * 2)
+  let newCap = max(c.length, c.data.cap * 2)
   let newBytes = newCap * sizeof(T)
   var err: TClResult
 
@@ -179,10 +179,10 @@ proc ensureLen*[T](c: var CLSeq[T]) =
 proc clone*[T](src: CLSeq[T]): CLSeq[T] =
   ## Deep copy: allocate a new device buffer and copy all elements into it.
   ## The result has an independent reference count (refcount = 1).
-  result.length   = src.length
+  result.length = src.length
   result.capacity = src.capacity
   result.startIdx = src.startIdx
-  result.count    = newRefCount()
+  result.count = newRefCount()
 
   if src.data == nil or src.length == 0: return
 
@@ -201,7 +201,7 @@ proc clone*[T](src: CLSeq[T]): CLSeq[T] =
 proc clone*[N: static int, T](src: CLArray[N, T]): CLArray[N, T] =
   ## Deep copy of a CLArray.
   result.startIdx = src.startIdx
-  result.count    = newRefCount()
+  result.count = newRefCount()
   if src.data == nil: return
   var err: TClResult
   let bytes = N * sizeof(T)
@@ -226,13 +226,13 @@ proc newCLSeqOfCap*[T](cap: int): CLSeq[T] =
     cap: cap)
   check err
   result.capacity = cap
-  result.length   = 0
-  result.count    = newRefCount()
+  result.length = 0
+  result.count = newRefCount()
 
 proc newCLSeq*[T](n: int = 0): CLSeq[T] =
   ## Allocate a CLSeq of length `n`, zero-initialised on the device.
   var err: TClResult
-  let cap   = max(n, 1)
+  let cap = max(n, 1)
   let bytes = cap * sizeof(T)
   result.data = CLSData[T](
     mem: createBuffer(gCL.ctx, MEM_READ_WRITE or MEM_ALLOC_HOST_PTR,
@@ -240,8 +240,8 @@ proc newCLSeq*[T](n: int = 0): CLSeq[T] =
     cap: cap)
   check err
   result.capacity = cap
-  result.length   = n
-  result.count    = newRefCount()
+  result.length = n
+  result.count = newRefCount()
 
 proc newCLArray*[N: static int, T](): CLArray[N, T] =
   ## Allocate a CLArray of static size N, zero-initialised on the device.
@@ -262,9 +262,9 @@ proc copyTo*[T](dest: var CLSeq[T], src: openArray[T], dStart: int) =
   if src.len == 0: return
   dest.ensureLen()
   let byteOffset = (dest.startIdx + dStart) * sizeof(T)
-  let byteSize   = src.len * sizeof(T)
+  let byteSize = src.len * sizeof(T)
   check enqueueWriteBuffer(gCL.queue, dest.data.mem,
-    CL_TRUE,                      ## blocking write
+    CL_TRUE, ## blocking write
     byteOffset, byteSize,
     unsafeAddr src[0],
     0, nil, nil)
@@ -308,12 +308,12 @@ proc toArray*[N: static int, T](c: CLArray[N, T]): array[N, T] =
 ## toGPU — CPU → device convenience constructors
 ##########################################################################################################################################################
 
-proc toGPU*[B:CLSData,T](arr: openArray[T]): CLSeq[T] =
+proc toGPU*[B: CLSData, T](arr: openArray[T]): CLSeq[T] =
   ## Upload a CPU seq / array to a new CLSeq on the device.
   result = newCLSeq[T](arr.len)
   result.copyTo(arr, 0)
 
-proc toGPU*[N: static int, B:CLAData, T](arr: array[N, T]): CLArray[N, T] =
+proc toGPU*[N: static int, B: CLAData, T](arr: array[N, T]): CLArray[N, T] =
   ## Upload a fixed-size CPU array to a new CLArray on the device.
   result = newCLArray[N, T]()
   result.copyTo(arr, 0)
@@ -325,10 +325,10 @@ proc toGPU*[N: static int, B:CLAData, T](arr: array[N, T]): CLArray[N, T] =
 proc toOpenArray*[T](c: CLSeq[T], start, stop: int): CLSeq[T] =
   ## Return a logical view into `c` covering indices [start, stop).
   ## No device memory is allocated or copied — both objects share the same cl_mem.
-  result.data     = c.data
-  result.count    = c.count
+  result.data = c.data
+  result.count = c.count
   result.startIdx = c.startIdx + start
-  result.length   = stop - start
+  result.length = stop - start
   result.capacity = c.capacity
   if c.count != nil: discard c.count.acquire()
 
@@ -338,7 +338,7 @@ proc toOpenArray*[T](c: CLSeq[T], start, stop: int): CLSeq[T] =
 
 type KernelEntry = object
   program: Pprogram
-  kernel:  Pkernel
+  kernel: Pkernel
 
 var kernelCache {.global.} = initTable[string, KernelEntry]()
 
@@ -346,9 +346,9 @@ proc getKernel(src, name: string): Pkernel =
   ## Return a cached kernel, compiling it on first call.
   if name in kernelCache: return kernelCache[name].kernel
 
-  var err:    TClResult
+  var err: TClResult
   var srcPtr: cstring = src.cstring
-  var srcLen: int     = src.len
+  var srcLen: int = src.len
 
   let prog = createProgramWithSource(gCL.ctx, 1,
                cast[cstringArray](addr srcPtr),
@@ -375,17 +375,17 @@ proc getKernel(src, name: string): Pkernel =
 
 proc clTypeName(T: typedesc): string {.compileTime.} =
   ## Map a Nim type to its OpenCL C scalar type name.
-  when T is float32:  "float"
-  elif T is float64:  "double"
-  elif T is int32:    "int"
-  elif T is int64:    "long"
-  elif T is uint32:   "uint"
-  elif T is uint64:   "ulong"
-  elif T is int16:    "short"
-  elif T is uint16:   "ushort"
-  elif T is int8:     "char"
-  elif T is uint8:    "uchar"
-  else: "float"   ## safe fallback
+  when T is float32: "float"
+  elif T is float64: "double"
+  elif T is int32: "int"
+  elif T is int64: "long"
+  elif T is uint32: "uint"
+  elif T is uint64: "ulong"
+  elif T is int16: "short"
+  elif T is uint16: "ushort"
+  elif T is int8: "char"
+  elif T is uint8: "uchar"
+  else: "float" ## safe fallback
 
 proc binOpKernelSrc(clTy, opSym, kernName: string): string =
   ## Generate an element-wise binary kernel: out[i] = a[i] OP b[i]
@@ -441,17 +441,17 @@ proc dispatchBinOpInto[T](a, b: CLSeq[T], op, kernName: string, dst: var CLSeq[T
   ## Write element-wise `a OP b` into `dst`.  Reuses `dst`'s cl_mem buffer
   ## when its capacity is large enough; grows it (via ensureLen) otherwise.
   let clTy = clTypeName(T)
-  let kn   = kernName & "_" & clTy
-  let src  = binOpKernelSrc(clTy, op, kn)
-  let k    = getKernel(src, kn)
+  let kn = kernName & "_" & clTy
+  let src = binOpKernelSrc(clTy, op, kn)
+  let k = getKernel(src, kn)
 
   dst.length = a.length
   dst.ensureLen()
 
-  var aOff   = a.startIdx.cint
-  var bOff   = b.startIdx.cint
+  var aOff = a.startIdx.cint
+  var bOff = b.startIdx.cint
   var dstOff = dst.startIdx.cint
-  var n      = a.length.cint
+  var n = a.length.cint
 
   check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
   check setKernelArg(k, 1, sizeof(Pmem), addr b.data.mem)
@@ -469,24 +469,25 @@ proc dispatchBinOp[T](a, b: CLSeq[T], op, kernName: string): CLSeq[T] =
   result = newCLSeq[T](a.length)
   dispatchBinOpInto(a, b, op, kernName, result)
 
-proc dispatchScalarOpInto[T](a: CLSeq[T], scalar: T, op, kernName: string, dst: var CLSeq[T]) =
+proc dispatchScalarOpInto[T](a: CLSeq[T], scalar: T, op, kernName: string,
+    dst: var CLSeq[T]) =
   ## Write element-wise `a OP scalar` into `dst`.  Reuses `dst`'s cl_mem buffer
   ## when its capacity is large enough; grows it (via ensureLen) otherwise.
   let clTy = clTypeName(T)
-  let kn   = kernName & "_" & clTy
-  let src  = scalarOpKernelSrc(clTy, op, kn)
-  let k    = getKernel(src, kn)
+  let kn = kernName & "_" & clTy
+  let src = scalarOpKernelSrc(clTy, op, kn)
+  let k = getKernel(src, kn)
 
   dst.length = a.length
   dst.ensureLen()
 
-  var aOff   = a.startIdx.cint
+  var aOff = a.startIdx.cint
   var dstOff = dst.startIdx.cint
-  var n      = a.length.cint
-  var s      = scalar
+  var n = a.length.cint
+  var s = scalar
 
   check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
-  check setKernelArg(k, 1, sizeof(T),    addr s)
+  check setKernelArg(k, 1, sizeof(T), addr s)
   check setKernelArg(k, 2, sizeof(Pmem), addr dst.data.mem)
   check setKernelArg(k, 3, sizeof(cint), addr aOff)
   check setKernelArg(k, 4, sizeof(cint), addr dstOff)
@@ -504,16 +505,16 @@ proc dispatchUnaryOpInto[T](a: CLSeq[T], fn, kernName: string, dst: var CLSeq[T]
   ## Write element-wise `fn(a)` into `dst`.  Reuses `dst`'s cl_mem buffer
   ## when its capacity is large enough; grows it (via ensureLen) otherwise.
   let clTy = clTypeName(T)
-  let kn   = kernName & "_" & clTy
-  let src  = unaryOpKernelSrc(clTy, fn, kn)
-  let k    = getKernel(src, kn)
+  let kn = kernName & "_" & clTy
+  let src = unaryOpKernelSrc(clTy, fn, kn)
+  let k = getKernel(src, kn)
 
   dst.length = a.length
   dst.ensureLen()
 
-  var aOff   = a.startIdx.cint
+  var aOff = a.startIdx.cint
   var dstOff = dst.startIdx.cint
-  var n      = a.length.cint
+  var n = a.length.cint
 
   check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
   check setKernelArg(k, 1, sizeof(Pmem), addr dst.data.mem)
@@ -533,17 +534,18 @@ proc dispatchUnaryOp[T](a: CLSeq[T], fn, kernName: string): CLSeq[T] =
 ## CLArray DISPATCH HELPERS — native GPU kernels (no CPU round-trip)
 ##########################################################################################################################################################
 
-proc dispatchBinOpArr*[N: static int, T](a, b: CLArray[N, T], op, kernName: string): CLArray[N, T] =
+proc dispatchBinOpArr*[N: static int, T](a, b: CLArray[N, T], op,
+    kernName: string): CLArray[N, T] =
   ## Binary element-wise kernel for CLArray. Reuses the same cached kernel as CLSeq.
   let clTy = clTypeName(T)
-  let kn   = kernName & "_" & clTy
-  let src  = binOpKernelSrc(clTy, op, kn)
-  let k    = getKernel(src, kn)
-  result   = newCLArray[N, T]()
-  var aOff   = 0.cint
-  var bOff   = 0.cint
+  let kn = kernName & "_" & clTy
+  let src = binOpKernelSrc(clTy, op, kn)
+  let k = getKernel(src, kn)
+  result = newCLArray[N, T]()
+  var aOff = 0.cint
+  var bOff = 0.cint
   var outOff = 0.cint
-  var n      = N.cint
+  var n = N.cint
   check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
   check setKernelArg(k, 1, sizeof(Pmem), addr b.data.mem)
   check setKernelArg(k, 2, sizeof(Pmem), addr result.data.mem)
@@ -554,19 +556,20 @@ proc dispatchBinOpArr*[N: static int, T](a, b: CLArray[N, T], op, kernName: stri
   var gs = N
   check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
 
-proc dispatchScalarOpArr*[N: static int, T](a: CLArray[N, T], scalar: T, op, kernName: string): CLArray[N, T] =
+proc dispatchScalarOpArr*[N: static int, T](a: CLArray[N, T], scalar: T, op,
+    kernName: string): CLArray[N, T] =
   ## Scalar broadcast kernel for CLArray.
   let clTy = clTypeName(T)
-  let kn   = kernName & "_" & clTy
-  let src  = scalarOpKernelSrc(clTy, op, kn)
-  let k    = getKernel(src, kn)
-  result   = newCLArray[N, T]()
-  var aOff   = 0.cint
+  let kn = kernName & "_" & clTy
+  let src = scalarOpKernelSrc(clTy, op, kn)
+  let k = getKernel(src, kn)
+  result = newCLArray[N, T]()
+  var aOff = 0.cint
   var outOff = 0.cint
-  var n      = N.cint
-  var s      = scalar
+  var n = N.cint
+  var s = scalar
   check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
-  check setKernelArg(k, 1, sizeof(T),    addr s)
+  check setKernelArg(k, 1, sizeof(T), addr s)
   check setKernelArg(k, 2, sizeof(Pmem), addr result.data.mem)
   check setKernelArg(k, 3, sizeof(cint), addr aOff)
   check setKernelArg(k, 4, sizeof(cint), addr outOff)
@@ -574,16 +577,17 @@ proc dispatchScalarOpArr*[N: static int, T](a: CLArray[N, T], scalar: T, op, ker
   var gs = N
   check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, nil, 0, nil, nil)
 
-proc dispatchUnaryOpArr*[N: static int, T](a: CLArray[N, T], fn, kernName: string): CLArray[N, T] =
+proc dispatchUnaryOpArr*[N: static int, T](a: CLArray[N, T], fn,
+    kernName: string): CLArray[N, T] =
   ## Unary element-wise kernel for CLArray.
   let clTy = clTypeName(T)
-  let kn   = kernName & "_" & clTy
-  let src  = unaryOpKernelSrc(clTy, fn, kn)
-  let k    = getKernel(src, kn)
-  result   = newCLArray[N, T]()
-  var aOff   = 0.cint
+  let kn = kernName & "_" & clTy
+  let src = unaryOpKernelSrc(clTy, fn, kn)
+  let k = getKernel(src, kn)
+  result = newCLArray[N, T]()
+  var aOff = 0.cint
   var outOff = 0.cint
-  var n      = N.cint
+  var n = N.cint
   check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
   check setKernelArg(k, 1, sizeof(Pmem), addr result.data.mem)
   check setKernelArg(k, 2, sizeof(cint), addr aOff)
@@ -611,13 +615,13 @@ proc fill*[T](a: var CLSeq[T], val: T) =
   ## Fill every logical element of `a` with `val` on the GPU.
   if a.length == 0 or a.data == nil: return
   let clTy = clTypeName(T)
-  let kn   = "fill_" & clTy
-  let k    = getKernel(fillKernelSrc(clTy, kn), kn)
+  let kn = "fill_" & clTy
+  let k = getKernel(fillKernelSrc(clTy, kn), kn)
   var outOff = a.startIdx.cint
-  var n      = a.length.cint
-  var v      = val
+  var n = a.length.cint
+  var v = val
   check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
-  check setKernelArg(k, 1, sizeof(T),    addr v)
+  check setKernelArg(k, 1, sizeof(T), addr v)
   check setKernelArg(k, 2, sizeof(cint), addr outOff)
   check setKernelArg(k, 3, sizeof(cint), addr n)
   var gs = a.length
@@ -627,13 +631,13 @@ proc fill*[N: static int, T](a: var CLArray[N, T], val: T) =
   ## Fill every element of `a` with `val` on the GPU.
   if a.data == nil: return
   let clTy = clTypeName(T)
-  let kn   = "fill_" & clTy
-  let k    = getKernel(fillKernelSrc(clTy, kn), kn)
+  let kn = "fill_" & clTy
+  let k = getKernel(fillKernelSrc(clTy, kn), kn)
   var outOff = 0.cint
-  var n      = N.cint
-  var v      = val
+  var n = N.cint
+  var v = val
   check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
-  check setKernelArg(k, 1, sizeof(T),    addr v)
+  check setKernelArg(k, 1, sizeof(T), addr v)
   check setKernelArg(k, 2, sizeof(cint), addr outOff)
   check setKernelArg(k, 3, sizeof(cint), addr n)
   var gs = N
@@ -703,32 +707,35 @@ __kernel void $1(
     if (lid == 0) out[get_group_id(0)] = scratch[0];
 }""".replace("$1", kernName).replace("$2", clTy).replace("$3", smallVal)
 
-proc runGroupReduce[T](a: CLSeq[T], kernSrc, kernName: string, localSize: int = 64): seq[T] =
+proc runGroupReduce[T](a: CLSeq[T], kernSrc, kernName: string,
+    localSize: int = 64): seq[T] =
   ## Execute one GPU reduction pass; return the per-group partial results to CPU.
   let numGroups = max(1, (a.length + localSize - 1) div localSize)
   var err: TClResult
-  let partMem = createBuffer(gCL.ctx, MEM_READ_WRITE, numGroups * sizeof(T), nil, addr err)
+  let partMem = createBuffer(gCL.ctx, MEM_READ_WRITE, numGroups * sizeof(T),
+      nil, addr err)
   check err
   let k = getKernel(kernSrc, kernName)
   var aOff = a.startIdx.cint
-  var n    = a.length.cint
-  check setKernelArg(k, 0, sizeof(Pmem),          addr a.data.mem)
-  check setKernelArg(k, 1, sizeof(Pmem),          addr partMem)
+  var n = a.length.cint
+  check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
+  check setKernelArg(k, 1, sizeof(Pmem), addr partMem)
   check setKernelArg(k, 2, localSize * sizeof(T), nil)
-  check setKernelArg(k, 3, sizeof(cint),          addr aOff)
-  check setKernelArg(k, 4, sizeof(cint),          addr n)
+  check setKernelArg(k, 3, sizeof(cint), addr aOff)
+  check setKernelArg(k, 4, sizeof(cint), addr n)
   var gs = numGroups * localSize
   var ls = localSize
   check enqueueNDRangeKernel(gCL.queue, k, 1, nil, addr gs, addr ls, 0, nil, nil)
   result = newSeq[T](numGroups)
-  check enqueueReadBuffer(gCL.queue, partMem, CL_TRUE, 0, numGroups * sizeof(T), addr result[0], 0, nil, nil)
+  check enqueueReadBuffer(gCL.queue, partMem, CL_TRUE, 0, numGroups * sizeof(T),
+      addr result[0], 0, nil, nil)
   check releaseMemObject(partMem)
 
 proc sum*[T: SomeNumber](a: CLSeq[T]): T =
   ## GPU parallel reduction: sum of all elements.
   if a.length == 0: return T(0)
   let clTy = clTypeName(T)
-  let kn   = "rsum_" & clTy
+  let kn = "rsum_" & clTy
   let parts = runGroupReduce(a, reduceKernelSrcSum(clTy, kn), kn)
   result = T(0)
   for p in parts: result += p
@@ -737,7 +744,7 @@ proc min*[T: SomeNumber](a: CLSeq[T]): T =
   ## GPU parallel reduction: minimum element.
   if a.length == 0: raise newException(ValueError, "min on empty CLSeq")
   let clTy = clTypeName(T)
-  let kn   = "rmin_" & clTy
+  let kn = "rmin_" & clTy
   when T is SomeFloat:
     let bigVal = "(" & clTy & ")1e38"
   else:
@@ -751,7 +758,7 @@ proc max*[T: SomeNumber](a: CLSeq[T]): T =
   ## GPU parallel reduction: maximum element.
   if a.length == 0: raise newException(ValueError, "max on empty CLSeq")
   let clTy = clTypeName(T)
-  let kn   = "rmax_" & clTy
+  let kn = "rmax_" & clTy
   when T is SomeFloat:
     let smallVal = "-(" & clTy & ")1e38"
   else:
@@ -791,10 +798,14 @@ proc `/`*[T](a, b: CLSeq[T]): CLSeq[T] =
 ## CLSeq OP scalar (SomeInteger / SomeFloat)
 ##########################################################################################################################################################
 
-proc `+`*[T](a: CLSeq[T], n: SomeNumber): CLSeq[T] = dispatchScalarOp(a, T(n), "+", "adds")
-proc `-`*[T](a: CLSeq[T], n: SomeNumber): CLSeq[T] = dispatchScalarOp(a, T(n), "-", "subs")
-proc `*`*[T](a: CLSeq[T], n: SomeNumber): CLSeq[T] = dispatchScalarOp(a, T(n), "*", "muls")
-proc `/`*[T](a: CLSeq[T], n: SomeNumber): CLSeq[T] = dispatchScalarOp(a, T(n), "/", "divs")
+proc `+`*[T](a: CLSeq[T], n: SomeNumber): CLSeq[T] = dispatchScalarOp(a, T(n),
+    "+", "adds")
+proc `-`*[T](a: CLSeq[T], n: SomeNumber): CLSeq[T] = dispatchScalarOp(a, T(n),
+    "-", "subs")
+proc `*`*[T](a: CLSeq[T], n: SomeNumber): CLSeq[T] = dispatchScalarOp(a, T(n),
+    "*", "muls")
+proc `/`*[T](a: CLSeq[T], n: SomeNumber): CLSeq[T] = dispatchScalarOp(a, T(n),
+    "/", "divs")
 
 proc `+`*[T](n: SomeNumber, a: CLSeq[T]): CLSeq[T] = a + n
 proc `*`*[T](n: SomeNumber, a: CLSeq[T]): CLSeq[T] = a * n
@@ -803,16 +814,17 @@ proc `*`*[T](n: SomeNumber, a: CLSeq[T]): CLSeq[T] = a * n
 ## TRIGONOMETRY — CLSeq
 ##########################################################################################################################################################
 
-proc sin*[T: SomeFloat](a: CLSeq[T]): CLSeq[T]    = dispatchUnaryOp(a, "sin",    "sin")
-proc cos*[T: SomeFloat](a: CLSeq[T]): CLSeq[T]    = dispatchUnaryOp(a, "cos",    "cos")
-proc tan*[T: SomeFloat](a: CLSeq[T]): CLSeq[T]    = dispatchUnaryOp(a, "tan",    "tan")
-proc arcsin*[T: SomeFloat](a: CLSeq[T]): CLSeq[T] = dispatchUnaryOp(a, "asin",   "arcsin")
-proc arccos*[T: SomeFloat](a: CLSeq[T]): CLSeq[T] = dispatchUnaryOp(a, "acos",   "arccos")
-proc arctan*[T: SomeFloat](a: CLSeq[T]): CLSeq[T] = dispatchUnaryOp(a, "atan",   "arctan")
-proc sqrt*[T: SomeFloat](a: CLSeq[T]): CLSeq[T]   = dispatchUnaryOp(a, "sqrt",   "sqrt")
-proc exp*[T: SomeFloat](a: CLSeq[T]): CLSeq[T]    = dispatchUnaryOp(a, "exp",    "exp")
-proc ln*[T: SomeFloat](a: CLSeq[T]): CLSeq[T]     = dispatchUnaryOp(a, "log",    "ln")  ## OpenCL uses log() for ln
-proc abs*[T](a: CLSeq[T]): CLSeq[T]               = dispatchUnaryOp(a, "fabs",   "abs")
+proc sin*[T: SomeFloat](a: CLSeq[T]): CLSeq[T] = dispatchUnaryOp(a, "sin", "sin")
+proc cos*[T: SomeFloat](a: CLSeq[T]): CLSeq[T] = dispatchUnaryOp(a, "cos", "cos")
+proc tan*[T: SomeFloat](a: CLSeq[T]): CLSeq[T] = dispatchUnaryOp(a, "tan", "tan")
+proc arcsin*[T: SomeFloat](a: CLSeq[T]): CLSeq[T] = dispatchUnaryOp(a, "asin", "arcsin")
+proc arccos*[T: SomeFloat](a: CLSeq[T]): CLSeq[T] = dispatchUnaryOp(a, "acos", "arccos")
+proc arctan*[T: SomeFloat](a: CLSeq[T]): CLSeq[T] = dispatchUnaryOp(a, "atan", "arctan")
+proc sqrt*[T: SomeFloat](a: CLSeq[T]): CLSeq[T] = dispatchUnaryOp(a, "sqrt", "sqrt")
+proc exp*[T: SomeFloat](a: CLSeq[T]): CLSeq[T] = dispatchUnaryOp(a, "exp", "exp")
+proc ln*[T: SomeFloat](a: CLSeq[T]): CLSeq[T] = dispatchUnaryOp(a, "log",
+    "ln") ## OpenCL uses log() for ln
+proc abs*[T](a: CLSeq[T]): CLSeq[T] = dispatchUnaryOp(a, "fabs", "abs")
 
 ##########################################################################################################################################################
 ## CLSeq — non-allocating "into" variants (binary)
@@ -876,15 +888,15 @@ proc divScalar*[T](a: CLSeq[T], scalar: T, dst: var CLSeq[T]) =
 
 proc sinInto*[T: SomeFloat](a: CLSeq[T], dst: var CLSeq[T]) =
   ## Element-wise sine into `dst`.  No allocation when `dst` is large enough.
-  dispatchUnaryOpInto(a, "sin",  "sin",    dst)
+  dispatchUnaryOpInto(a, "sin", "sin", dst)
 
 proc cosInto*[T: SomeFloat](a: CLSeq[T], dst: var CLSeq[T]) =
   ## Element-wise cosine into `dst`.  No allocation when `dst` is large enough.
-  dispatchUnaryOpInto(a, "cos",  "cos",    dst)
+  dispatchUnaryOpInto(a, "cos", "cos", dst)
 
 proc tanInto*[T: SomeFloat](a: CLSeq[T], dst: var CLSeq[T]) =
   ## Element-wise tangent into `dst`.  No allocation when `dst` is large enough.
-  dispatchUnaryOpInto(a, "tan",  "tan",    dst)
+  dispatchUnaryOpInto(a, "tan", "tan", dst)
 
 proc arcsinInto*[T: SomeFloat](a: CLSeq[T], dst: var CLSeq[T]) =
   ## Element-wise arc sine into `dst`.  No allocation when `dst` is large enough.
@@ -900,19 +912,19 @@ proc arctanInto*[T: SomeFloat](a: CLSeq[T], dst: var CLSeq[T]) =
 
 proc sqrtInto*[T: SomeFloat](a: CLSeq[T], dst: var CLSeq[T]) =
   ## Element-wise square root into `dst`.  No allocation when `dst` is large enough.
-  dispatchUnaryOpInto(a, "sqrt", "sqrt",   dst)
+  dispatchUnaryOpInto(a, "sqrt", "sqrt", dst)
 
 proc expInto*[T: SomeFloat](a: CLSeq[T], dst: var CLSeq[T]) =
   ## Element-wise e^x into `dst`.  No allocation when `dst` is large enough.
-  dispatchUnaryOpInto(a, "exp",  "exp",    dst)
+  dispatchUnaryOpInto(a, "exp", "exp", dst)
 
 proc lnInto*[T: SomeFloat](a: CLSeq[T], dst: var CLSeq[T]) =
   ## Element-wise natural logarithm into `dst`.  No allocation when `dst` is large enough.
-  dispatchUnaryOpInto(a, "log",  "ln",     dst)
+  dispatchUnaryOpInto(a, "log", "ln", dst)
 
 proc absInto*[T](a: CLSeq[T], dst: var CLSeq[T]) =
   ## Element-wise absolute value into `dst`.  No allocation when `dst` is large enough.
-  dispatchUnaryOpInto(a, "fabs", "abs",    dst)
+  dispatchUnaryOpInto(a, "fabs", "abs", dst)
 
 ##########################################################################################################################################################
 ## CLSeq — in-place compound assignment operators
@@ -998,11 +1010,11 @@ proc `*`*[N: static int, T](n: SomeNumber, a: CLArray[N, T]): CLArray[N, T] = a 
 ##########################################################################################################################################################
 
 proc sin*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
-  dispatchUnaryOpArr(a, "sin",  "sin")
+  dispatchUnaryOpArr(a, "sin", "sin")
 proc cos*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
-  dispatchUnaryOpArr(a, "cos",  "cos")
+  dispatchUnaryOpArr(a, "cos", "cos")
 proc tan*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
-  dispatchUnaryOpArr(a, "tan",  "tan")
+  dispatchUnaryOpArr(a, "tan", "tan")
 proc arcsin*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
   dispatchUnaryOpArr(a, "asin", "arcsin")
 proc arccos*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
@@ -1012,9 +1024,9 @@ proc arctan*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
 proc sqrt*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
   dispatchUnaryOpArr(a, "sqrt", "sqrt")
 proc exp*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
-  dispatchUnaryOpArr(a, "exp",  "exp")
+  dispatchUnaryOpArr(a, "exp", "exp")
 proc ln*[N: static int, T: SomeFloat](a: CLArray[N, T]): CLArray[N, T] =
-  dispatchUnaryOpArr(a, "log",  "ln")
+  dispatchUnaryOpArr(a, "log", "ln")
 proc abs*[N: static int, T](a: CLArray[N, T]): CLArray[N, T] =
   dispatchUnaryOpArr(a, "fabs", "abs")
 
@@ -1025,8 +1037,8 @@ proc abs*[N: static int, T](a: CLArray[N, T]): CLArray[N, T] =
 proc `-`*[T](n: SomeNumber, a: CLSeq[T]): CLSeq[T] =
   ## Scalar minus seq: result[i] = n - a[i]
   let clTy = clTypeName(T)
-  let kn   = "rsubs_" & clTy
-  let src  = """
+  let kn = "rsubs_" & clTy
+  let src = """
 __kernel void $1(
     __global const $2* a,
     const          $2  scalar,
@@ -1036,14 +1048,14 @@ __kernel void $1(
     int i = get_global_id(0);
     if (i < n) out[outOff + i] = scalar - a[aOff + i];
 }""".replace("$1", kn).replace("$2", clTy)
-  let k  = getKernel(src, kn)
+  let k = getKernel(src, kn)
   result = newCLSeq[T](a.length)
-  var aOff   = a.startIdx.cint
+  var aOff = a.startIdx.cint
   var outOff = 0.cint
-  var cnt    = a.length.cint
-  var sv     = T(n)
+  var cnt = a.length.cint
+  var sv = T(n)
   check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
-  check setKernelArg(k, 1, sizeof(T),    addr sv)
+  check setKernelArg(k, 1, sizeof(T), addr sv)
   check setKernelArg(k, 2, sizeof(Pmem), addr result.data.mem)
   check setKernelArg(k, 3, sizeof(cint), addr aOff)
   check setKernelArg(k, 4, sizeof(cint), addr outOff)
@@ -1054,8 +1066,8 @@ __kernel void $1(
 proc `/`*[T](n: SomeNumber, a: CLSeq[T]): CLSeq[T] =
   ## Scalar divided by seq: result[i] = n / a[i]
   let clTy = clTypeName(T)
-  let kn   = "rdivs_" & clTy
-  let src  = """
+  let kn = "rdivs_" & clTy
+  let src = """
 __kernel void $1(
     __global const $2* a,
     const          $2  scalar,
@@ -1065,14 +1077,14 @@ __kernel void $1(
     int i = get_global_id(0);
     if (i < n) out[outOff + i] = scalar / a[aOff + i];
 }""".replace("$1", kn).replace("$2", clTy)
-  let k  = getKernel(src, kn)
+  let k = getKernel(src, kn)
   result = newCLSeq[T](a.length)
-  var aOff   = a.startIdx.cint
+  var aOff = a.startIdx.cint
   var outOff = 0.cint
-  var cnt    = a.length.cint
-  var sv     = T(n)
+  var cnt = a.length.cint
+  var sv = T(n)
   check setKernelArg(k, 0, sizeof(Pmem), addr a.data.mem)
-  check setKernelArg(k, 1, sizeof(T),    addr sv)
+  check setKernelArg(k, 1, sizeof(T), addr sv)
   check setKernelArg(k, 2, sizeof(Pmem), addr result.data.mem)
   check setKernelArg(k, 3, sizeof(cint), addr aOff)
   check setKernelArg(k, 4, sizeof(cint), addr outOff)
@@ -1118,11 +1130,11 @@ proc dispatchManyOpInto[T](
     assert operands[i].length == operands[0].length,
       opName & "Many length mismatch at index " & $i
 
-  let clTy    = clTypeName(T)
-  let count   = operands.len
+  let clTy = clTypeName(T)
+  let count = operands.len
   let kernName = opName & "Many_" & $count & "_" & clTy
-  let src     = manyOpKernelSrc(opSym, opName, clTy, count)
-  let k       = getKernel(src, kernName)
+  let src = manyOpKernelSrc(opSym, opName, clTy, count)
+  let k = getKernel(src, kernName)
 
   dst.length = operands[0].length
   dst.ensureLen()
@@ -1132,14 +1144,14 @@ proc dispatchManyOpInto[T](
   for op in operands:
     var mem = op.data.mem
     var off = op.startIdx.cint
-    check setKernelArg(k, argIdx,     sizeof(Pmem), addr mem)
+    check setKernelArg(k, argIdx, sizeof(Pmem), addr mem)
     check setKernelArg(k, argIdx + 1, sizeof(cint), addr off)
     argIdx += 2
 
   # Output buffer + offset + n
   var outOff = dst.startIdx.cint
-  var n      = operands[0].length.cint
-  check setKernelArg(k, argIdx,     sizeof(Pmem), addr dst.data.mem)
+  var n = operands[0].length.cint
+  check setKernelArg(k, argIdx, sizeof(Pmem), addr dst.data.mem)
   check setKernelArg(k, argIdx + 1, sizeof(cint), addr outOff)
   check setKernelArg(k, argIdx + 2, sizeof(cint), addr n)
 

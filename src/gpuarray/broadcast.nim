@@ -32,16 +32,16 @@ template `-`*[T: GPUSeq | GPUArray](g: T, n: SomeFloat) = discard
 template `*`*[T: GPUSeq | GPUArray](g: T, n: SomeFloat) = discard
 template `/`*[T: GPUSeq | GPUArray](g: T, n: SomeFloat) = discard
 
-template sin*[T: GPUSeq | GPUArray](g: T)    = discard
-template cos*[T: GPUSeq | GPUArray](g: T)    = discard
-template tan*[T: GPUSeq | GPUArray](g: T)    = discard
-template exp*[T: GPUSeq | GPUArray](g: T)    = discard
+template sin*[T: GPUSeq | GPUArray](g: T) = discard
+template cos*[T: GPUSeq | GPUArray](g: T) = discard
+template tan*[T: GPUSeq | GPUArray](g: T) = discard
+template exp*[T: GPUSeq | GPUArray](g: T) = discard
 template arccos*[T: GPUSeq | GPUArray](g: T) = discard
 template arcsin*[T: GPUSeq | GPUArray](g: T) = discard
 template arctan*[T: GPUSeq | GPUArray](g: T) = discard
-template sqrt*[T: GPUSeq | GPUArray](g: T)   = discard
-template ln*[T: GPUSeq | GPUArray](g: T)     = discard
-template abs*[T: GPUSeq | GPUArray](g: T)    = discard
+template sqrt*[T: GPUSeq | GPUArray](g: T) = discard
+template ln*[T: GPUSeq | GPUArray](g: T) = discard
+template abs*[T: GPUSeq | GPUArray](g: T) = discard
 
 # ── commutative scalar forms (scalar OP seq) ─────────────────────────────────
 
@@ -114,11 +114,11 @@ template toOpenArray*[T: GPUSeq](g: T, start, stop: int): T = discard
 ##   for step in 0..<iters:
 ##     add(a, b, buf)                   # reuse buf — zero allocation
 
-template add*[T: GPUSeq](g1, g2: T, dst: var T)    = discard
+template add*[T: GPUSeq](g1, g2: T, dst: var T) = discard
   ## Element-wise addition into `dst`:         dst[i] = g1[i] + g2[i]
-template sub*[T: GPUSeq](g1, g2: T, dst: var T)    = discard
+template sub*[T: GPUSeq](g1, g2: T, dst: var T) = discard
   ## Element-wise subtraction into `dst`:      dst[i] = g1[i] - g2[i]
-template mul*[T: GPUSeq](g1, g2: T, dst: var T)    = discard
+template mul*[T: GPUSeq](g1, g2: T, dst: var T) = discard
   ## Element-wise multiplication into `dst`:   dst[i] = g1[i] * g2[i]
 template divInto*[T: GPUSeq](g1, g2: T, dst: var T) = discard
   ## Element-wise division into `dst`:         dst[i] = g1[i] / g2[i]
@@ -140,11 +140,11 @@ template divScalar*[T: GPUSeq](g: T, scalar: auto, dst: var T) = discard
 ## Constrained to floating-point element types (SomeFloat) except `absInto`
 ## which accepts any numeric type, matching the allocating `abs` proc.
 
-template sinInto*[T: GPUSeq](g: T, dst: var T)    = discard
+template sinInto*[T: GPUSeq](g: T, dst: var T) = discard
   ## Element-wise sine into `dst`.
-template cosInto*[T: GPUSeq](g: T, dst: var T)    = discard
+template cosInto*[T: GPUSeq](g: T, dst: var T) = discard
   ## Element-wise cosine into `dst`.
-template tanInto*[T: GPUSeq](g: T, dst: var T)    = discard
+template tanInto*[T: GPUSeq](g: T, dst: var T) = discard
   ## Element-wise tangent into `dst`.
 template arcsinInto*[T: GPUSeq](g: T, dst: var T) = discard
   ## Element-wise arc sine into `dst`.
@@ -152,13 +152,13 @@ template arccosInto*[T: GPUSeq](g: T, dst: var T) = discard
   ## Element-wise arc cosine into `dst`.
 template arctanInto*[T: GPUSeq](g: T, dst: var T) = discard
   ## Element-wise arc tangent into `dst`.
-template sqrtInto*[T: GPUSeq](g: T, dst: var T)   = discard
+template sqrtInto*[T: GPUSeq](g: T, dst: var T) = discard
   ## Element-wise square root into `dst`.
-template expInto*[T: GPUSeq](g: T, dst: var T)    = discard
+template expInto*[T: GPUSeq](g: T, dst: var T) = discard
   ## Element-wise e^x into `dst`.
-template lnInto*[T: GPUSeq](g: T, dst: var T)     = discard
+template lnInto*[T: GPUSeq](g: T, dst: var T) = discard
   ## Element-wise natural logarithm into `dst`.
-template absInto*[T: GPUSeq](g: T, dst: var T)    = discard
+template absInto*[T: GPUSeq](g: T, dst: var T) = discard
   ## Element-wise absolute value into `dst`.  Works on integers and floats.
 
 # ── compound-assignment operators — seq / seq ─────────────────────────────────

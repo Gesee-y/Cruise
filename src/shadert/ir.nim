@@ -9,12 +9,13 @@ import sets, macros, tables, strutils, strformat, hashes
 ##########################################################################################################################################################
 
 type
-  Uniform*[T]       = distinct T  ## uniform T name;
-  UniformReadOnly*[T]  = distinct T  ## layout(...) readonly buffer
-  UniformWriteOnly*[T] = distinct T  ## layout(...) writeonly buffer
-  SSBO*[T]          = distinct T  ## layout(std430) buffer { T name[]; };
-  Image2D*[T]       = distinct T  ## layout(rgba32f) writeonly uniform image2D
-  Sampler2D*        = object      ## uniform sampler2D name;
+  Uniform*[T] = distinct T ## uniform T name;
+  UniformReadOnly*[T] = distinct T ## layout(...) readonly buffer
+  UniformWriteOnly*[T] = distinct T ## layout(...) writeonly buffer
+  SSBO*[T] = distinct T ## layout(std430) buffer { T name[]; };
+  GlobalIndex*[T] = distinct T
+  Image2D*[T] = distinct T ## layout(rgba32f) writeonly uniform image2D
+  Sampler2D* = object ## uniform sampler2D name;
 
   ParsingContext* = enum
     pcNone, pcReturn, pcWhile, pcFor, pcIf
@@ -73,7 +74,7 @@ type
     ## Together (line, pos) define a lexicographic order that matches the
     ## order in which opcodes will be emitted by the bytecode backend.
     line*: int
-    pos*:  int
+    pos*: int
 
   CIRNode* = object
     ## A single node in the Cruise IR tree.
@@ -81,7 +82,7 @@ type
     ## Every node carries a `src` field populated during transpilation so
     ## that later passes (liveness analysis, register allocation) can
     ## operate directly on the tree without flattening it first.
-    src*: NodePos          ## source position assigned during processNode
+    src*: NodePos ## source position assigned during processNode
     case kind*: CIRNodeKind
     of cnkSym:
       name*: string
@@ -89,7 +90,8 @@ type
       intVal*: int
     of cnkFloatLit:
       floatVal*: float
-    of cnkDiscardStmt, cnkEmpty, cnkContinueStmt, cnkWritOnly, cnkReadOnly: discard
+    of cnkDiscardStmt, cnkEmpty, cnkContinueStmt, cnkWritOnly,
+        cnkReadOnly: discard
     else:
       args*: seq[CIRNode]
 
@@ -99,12 +101,13 @@ type
     ## The context is threaded through every recursive call so that helper
     ## procedures can append type definitions, forward declarations and
     ## function bodies discovered along the way.
-    typeDecl*:     CIRNode          ## struct / type definitions (emitted first)
-    forwardDecl*:  CIRNode          ## function forward declarations
-    funcDef*:      CIRNode          ## full function definitions (helpers)
-    body*:         CIRNode          ## the main shader entry-point function
-    emittedTypes*: HashSet[string]  ## guard: avoid re-emitting the same type
-    emittedFuncs*: HashSet[string]  ## guard: avoid re-emitting the same function
+    typeDecl*: CIRNode ## struct / type definitions (emitted first)
+    forwardDecl*: CIRNode ## function forward declarations
+    funcDef*: CIRNode ## full function definitions (helpers)
+    body*: CIRNode ## the main shader entry-point function
+    gIndex*: CIRNode
+    emittedTypes*: HashSet[string] ## guard: avoid re-emitting the same type
+    emittedFuncs*: HashSet[string] ## guard: avoid re-emitting the same function
 
 ##########################################################################################################################################################
 ################################################################## UTILITIES #############################################################################
@@ -113,13 +116,43 @@ type
 proc newCIRNode*(kind: static CIRNodeKind): CIRNode = CIRNode(kind: kind)
 proc add*(a: var CIRNode, b: CIRNode) = a.args.add(b)
 proc newCIRSym*(name: string): CIRNode = CIRNode(kind: cnkSym, name: name)
-proc newCIRIntLit*(i: int): CIRNode   = CIRNode(kind: cnkIntLit,   intVal:   i)
+proc newCIRIntLit*(i: int): CIRNode = CIRNode(kind: cnkIntLit, intVal: i)
 proc newCIRFloatLit*(i: float): CIRNode = CIRNode(kind: cnkFloatLit, floatVal: i)
+proc `[]`*[T,G](container: seq[T], id: GlobalIndex[G]): T = container[cast[G](id)]
+proc `[]`*[N,T,G](container: array[N,T], id: GlobalIndex[G]): T = container[cast[G](id)]
+proc `[]=`*[T,G](container: var seq[T], id: GlobalIndex[G], v: T) = (container[cast[G](id)] = v)
+proc `[]=`*[N,T,G](container: var array[N,T], id: GlobalIndex[G], v: T) = (container[cast[G](id)] = v)
+
+proc `<`*[G](g1, g2: GlobalIndex[G]): bool = cast[G](g1) < cast[G](g2)
+proc `>`*[G](g1, g2: GlobalIndex[G]): bool = cast[G](g1) > cast[G](g2)
+proc `==`*[G](g1, g2: GlobalIndex[G]): bool = cast[G](g1) == cast[G](g2)
+
+proc `+`*[G](g1, g2: GlobalIndex[G]): G = cast[G](g1) + cast[G](g2)
+proc `+`*[G](g: GlobalIndex[G], n: G): G = cast[G](g) + n
+proc `+`*[G](n: G, g: GlobalIndex[G]): G = n + cast[G](g)
+proc `+`*[G](g: GlobalIndex[G]): G = +cast[G](g)
+proc `-`*[G](g1, g2: GlobalIndex[G]): G = cast[G](g1) - cast[G](g2)
+proc `-`*[G](g: GlobalIndex[G], n: G): G = cast[G](g) - n
+proc `-`*[G](n: G, g: GlobalIndex[G]): G = n - cast[G](g)
+proc `-`*[G](g: GlobalIndex[G]): G = -cast[G](g)
+proc `*`*[G](g1, g2: GlobalIndex[G]): G = cast[G](g1) * cast[G](g2)
+proc `*`*[G](g: GlobalIndex[G], n: G): G = cast[G](g) * n
+proc `*`*[G](n: G, g: GlobalIndex[G]): G = n * cast[G](g)
+proc `/`*[G](g1, g2: GlobalIndex[G]): G = cast[G](g1) / cast[G](g2)
+proc `/`*[G](g: GlobalIndex[G], n: G): G = cast[G](g) / n
+proc `/`*[G](n: G, g: GlobalIndex[G]): G = n / cast[G](g)
+proc `div`*[G](g1, g2: GlobalIndex[G]): G = cast[G](g1) div cast[G](g2)
+proc `div`*[G](g: GlobalIndex[G], n: G): G = cast[G](g) div n
+proc `div`*[G](n: G, g: GlobalIndex[G]): G = n div cast[G](g)
+proc `mod`*[G](g1, g2: GlobalIndex[G]): G = cast[G](g1) mod cast[G](g2)
+proc `mod`*[G](g: GlobalIndex[G], n: G): G = cast[G](g) mod n
+proc `mod`*[G](n: G, g: GlobalIndex[G]): G = n mod cast[G](g)
+
 
 proc `<`*(a, b: NodePos): bool =
   a.line < b.line or (a.line == b.line and a.pos < b.pos)
 proc `<=`*(a, b: NodePos): bool = a < b or a == b
-proc `>`*(a, b: NodePos): bool  = b < a
+proc `>`*(a, b: NodePos): bool = b < a
 proc hash(n: NodePos): int = hash(n.line) and hash(n.pos)
 
 ## Forward declarations required by mutual recursion between processNode / remapFunc.
@@ -131,8 +164,8 @@ proc isPrimitiveType(name: string): bool =
   name in ["int", "float", "string", "cstring", "seq", "set"]
 
 ## Compile-time tables that map Nim identifiers to their IR / GLSL equivalents.
-var irTypeTable    {.compileTime.} = initTable[string, string]()
-var irFuncTable    {.compileTime.} = initTable[string, string]()
+var irTypeTable {.compileTime.} = initTable[string, string]()
+var irFuncTable {.compileTime.} = initTable[string, string]()
 var irUniformTable {.compileTime.} = initTable[string, string]()
 
 macro registerUniformType*(ty: typed, glslName: string): untyped =
@@ -150,11 +183,11 @@ macro registerIRFunc*(nimFunc: typed, irName: string): untyped =
 proc normalizeTypes(name: string): string =
   ## Convert a Nim primitive type name to its canonical IR name.
   case name:
-  of "int", "int32":     return "int"
+  of "int", "int32": return "int"
   of "float", "float32": return "float"
-  of "float64":          return "double"
-  of "bool":             return "bool"
-  of "uint32":           return "uint"
+  of "float64": return "double"
+  of "bool": return "bool"
+  of "uint32": return "uint"
   else:
     if name in irTypeTable: return irTypeTable[name]
     else: ""
@@ -163,17 +196,17 @@ proc initDefaultFuncMappings() {.compileTime.} =
   ## Populate `irFuncTable` with the standard math built-ins that have
   ## a direct GLSL counterpart.  Called once via `static:` below.
   const mappings = [
-    ("sin",        "sin"),   ("cos",        "cos"),   ("tan",        "tan"),
-    ("arcsin",     "asin"),  ("arccos",     "acos"),  ("arctan",     "atan"),
-    ("arctan2",    "atan"),  ("sqrt",       "sqrt"),  ("pow",        "pow"),
-    ("exp",        "exp"),   ("log",        "log"),   ("abs",        "abs"),
-    ("sign",       "sign"),  ("floor",      "floor"), ("ceil",       "ceil"),
-    ("round",      "round"), ("mod",        "mod"),   ("fract",      "fract"),
-    ("min",        "min"),   ("max",        "max"),   ("clamp",      "clamp"),
-    ("mix",        "mix"),   ("step",       "step"),  ("smoothstep", "smoothstep"),
-    ("dot",        "dot"),   ("cross",      "cross"), ("length",     "length"),
-    ("distance",   "distance"), ("normalize", "normalize"),
-    ("reflect",    "reflect"),  ("refract",   "refract"),
+    ("sin", "sin"), ("cos", "cos"), ("tan", "tan"),
+    ("arcsin", "asin"), ("arccos", "acos"), ("arctan", "atan"),
+    ("arctan2", "atan"), ("sqrt", "sqrt"), ("pow", "pow"),
+    ("exp", "exp"), ("log", "log"), ("abs", "abs"),
+    ("sign", "sign"), ("floor", "floor"), ("ceil", "ceil"),
+    ("round", "round"), ("mod", "mod"), ("fract", "fract"),
+    ("min", "min"), ("max", "max"), ("clamp", "clamp"),
+    ("mix", "mix"), ("step", "step"), ("smoothstep", "smoothstep"),
+    ("dot", "dot"), ("cross", "cross"), ("length", "length"),
+    ("distance", "distance"), ("normalize", "normalize"),
+    ("reflect", "reflect"), ("refract", "refract"),
   ]
   for (nim, ir) in mappings:
     irFuncTable[nim] = ir
@@ -189,17 +222,17 @@ proc getIRType(ctx: var CIRContext, typeName: string): CIRNode {.compileTime.} =
   ## If the type has already been emitted (i.e. it is in `emittedTypes`)
   ## we simply return a symbol reference to avoid duplicate definitions.
   if typeName in ctx.emittedTypes: return newCIRSym(typeName)
-  discard normalizeTypes(typeName)   # side-effect-free normalisation for now
+  discard normalizeTypes(typeName) # side-effect-free normalisation for now
   return newCIRSym(typeName)
 
 proc isWrapperType(typeName: string): bool {.compileTime.} =
   ## Returns true for Nim types that map to GLSL resource qualifiers
   ## (uniforms, SSBOs, images, samplers) rather than plain value types.
-  typeName.startsWith("Uniform[")         or
+  typeName.startsWith("Uniform[") or
   typeName.startsWith("UniformReadOnly[") or
   typeName.startsWith("UniformWriteOnly[") or
-  typeName.startsWith("array")            or
-  typeName in irUniformTable              or
+  typeName.startsWith("array") or
+  typeName in irUniformTable or
   typeName == "Sampler2D"
 
 proc emitQualifiedVar(ctx: var CIRContext, typeName: string,
@@ -207,9 +240,9 @@ proc emitQualifiedVar(ctx: var CIRContext, typeName: string,
   ## Produce the IR node that represents a GLSL resource-qualified variable
   ## (uniform, SSBO, image, sampler, or array).
   ## `typeName` is the full Nim generic spelling, e.g. `"Uniform[float32]"`.
-  let innerPos  = typeName.find("[")
-  let tyName    = if innerPos != -1: typeName[0..<innerPos] else: typeName
-  let irVal     = if tyName in irUniformTable: irUniformTable[tyName] else: tyName
+  let innerPos = typeName.find("[")
+  let tyName = if innerPos != -1: typeName[0..<innerPos] else: typeName
+  let irVal = if tyName in irUniformTable: irUniformTable[tyName] else: tyName
   let innerName = if innerPos != -1: typeName[(innerPos+1)..^2] else: ""
 
   if typeName.startsWith("Uniform["):
@@ -217,7 +250,7 @@ proc emitQualifiedVar(ctx: var CIRContext, typeName: string,
     return CIRNode(kind: cnkUniform, args: @[CIRNode(kind: cnkEmpty), inner])
 
   elif typeName.startsWith("array"):
-    let cm  = innerName.split(",")
+    let cm = innerName.split(",")
     let val = newCIRIntLit((&"{cm[0][^1]}").parseInt + 1)
     let inner = ctx.getIRType(cm[1])
     return CIRNode(kind: cnkArray, args: @[val, inner])
@@ -260,8 +293,11 @@ proc getIRType(ctx: var CIRContext, node: NimNode): CIRNode =
   ## a typed symbol.  Emits struct definitions on first encounter.
   var sym = if node.kind == nnkSym: node.getTypeInst() else: node
   if sym.kind == nnkVarTy: sym = sym[0]
-  let typeName  = if sym.kind == nnkBracketExpr: sym[1].repr else: sym.repr
+  let typeName = if sym.kind == nnkBracketExpr: sym[1].repr else: sym.repr
   let paramName = node.strVal
+
+  if typeName.startsWith("GlobalIndex"):
+    return ctx.getIRType(sym[1])
 
   if isWrapperType(typeName):
     if paramName notin ctx.emittedTypes:
@@ -269,12 +305,13 @@ proc getIRType(ctx: var CIRContext, node: NimNode): CIRNode =
 
   if typeName in ctx.emittedTypes: return newCIRSym(typeName)
 
+
   case typeName:
-  of "int", "int32":     return newCIRSym "int"
+  of "int", "int32": return newCIRSym "int"
   of "float", "float32": return newCIRSym "float"
-  of "float64":          return newCIRSym "double"
-  of "bool":             return newCIRSym "bool"
-  of "uint32":           return newCIRSym "uint"
+  of "float64": return newCIRSym "double"
+  of "bool": return newCIRSym "bool"
+  of "uint32": return newCIRSym "uint"
   else:
     if typeName in irTypeTable:
       return newCIRSym irTypeTable[typeName]
@@ -340,7 +377,7 @@ proc remapFunc(ctx: var CIRContext, name: string, node: NimNode,
     error("Cruise IR Transpiler: unknown function '" & name & "' has no Nim implementation.\n" &
           "  Hint: register it with registerIRFunc or provide a Nim body.", node)
 
-  let params     = impl[3]
+  let params = impl[3]
   let returnType = if params[0].kind == nnkEmpty: newCIRSym "void"
                    else: ctx.getIRType(params[0])
 
@@ -349,8 +386,8 @@ proc remapFunc(ctx: var CIRContext, name: string, node: NimNode,
   signature.add(returnType)
 
   for i in 1..<params.len:
-    let param  = params[i]
-    var idnt   = newCIRNode(cnkIdentDef)
+    let param = params[i]
+    var idnt = newCIRNode(cnkIdentDef)
     let irType = ctx.getIRType(param[^2])
     for j in 0..<param.len - 2:
       idnt.add(newCIRSym param[j].strVal)
@@ -366,10 +403,10 @@ proc remapFunc(ctx: var CIRContext, name: string, node: NimNode,
   funcCtx.emittedTypes = ctx.emittedTypes
   funcCtx.emittedFuncs = ctx.emittedFuncs
 
-  var body    = impl[6].ensureStmtList
-  var helperPos = 0   # helper bodies start their own position counter at 0
+  var body = impl[6].ensureStmtList
+  var helperPos = 0 # helper bodies start their own position counter at 0
   var rootLine = 0
-  let irBody  = processNode(funcCtx, body, line = rootLine, pos = helperPos)
+  let irBody = processNode(funcCtx, body, line = rootLine, pos = helperPos)
 
   # Propagate any newly discovered types / functions back to the parent context.
   ctx.typeDecl.args.add(funcCtx.typeDecl.args)
@@ -389,21 +426,21 @@ proc remapFunc(ctx: var CIRContext, name: string, node: NimNode,
 proc processDeclaration(ctx: var CIRContext, node: NimNode,
                         line: var int, pos: var int): CIRNode =
   ## Transpile a single `var` / `let` binding to a `cnkDecl` IR node.
-  var res  = newCIRNode(cnkDecl)
+  var res = newCIRNode(cnkDecl)
   res.stamp(line, pos)
 
   var idnt = newCIRNode(cnkIdentDef)
   idnt.stamp(line, pos)
-  
+
   let name = node[0].strVal
-  let ty   = getIRType(ctx, node[0])
+  let ty = getIRType(ctx, node[0])
   let expr = processNode(ctx, node[2], line = line, pos = pos)
   idnt.add(newCIRSym name)
   idnt.args[^1].src = idnt.src
 
   idnt.add(ty)
   idnt.args[^1].src = idnt.src
-  
+
   res.add(idnt)
   res.add(expr)
   res
@@ -433,36 +470,32 @@ proc processNode(ctx: var CIRContext, node: NimNode,
     result.stamp(line, pos)
     for i, n in node:
       var stmtPos = 0
-      result.add processNode(ctx, n, line = line, pos = stmtPos, parent = addr result)
+      result.add processNode(ctx, n, line = line, pos = stmtPos,
+          parent = addr result)
       inc line
 
   of nnkPar:
     result = newCIRNode(cnkPar)
     result.stamp(line, pos)
     for n in node:
-      result.add processNode(ctx, n, line = line, pos = pos, parent = addr result)
+      result.add processNode(ctx, n, line = line, pos = pos,
+          parent = addr result)
 
   of nnkVarSection, nnkLetSection:
     var stmtPos = 0
-    for i,n in node:
+    for i, n in node:
       result = ctx.processDeclaration(n, line = line, pos = stmtPos)
-      if i>0: inc line
+      if i > 0: inc line
 
   of nnkCall, nnkCommand:
     let nFuncName = node[0].strVal
     result = newCIRNode(cnkCall)
     result.stamp(line, pos)
-    if nFuncName == "globalIndex":
-      result = newCIRNode(cnkGlobalIndex)
-      result.stamp(line, pos)
-      if node[1].kind != nnkSym:
-        error("Cruise IR Transpiler: only identifiers are allowed in globalIndex", node[1])
-      result.add(ctx.getIRType(node[1]))
-    else:
-      let funcName = ctx.remapFunc(nFuncName, node[0], line, pos)
-      result.add(funcName)
-      for i in 1..<node.len:
-        result.add processNode(ctx, node[i], line = line, pos = pos)
+    
+    let funcName = ctx.remapFunc(nFuncName, node[0], line, pos)
+    result.add(funcName)
+    for i in 1..<node.len:
+      result.add processNode(ctx, node[i], line = line, pos = pos)
 
   of nnkObjConstr:
     ## Object construction: `MyVec(x: 1.0, y: 2.0)` → `vec2(1.0, 2.0)`
@@ -507,7 +540,7 @@ proc processNode(ctx: var CIRContext, node: NimNode,
     ## Only range iteration (`a..<b`) is supported.
     result = newCIRNode(cnkForStmt)
     result.stamp(line, pos)
-    
+
     var idnt = newCIRNode(cnkIdentDef)
     var loopVar = newCIRSym(node[0].strVal)
     var loopVarTy = getIRType(ctx, node[0])
@@ -518,7 +551,7 @@ proc processNode(ctx: var CIRContext, node: NimNode,
     idnt.stamp(line, pos)
     loopVar.stamp(line, pos)
     result.add idnt
-    
+
     let iter = node[1]
     if iter.kind != nnkInfix or iter[0].strVal != "..<":
       error("Cruise IR Transpiler: only range iteration (a..<b) is supported in for loops", node)
@@ -695,22 +728,28 @@ proc processParams(ctx: var CIRContext, params: NimNode): seq[CIRNode] =
   ## Transpile a function's formal parameter list to a sequence of
   ## `cnkIdentDef` IR nodes, handling both plain types and resource-qualified
   ## wrapper types (Uniform, SSBO, Image2D, Sampler2D, array).
-  for i in 1..<params.len:   # skip params[0] which is the return type
-    let identDef  = params[i]
-    let tyNode    = identDef[1]
-    let isVar     = tyNode.kind == nnkVarTy
-    let innerTy   = identDef[0]
-    let typeName  = innerTy.getTypeInst().repr
+  for i in 1..<params.len: # skip params[0] which is the return type
+    let identDef = params[i]
+    let tyNode = identDef[1]
+    let isVar = tyNode.kind == nnkVarTy
+    let varSym = identDef[0]
+    let typeName = varSym.getTypeInst().repr
+
+    if typeName == "GlobalIndex":
+      ctx.gIndex = newCIRNode(cnkGlobalIndex)
+      ctx.gIndex.add(newCIRSym(varSym.strVal))
+      ctx.gIndex.add(ctx.getIRType(varSym))
+      continue
 
     for j in 0..<identDef.len - 2:
-      var res     = newCIRNode(cnkIdentDef)
-      var current : CIRNode
+      var res = newCIRNode(cnkIdentDef)
+      var current: CIRNode
       res.add(newCIRSym identDef[j].strVal)
 
       if isWrapperType(typeName):
         current = emitQualifiedVar(ctx, typeName, identDef[j].strVal)
       else:
-        current = ctx.getIRType(innerTy)
+        current = ctx.getIRType(varSym)
 
       if isVar:
         var v = newCIRNode(cnkVarTy)
@@ -737,13 +776,13 @@ macro compileToIR*(fn: typed): CIRContext =
   ## The returned `CIRContext` contains the full IR tree with source
   ## positions on every node, ready for liveness analysis and bytecode
   ## emission.
-  var ctx  = CIRContext()
+  var ctx = CIRContext()
   let impl = fn.getImpl
   let name = impl[0]
   let params = impl[3]
-  var body   = impl[6].ensureStmtList
+  var body = impl[6].ensureStmtList
 
-  var irMain    = newCIRNode(cnkFuncDef)
+  var irMain = newCIRNode(cnkFuncDef)
   var signature = newCIRNode(cnkFuncSig)
   signature.add(newCIRSym name.strVal)
   signature.add(newCIRNode(cnkEmpty))
@@ -753,7 +792,7 @@ macro compileToIR*(fn: typed): CIRContext =
 
   var rootPos = 0
   var rootLine = 0
-  let irBody  = processNode(ctx, body, line = rootLine, pos = rootPos)
+  let irBody = processNode(ctx, body, line = rootLine, pos = rootPos)
 
   irMain.add signature
   irMain.add irBody
