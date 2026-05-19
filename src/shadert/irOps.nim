@@ -123,4 +123,4 @@ proc getLiveness(ctx: CIRContext): CIRControlNode =
           stack.add(n)
 
 proc emitCBytecode(cir: CIRContext): CBytecode =
-  
+  var stack = @[cir.body]
