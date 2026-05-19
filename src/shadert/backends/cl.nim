@@ -128,7 +128,7 @@ proc emitCL(node: CIRNode, isKernel = false, depth=1, ctx: ptr CIRContext = nil)
       let n = node.args[i]
       branches &= switchIndent & emitCL(n) & "\n"
 
-    "switch (" & emitCL(node.args[0]) & ") {\n" & branches & "\n}"
+    "switch (" & emitCL(node.args[0]) & ") {\n" & branches & switchIndent & "}"
 
   of cnkOfBranch:
     let brIndent = repeat(INDENT_SYM, depth+1)
