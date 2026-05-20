@@ -6,7 +6,7 @@ type
   ## A 4-bit Hierarchical bitset for allocation
   ## Allows us to quickly get an available memory chuck when allocating
   BitBlock = uint8
-  CAHibitset = type
+  CAHiBitSet = type
     layer0: seq[uint8] # Get to know if 4 bits are used
     layer1: seq[uint8] # Get to know if 16 bits are used
     layer2: seq[uint8] # Get to know if 64 bits are used
@@ -105,7 +105,7 @@ proc clear*(h: var CAHiBitSet) =
   for i in 0..<h.layer1.len: h.layer1[i] = 0
   for i in 0..<h.layer2.len: h.layer2[i] = 0
 
-proc getSpace(c: var CAHibitset, size: int=4): int =
+proc getSpace(c: var CAHiBitSet, size: int=4): int =
   ## Return the starting point of the index with enough space for the request.
   ## `size` in bytes
   
@@ -180,7 +180,7 @@ proc getSpace(c: var CAHibitset, size: int=4): int =
       if s != 0:
         block l1Search:
           while countL1 < s:
-            let currentL1 = current div 16
+            let currentL1 = lastL1
             if currentL1 >= c.layer1.len: c.layer1.setLen(currentL1+1)
             var currentBits = (not c.layer1[currentL1]) and 0xF
 
@@ -206,7 +206,7 @@ proc getSpace(c: var CAHibitset, size: int=4): int =
       if s != 0:
         block l0Search:
           while countL0 < s:
-            let currentL0 = current div 4
+            let currentL0 = lastL0
             
             if currentL0 >= c.layer0.len: c.layer0.setLen(currentL0+1)
             var currentBits = (not c.layer0[currentL0]) and 0xF
@@ -238,4 +238,4 @@ proc freeRange*(h: var CAHiBitSet, startSlot: int, size: int) =
   ## at `startSlot`.  Each bit is cleared individually; layer1/layer2 are
   ## updated automatically by `unsetBit`.
   for i in 0..<size:
-    h.unsetBit(startSlot + i)
+    h.unset(startSlot + i)
