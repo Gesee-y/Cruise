@@ -28,6 +28,9 @@ type
     parent: CIRControlNode
     stackCount: int
 
+  CRegisterStats = object
+    counts: Table[string, int]
+
   CBytecode = object
     data: seq[uint32]
 
@@ -122,5 +125,10 @@ proc getLiveness(ctx: CIRContext): CIRControlNode =
         for n in current.args:
           stack.add(n)
 
-proc emitCBytecode(cir: CIRContext): CBytecode =
-  var stack = @[cir.body]
+
+
+proc allocateRegisters(ctx: var CIRContext): CRegisterStats =
+  let liveness = ctx.getLiveness
+  
+
+
