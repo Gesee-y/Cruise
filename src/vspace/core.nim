@@ -35,21 +35,24 @@ type
   CRGBA = object
     r, g, b, a: float32
     
-template convertTo[T: CBoundedSpace](dst: typedesc[T], src: CBoundedSpace): T =
+proc crgba*(r, g, b, a: float32 = 1f): CRGBA =
+  CRGBA(r:r, g:g, b:b, a:a)
+
+template convertTo*[T: CBoundedSpace](dst: typedesc[T], src: CBoundedSpace): T =
     fromRGBA(dst, toRGBA(src))
 
-template convertTo[T: CUnboundedSpace, N, U](dst: typedesc[T], src: CUnboundedSpace): T =
+template convertTo*[T: CUnboundedSpace, N, U](dst: typedesc[T], src: CUnboundedSpace): T =
     fromCartesian(dst, toCartesian(src))
 
-template toCartesian(c: CCartesianCoord): untyped = 
+template toCartesian*(c: CCartesianCoord): untyped = 
   ## Default. return himself
   c
-template toRGBA(c: CRGBA): untyped = 
+template toRGBA*(c: CRGBA): untyped = 
   ## Default. return himself
   c
 
-proc fromCartesian[T: CCartesianCoord](c: CCartesianCoord): T = result
-proc fromRGBA[T: CRGBA](c: CRGBA): T = result
+proc fromCartesian*[T: CCartesianCoord](c: CCartesianCoord): T = result
+proc fromRGBA*[T: CRGBA](c: CRGBA): T = result
 
 proc `$`*(c: CRGBA): string =
   ## Returns colors as "(r, g, b, a)".
