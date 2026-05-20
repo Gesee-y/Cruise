@@ -2,7 +2,10 @@
 ####################################################### CRUISE SPACES ######################################################
 ############################################################################################################################
 
-import math
+import math, hashes, strformat, strutils
 
 include "core.nim"
 include "ops.nim"
+include "coordinates.nim"
+include "colors.nim"
+include "baseColors.nim"

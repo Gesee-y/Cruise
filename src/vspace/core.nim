@@ -4,11 +4,9 @@
 
 type
   CBoundedSpace = concept b
-    compile(b.domain)
     compile(b.toRGBA)
 
   CUnboundedSpace = concept b
-    not compile(b.domain)
     compile(b.toCartesian)
 
   CVectorSpace = CBoundedSpace | CUnboundedSpace
@@ -34,5 +32,23 @@ template convertTo[T: CBoundedSpace](dst: typedesc[T], src: CBoundedSpace): T =
 template convertTo[T: CUnboundedSpace, N, U](dst: typedesc[T], src: CUnboundedSpace): T =
     fromCartesian(dst, toCartesian(src))
 
-proc fromCartesian[T: CUnboundedSpace](c: CCartesianCoord): T = result
-proc fromRGBA[T: CBoundedSpace](c: CRGBA): T = result
+proc fromCartesian[T: CCartesianCoord](c: CCartesianCoord): T = result
+proc fromRGBA[T: CRGBA](c: CRGBA): T = result
+
+proc `$`*(c: CRGBA): string =
+  ## Returns colors as "(r, g, b, a)".
+  "CRGBA(" & $c.r & ", " & $c.g & ", " & $c.b & ", " & $c.a & ")"
+
+proc `$`*[T: CUnboundedSpace](c: T): string =
+  ## Returns colors as "(r, g, b, a)".
+  let col = c.toRGBA
+  "CRGBA(" & $col.r & ", " & $col.g & ", " & $col.b & ", " & $col.a & ")"
+
+func hash*(c: CRGBA): Hash =
+  ## Hashes a Color - used in tables.
+  hash((c.r, c.g, c.b, c.a))
+
+func hash*[T: CUnboundedSpace](c: T): Hash =
+  ## Hashes a Color - used in tables.
+  let col = c.toRGBA
+  hash((col.r, col.g, col.b, col.a))

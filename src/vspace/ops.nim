@@ -107,18 +107,18 @@ func invert*(c: CRGBA): CRGBA =
   ## Invert the RGB components of an RGBA color. Alpha is preserved.
   CRGBA(r: 1f - c.r, g: 1f - c.g, b: 1f - c.b, a: c.a)
 
-func applyToRGB*(c: CRGBA, f: proc(x: float32): float32): CRGBA =
+proc applyToRGB*(c: CRGBA, f: proc(x: float32): float32): CRGBA =
   ## Apply a function to every RGB component of an RGBA color. Alpha is preserved.
   ##
   ## Example — apply a gamma curve:
   ##   let corrected = color.applyToRGB(proc(x: float32): float32 = pow(x, 1f / 2.2f))
   CRGBA(r: f(c.r), g: f(c.g), b: f(c.b), a: c.a)
 
-func applyToRGBA*(c: CRGBA, f: proc(x: float32): float32): CRGBA =
+proc applyToRGBA*(c: CRGBA, f: proc(x: float32): float32): CRGBA =
   ## Apply a function to every component of an RGBA color, including alpha.
   CRGBA(r: f(c.r), g: f(c.g), b: f(c.b), a: f(c.a))
 
-func gamma*(c: CRGBA, g: float32): CRGBA =
+proc gamma*(c: CRGBA, g: float32): CRGBA =
   ## Apply gamma correction to the RGB components of an RGBA color.
   ## Values are assumed to be in [0, 1]. Alpha is preserved.
   c.applyToRGB(proc(x: float32): float32 = pow(x, g))
