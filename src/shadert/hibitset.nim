@@ -176,7 +176,7 @@ proc getSpace(c: var CAHiBitSet, size: int=4): int =
       if countL2 > 0: 
         lastL1 = lastL2*4
 
-      (s, v) = (v div 4, v mod 4)
+      (s, v) = (v div 2, v mod 2)
       if s != 0:
         block l1Search:
           while countL1 < s:
@@ -202,7 +202,7 @@ proc getSpace(c: var CAHiBitSet, size: int=4): int =
       if countL1 > 0: 
         lastL0 = lastL1*4
 
-      s = v*2
+      s = v
       if s != 0:
         block l0Search:
           while countL0 < s:
@@ -228,14 +228,151 @@ proc getSpace(c: var CAHiBitSet, size: int=4): int =
 
       break
 
-
+proc fillL1*(h: var CAHiBitSet, l1Idx: int) {.inline.} =
+  ## Mark a full layer1 block (16 slots) as occupied.
+  ## Writes L0_FULL into all 4 layer0 children, sets the layer1 byte to L0_FULL,
+  ## then sets the corresponding bit in the layer2 byte.
+  let l0Base = l1Idx * L0_BITS
+  for l0Off in 0..<L0_BITS:
+    h.layer0[l0Base + l0Off] = L0_FULL
+  h.layer1[l1Idx] = L0_FULL
+  # Propagate: set the layer2 bit that tracks this l1 block.
+  let l2Idx = l1Idx shr L0_SHIFT
+  h.layer2[l2Idx] = h.layer2[l2Idx] or (1'u8 shl (l1Idx and L0_MASK))
+ 
+proc fillL2*(h: var CAHiBitSet, l2Idx: int) {.inline.} =
+  ## Mark a full layer2 block (64 slots) as occupied.
+  ## Delegates to fillL1 for each of the 4 layer1 children (which in turn fill
+  ## their layer0 children), then sets the layer2 byte to L0_FULL.
+  let l1Base = l2Idx * L0_BITS
+  for l1Off in 0..<L0_BITS:
+    h.fillL1(l1Base + l1Off)
+  h.layer2[l2Idx] = L0_FULL   ## overwrite after fillL1 to ensure all 4 bits set
+ 
+proc fillAlloc*(h: var CAHiBitSet, startSlot: int, size: int) =
+  ## Mark `size` contiguous slots starting at `startSlot` as occupied.
+  ##
+  ## Processes the range in up to five passes, from finest to coarsest and back:
+  ##   1. Unaligned prefix bits  (< layer0 boundary)  -> setBit per slot.
+  ##   2. Full layer0 blocks (4  slots each)           -> write L0_FULL + propagate.
+  ##   3. Full layer1 blocks (16 slots each)           -> fillL1.
+  ##   4. Full layer2 blocks (64 slots each)           -> fillL2.
+  ##   5. Unaligned suffix bits                        -> setBit per slot.
+  ##
+  ## Example costs:
+  ##   float  (1  slot) : 1 setBit call.
+  ##   vec4   (4  slots, aligned) : 1 layer0 write + 2 propagations.
+  ##   mat4   (16 slots, aligned) : 1 fillL1 call  (4 l0 writes + 1 l1 + 1 l2).
+  h.ensureCapacity(startSlot + size - 1)
+ 
+  var slot    = startSlot
+  let endSlot = startSlot + size
+ 
+  # 1. Unaligned prefix.
+  while slot < endSlot and (slot and L0_MASK) != 0:
+    h.setBit(slot)
+    inc slot
+ 
+  # 4. Full layer2 blocks first to avoid redundant propagations.
+  while slot + 64 <= endSlot:
+    h.fillL2(slot shr 6)
+    slot += 64
+ 
+  # 3. Full layer1 blocks.
+  while slot + 16 <= endSlot:
+    h.fillL1(slot shr 4)
+    slot += 16
+ 
+  # 2. Full layer0 blocks.
+  while slot + L0_BITS <= endSlot:
+    let l0Idx = slot shr L0_SHIFT
+    h.layer0[l0Idx] = L0_FULL
+    let l1Idx = l0Idx shr L0_SHIFT
+    h.layer1[l1Idx] = h.layer1[l1Idx] or (1'u8 shl (l0Idx and L0_MASK))
+    let l2Idx = l1Idx shr L0_SHIFT
+    h.layer2[l2Idx] = h.layer2[l2Idx] or (1'u8 shl (l1Idx and L0_MASK))
+    slot += L0_BITS
+ 
+  # 5. Unaligned suffix.
+  while slot < endSlot:
+    h.setBit(slot)
+    inc slot
+ 
 ##########################################################################################################################################################
 ################################################################## FREE RANGE ############################################################################
 ##########################################################################################################################################################
-
+##
+## freeL1 and freeL2 are the batch helpers used internally by freeRange.
+## They clear the coarse layer bit first (releasing the whole block claim) and
+## then zero all children downward.
+ 
+proc freeL1*(h: var CAHiBitSet, l1Idx: int) {.inline.} =
+  ## Release a full layer1 block (16 slots).
+  ## Zeros all 4 layer0 children, clears the layer1 byte,
+  ## then clears the corresponding bit in the layer2 byte.
+  let l0Base = l1Idx * L0_BITS
+  for l0Off in 0..<L0_BITS:
+    h.layer0[l0Base + l0Off] = 0
+  h.layer1[l1Idx] = 0
+  let l2Idx = l1Idx shr L0_SHIFT
+  h.layer2[l2Idx] = h.layer2[l2Idx] and not (1'u8 shl (l1Idx and L0_MASK))
+ 
+proc freeL2*(h: var CAHiBitSet, l2Idx: int) {.inline.} =
+  ## Release a full layer2 block (64 slots).
+  ## Delegates to freeL1 for each of the 4 layer1 children, then zeros the
+  ## layer2 byte itself.
+  let l1Base = l2Idx * L0_BITS
+  for l1Off in 0..<L0_BITS:
+    h.freeL1(l1Base + l1Off)
+  h.layer2[l2Idx] = 0
+ 
 proc freeRange*(h: var CAHiBitSet, startSlot: int, size: int) =
-  ## Release a previously allocated contiguous run of `size` slots starting
-  ## at `startSlot`.  Each bit is cleared individually; layer1/layer2 are
-  ## updated automatically by `unsetBit`.
-  for i in 0..<size:
-    h.unset(startSlot + i)
+  ## Release `size` contiguous slots starting at `startSlot`.
+  ##
+  ## Mirrors fillAlloc exactly:
+  ##   1. Unaligned prefix bits                        -> unsetBit per slot.
+  ##   2. Full layer0 blocks (4  slots each)           -> zero block + clear l1/l2 if empty.
+  ##   3. Full layer1 blocks (16 slots each)           -> freeL1.
+  ##   4. Full layer2 blocks (64 slots each)           -> freeL2.
+  ##   5. Unaligned suffix bits                        -> unsetBit per slot.
+  ##
+  ## Layer1 / layer2 bits are cleared conservatively: a parent bit is cleared
+  ## only after confirming the entire child block is now zero, which `freeL1`
+  ## and `freeL2` guarantee by construction.
+  if startSlot >= h.len: return
+ 
+  var slot    = startSlot
+  let endSlot = min(startSlot + size, h.len)
+ 
+  # 1. Unaligned prefix.
+  while slot < endSlot and (slot and L0_MASK) != 0:
+    h.unsetBit(slot)
+    inc slot
+ 
+  # 4. Full layer2 blocks.
+  while slot + 64 <= endSlot:
+    h.freeL2(slot shr 6)
+    slot += 64
+ 
+  # 3. Full layer1 blocks.
+  while slot + 16 <= endSlot:
+    h.freeL1(slot shr 4)
+    slot += 16
+ 
+  # 2. Full layer0 blocks.
+  while slot + L0_BITS <= endSlot:
+    let l0Idx = slot shr L0_SHIFT
+    h.layer0[l0Idx] = 0
+    # Clear the layer1 bit for this l0 block.
+    let l1Idx = l0Idx shr L0_SHIFT
+    h.layer1[l1Idx] = h.layer1[l1Idx] and not (1'u8 shl (l0Idx and L0_MASK))
+    # Clear the layer2 bit only if the entire l1 byte is now empty.
+    if (h.layer1[l1Idx] and L0_FULL) == 0:
+      let l2Idx = l1Idx shr L0_SHIFT
+      h.layer2[l2Idx] = h.layer2[l2Idx] and not (1'u8 shl (l1Idx and L0_MASK))
+    slot += L0_BITS
+ 
+  # 5. Unaligned suffix.
+  while slot < endSlot:
+    h.unsetBit(slot)
+    inc slot
