@@ -58,7 +58,7 @@ func clamp*[N: static int, T: CReal](c: CCartesianCoord[N, T], lo, hi: T): CCart
   for i in 0 ..< N:
     result.components[i] = clamp(c.components[i], lo, hi)
 
-func mapComponents*[N: static int, T: CReal](c: CCartesianCoord[N, T], f: proc(x: T): T): CCartesianCoord[N, T] =
+proc mapComponents*[N: static int, T: CReal](c: CCartesianCoord[N, T], f: proc(x: T): T): CCartesianCoord[N, T] =
   ## Apply a function to every component of a cartesian coordinate.
   ##
   ## Example:
@@ -79,14 +79,15 @@ func clamp*(c: CRGBA): CRGBA =
     a: clamp(c.a, 0f, 1f)
   )
 
+template lerp*(a, b, t: float32): float32 = a + (b - a) * t
 func lerp*(a, b: CRGBA, t: float32): CRGBA =
   ## Linear interpolation between two RGBA colors.
   ## t = 0 returns a, t = 1 returns b. Alpha is interpolated as well.
   CRGBA(
-    r: a.r + (b.r - a.r) * t,
-    g: a.g + (b.g - a.g) * t,
-    b: a.b + (b.b - a.b) * t,
-    a: a.a + (b.a - a.a) * t
+    r: lerp(a.r, b.r, t),
+    g: lerp(a.g, b.g, t),
+    b: lerp(a.b, b.b, t),
+    a: lerp(a.a, b.a, t)
   )
 
 func mix*(a, b: CRGBA, t: float32): CRGBA =
