@@ -24,10 +24,10 @@ proc free(c: var CRegisterAllocator, s, size: int) =
 
 proc updateTick(c: var CRegisterAllocator, t: int) =
   if t <= c.tick: return
+  c.tick = t
   var toDelete: seq[(int, int)]
   for i, n in c.active.mpairs:
-    if n <= tick: toDelete.add(i)
+    if n <= c.tick: toDelete.add(i)
 
   for (i, size) in toDelete:
     c.free(i, size)
-    c.active.del((i, size))
