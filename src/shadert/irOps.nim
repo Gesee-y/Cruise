@@ -32,6 +32,8 @@ type
     counts: Table[string, int]
 
   CBytecode = object
+    bindings: Table[string, int]
+    uniform: Table[string, CIRNode]
     data: seq[uint32]
 
 proc newCLiveness(birth=NodePos(line: -1, pos: -1), death=NodePos(line: -1, pos: -1)): CLiveness =
@@ -125,10 +127,10 @@ proc getLiveness(ctx: CIRContext): CIRControlNode =
         for n in current.args:
           stack.add(n)
 
-
-
-proc allocateRegisters(ctx: var CIRContext): CRegisterStats =
+proc emitCBytecode(ctx: var CIRContext): CBytecode =
+  ## Emit bytecode that should be
+  var allocator: CRegisterAllocator
   let liveness = ctx.getLiveness
-  
+
 
 

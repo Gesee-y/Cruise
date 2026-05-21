@@ -859,5 +859,7 @@ macro compileToIR*(fn: typed): CIRContext =
 
   return quote do: `ctx`
 
+include "hibitset.nim"
+include "allocator.nim"
 include "irOps.nim"
 
