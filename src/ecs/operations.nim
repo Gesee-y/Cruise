@@ -58,8 +58,12 @@ macro createEntity*(world: ECSWorld, comps: varargs[typed]): DenseHandle =
 
 macro createEntities*(world: ECSWorld, n: untyped, comps: varargs[typed]): seq[DenseHandle] =
   var (compIds, components) = getComponentsMetadata(comps)
+  var regis = newNimNode(nnkStmtList)
+  for c in comps:
+    regis.add quote("@") do: discard `@world`.registerComponent(`@c`)
 
   return quote("@") do:
+    `@regis`
     var rest = newSeq[DenseHandle](`@n`)
     var archNode = `@world`.archGraph.findArchetype(`@compIds`)
 
@@ -368,13 +372,16 @@ macro createSparseEntities*(
 ): seq[SparseHandle] =
 
   var compIds = newNimNode(nnkBracket)
+  var regis = newNimNode(nnkStmtList)
   for c in comps:
     compIds.add quote("@") do: toComponentId(`@c`)
+    regis.add quote("@") do: discard `@world`.registerComponent(`@c`)
   if compIds.len == 0:
     compIds = quote("@") do: array[0, int](`@compIds`)
 
   return quote("@") do:
     block:
+      `@regis`
       let archNode = `@world`.archGraph.findArchetype(`@compIds`)
       let archID = archNode.id.uint32
       let ranges = allocateSparseEntities(`@world`, `@n`, `@comps`)

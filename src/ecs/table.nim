@@ -71,7 +71,7 @@ include "hibitset.nim"
 
 type
   ## Represent an independent filter that can be used narrow queries
-  QueryFilter* = object
+  QueryFilter* = ref object
 
     # Dense Query
     dLayer*:HibitsetType

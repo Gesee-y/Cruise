@@ -25,7 +25,7 @@ type
     excludeMask: ArchetypeMask      ## Bitmask representing all forbidden components (OR'ed together).
     modified: seq[int]
     notModified: seq[int]
-    filters:seq[ptr QueryFilter]
+    filters:seq[QueryFilter]
 
   ## A cached result object for Dense queries.
   ## Stores the partitions (memory blocks) that matched the query signature,
@@ -36,8 +36,9 @@ type
   ## Iterator for dense queries.
   DenseIterator* = object
     r*:HSlice[int, int]
-    m:seq[BitBlock]
-    masked:bool
+    case masked: bool
+    of true: m:seq[BitBlock]
+    else: discard
 
   ## A cached result object for Sparse queries.
   ## Stores the calculated bitmasks representing the matching entities.
@@ -55,6 +56,7 @@ type
 
 proc newQueryFilter*(size=4096): QueryFilter =
   var q: QueryFilter
+  new(q)
   when HibitsetType is HiBitSet:
     q.dLayer = newHiBitSet(size)
     q.sLayer = newHiBitSet(size)
@@ -203,10 +205,6 @@ proc buildQuerySignature(world: ECSWorld, components: seq[QueryComponent]): Quer
 
 template addFilter*(qs: var QuerySignature, qf:QueryFilter) =
   ## Adds a new filter to the query
-  qs.filters.add(addr qf)
-
-proc addFilter*(qs: var QuerySignature, qf:ptr QueryFilter) =
-  ## Adds a new filter to the query
   qs.filters.add(qf)
 
 template clear*(qf: QueryFilter) = 
@@ -273,7 +271,11 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator)
           for i in 0..<maskCount:
             res[i] = res[i] and qf.dLayer.getL0(zone.block_idx*sizeof(uint)*8 + i)
         
-        yield (zone.block_idx, DenseIterator(r:zone.r.s..<zone.r.e, m: res, masked:masked))
+        if masked:
+          yield (zone.block_idx, DenseIterator(r:zone.r.s..<zone.r.e, m: res, masked:true))
+        else:
+          yield (zone.block_idx, DenseIterator(r:zone.r.s..<zone.r.e, masked:false))
+
 
 proc denseQueryCache*(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
   ## Computes and caches the result of a Dense query.
