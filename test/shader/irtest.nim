@@ -1,41 +1,6 @@
-## =============================================================================
-## test_transpiler.nim
-## Full test suite for the NIM -> Cruise IR Transpiler
-## =============================================================================
-##
-## Run with:
-##   nim c -r test_transpiler.nim
-##
-## The suite is organised into sections that mirror the transpiler's
-## own structure:
-##
-##   1.  CIRNode construction utilities
-##   2.  normalizeTypes / isPrimitiveType helpers
-##   3.  isWrapperType
-##   4.  CIRContext initialisation
-##   5.  processNode – literal nodes   (int, float, sym, empty …)
-##   6.  processNode – operators       (infix, prefix)
-##   7.  processNode – assignments     (plain, return-context)
-##   8.  processNode – control flow    (if/elif/else, while, for, case)
-##   9.  processNode – expressions     (bracketExpr, dotExpr, cast, conv)
-##   10. processNode – declarations    (var/let sections)
-##   11. processNode – calls & object construction
-##   12. processNode – stmtListExpr
-##   13. processNode – hidden conversions
-##   14. processDeclaration
-##   15. processParams
-##   16. emitQualifiedVar
-##   17. emitStruct
-##   18. remapFunc
-##   19. compileToIR macro (end-to-end)
-##   20. Edge-cases and error paths
-
 import unittest, macros, tables, sets, strutils
 
-# ---------------------------------------------------------------------------
-# Re-export the module under test.  Adjust the path if needed.
-# ---------------------------------------------------------------------------
-include "../../src/shadert/ir.nim"   # or: import transpiler
+include "../../src/shadert/ir.nim"
 
 # ---------------------------------------------------------------------------
 # Helpers shared across test suites
