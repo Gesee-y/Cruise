@@ -405,8 +405,10 @@ macro addComponent*(
   addedComps: varargs[typed]
 ): untyped =
   var addedIds = newNimNode(nnkBracket)
+  var regis = newNimNode(nnkStmtList)
   for c in addedComps:
     addedIds.add quote("@") do: toComponentId(`@c`)
+    regis.add quote("@") do: discard `@world`.registerComponent(`@c`)
   if addedIds.len == 0:
     addedIds = quote("@") do: array[0, int](`@addedIds`)
 
@@ -421,6 +423,7 @@ macro addComponent*(
 
   return quote("@") do:
     block addComp:
+      `@regis`
       ## Walk the archetype graph with compile-time ids — result is runtime node.
       var archNode = `@world`.archGraph.nodes[`@s`.archID]
       for cid in `@addedIds`:
