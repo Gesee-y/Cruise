@@ -236,7 +236,7 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator)
   if cacheEntry.version < world.archGraph.version:
     for i in 0..<world.archGraph.nodes.len:
       let archNode = world.archGraph.nodes[i]
-      if not archNode.isNil:
+      if archNode.id != 0 or i == 0:
         if matchesArchetype(sig, archNode.mask) and not (i.uint16 in cacheEntry.archs):
           cacheEntry.archs.incl(i.uint16)
     cacheEntry.version = world.archGraph.version
@@ -294,7 +294,7 @@ proc denseQueryCache*(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
   if cacheEntry.version < world.archGraph.version:
     for i in 0..<world.archGraph.nodes.len:
       let archNode = world.archGraph.nodes[i]
-      if not archNode.isNil:
+      if archNode.id != 0 or i == 0:
         if matchesArchetype(sig, archNode.mask) and not (i.uint16 in cacheEntry.archs):
           cacheEntry.nodes.add(archNode)
           cacheEntry.archs.incl(i.uint16)

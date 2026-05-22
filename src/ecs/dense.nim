@@ -4,14 +4,13 @@
 
 ## Ensures that an archetype has an associated table partition.
 ## If none exists, a new partition is created and attached to the archetype node.
-proc createPartition(table: var ECSWorld, arch: ArchetypeNode): TablePartition =
-  check(not arch.isNil, "ArchetypeNode must not be nil")
-  if arch.partition.isNil:
+proc createPartition(table: var ECSWorld, arch: uint16): TablePartition =
+  if table.archGraph.nodes[arch].partition.isNil:
     var partition: TablePartition
     new(partition)
-    partition.components = cast[seq[int]](arch.componentIds)
-    arch.partition = partition
-  return arch.partition
+    partition.components = cast[seq[int]](table.archGraph.nodes[arch].componentIds)
+    table.archGraph.nodes[arch].partition = partition
+  return table.archGraph.nodes[arch].partition
 
 ## Allocates new dense blocks for a partition.
 ## Each block corresponds to DEFAULT_BLK_SIZE contiguous entity slots.
@@ -74,23 +73,22 @@ macro allocateNewBlocks(
 ## Reuses partially-filled blocks before allocating new ones.
 macro allocateEntities(
   table,
-  n,
-  archNode: untyped,
+  n: untyped,
+  archNode: uint16,
   comps: varargs[typed]
 ): seq[(uint, Range)] =
 
   return quote("@") do:
-    check(not `@archNode`.isNil, "ArchetypeNode is nil during entity allocation")
     var res = newSeq[(uint, Range)](`@n` div DEFAULT_BLK_SIZE + 1)
 
     ## First allocation for this archetype
-    if `@archNode`.partition.isNil:
+    if `@table`.archGraph.nodes[`@archNode`].partition.isNil:
       var partition = createPartition(`@table`, `@archNode`)
       allocateNewBlocks(`@table`, `@n`, res, 0, partition, `@comps`)
       res
     else:
       var m = `@n`
-      var partition = `@archNode`.partition
+      var partition = `@table`.archGraph.nodes[`@archNode`].partition
       var current = 0
 
       ## Fill existing blocks
@@ -117,10 +115,10 @@ macro allocateEntities(
 ## Allocates a single dense entity and returns:
 ## (block index, offset inside block, archetype id)
 macro allocateEntity(
-  table,
-  archNode: untyped,
+  table: untyped,
+  archNode: uint16,
   comps:varargs[typed]
-): (uint, int, uint16) =
+): (uint, int) =
   var code = newNimNode(nnkStmtList)
   for c in comps[0]:
     code.add quote("@") do:
@@ -151,7 +149,7 @@ macro allocateEntity(
     if isFull(zone):
       partition.fill_index += 1
 
-    (id.uint, e, `@archNode`.id)
+    (id.uint, e)
 
 ## Deletes a dense entity row.
 ## Performs swap-remove within the archetype partition.
@@ -159,13 +157,12 @@ template deleteRow(table: var ECSWorld, i: uint, arch: uint16): uint =
   check(arch.int < table.archGraph.nodes.len,
     "deleteRow: archetypeId=" & $arch & " is out of bounds (nodes.len=" &
     $table.archGraph.nodes.len & "). Entity archetypeId field is corrupted.")
-  let partition = addr table.archGraph.nodes[arch].partition
-  check(not partition[].isNil,
+  let partition = table.archGraph.nodes[arch].partition
+  check(not partition.isNil,
     "deleteRow: archetype " & $arch & " has no partition. " &
     "Entity does not belong to this archetype or was never allocated in it.")
 
-  if partition.zones.len <= partition.fill_index or
-     isEmpty(addr partition.zones[partition.fill_index]):
+  if partition.zones.len <= partition.fill_index or isEmpty(addr partition.zones[partition.fill_index]):
     check(partition.fill_index > 0,
       "deleteRow: fill_index would underflow (currently 0) for archetype " & $arch &
       ". The partition is empty — possible double-delete or entity count corruption.")
@@ -197,15 +194,14 @@ template changePartition(
   table: var ECSWorld,
   i: uint,
   oldArch: uint16,
-  newArch: ArchetypeNode
+  newArch: uint16
 ): (int, uint, uint) =
   check(oldArch.int < table.archGraph.nodes.len,
     "changePartition: source archetypeId=" & $oldArch & " is out of bounds (nodes.len=" &
     $table.archGraph.nodes.len & ").")
-  check(not newArch.isNil, "changePartition: target ArchetypeNode is nil.")
   
-  let oldPartition = addr table.archGraph.nodes[oldArch].partition
-  check(not oldPartition[].isNil,
+  let oldPartition = table.archGraph.nodes[oldArch].partition
+  check(not oldPartition.isNil,
     "changePartition: source archetype " & $oldArch & " has no partition. " &
     "Entity does not exist in this archetype.")
   let newPartition = createPartition(table, newArch)
@@ -252,7 +248,7 @@ template changePartition(
   ## Copy only components common to both old and new archetypes
   let oldNode = addr table.archGraph.nodes[oldArch]
   let oldMask = addr oldNode.mask
-  let newMask = addr newArch.mask
+  let newMask = addr table.archGraph.nodes[newArch].mask
   let intersection = oldMask and newMask
   let destBase = makeId(bid, new_id)
 
@@ -263,7 +259,7 @@ template changePartition(
       entry.overrideValsOp(entry.rawPointer, destBase, i.uint32)
   elif intersection == newMask:
     # Fast Path: Old archetype contains all new components (e.g. removeComponent)
-    for id in newArch.componentIds:
+    for id in table.archGraph.nodes[newArch].componentIds:
       let entry = table.registry.entries[id]
       entry.overrideValsOp(entry.rawPointer, destBase, i.uint32)
   else:
@@ -295,7 +291,7 @@ template changePartition(
   table: var ECSWorld,
   ids: openArray[DenseHandle],
   oldArch: uint16,
-  newArch: ArchetypeNode
+  newArch: uint16
 ):(seq[uint32], seq[uint32], seq[uint32]) =
   check(ids.len > 0, "Batch change with empty handles")
 
@@ -373,7 +369,7 @@ template changePartition(
 
   ## Perform batched component migration (only common components)
   let oldMask = addr table.archGraph.nodes[oldArch].mask
-  let commonMask = oldMask and (addr newArch.mask)
+  let commonMask = oldMask and (addr table.archGraph.nodes[newArch].mask)
   let commonComponents = commonMask.getComponents()
   var eids = newSeq[uint32](ids.len)
 
@@ -388,7 +384,7 @@ template changePartition(
     table.entities[table.handles[s.toIdx]].id = e.id
 
     e.id = a
-    e.archetypeId = newArch.id
+    e.archetypeId = newArch
 
   for id in commonComponents:
     let entry = table.registry.entries[id]

@@ -216,13 +216,13 @@ proc runDenseBenchmarks() =
       var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, Position, Velocity)
       
       for e in ents:
-        w.addComponent(e, Acceleration.toComponentId)
+        w.addComponent(e, Acceleration)
       for e in ents:
-        w.removeComponent(e, Acceleration.toComponentId)
+        w.removeComponent(e, Acceleration)
     ),
     (
       for e in ents:
-        w.addComponent(e, Acceleration.toComponentId)
+        w.addComponent(e, Acceleration)
     )
   )
   showDetailed(suite.benchmarks[8])
@@ -236,11 +236,11 @@ proc runDenseBenchmarks() =
       var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, Position, Velocity)
       
       for e in ents:
-        w.addComponent(e, Velocity.toComponentId)
+        w.addComponent(e, Velocity)
     ),
     (
       for e in ents:
-        w.removeComponent(e, Velocity.toComponentId)
+        w.removeComponent(e, Velocity)
     )
   )
   showDetailed(suite.benchmarks[9])
@@ -254,14 +254,14 @@ proc runDenseBenchmarks() =
       var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, Position, Velocity)
       
       for e in ents:
-        w.addComponent(e, Acceleration.toComponentId)
+        w.addComponent(e, Acceleration)
       for e in ents:
-        w.removeComponent(e, Acceleration.toComponentId)
+        w.removeComponent(e, Acceleration)
     ),
     (
       for e in ents:
-        w.addComponent(e, Acceleration.toComponentId)
-        w.removeComponent(e, Acceleration.toComponentId)
+        w.addComponent(e, Acceleration)
+        w.removeComponent(e, Acceleration)
     )
   )
   showDetailed(suite.benchmarks[10])

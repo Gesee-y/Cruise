@@ -25,11 +25,11 @@ macro createEntity*(world: ECSWorld, comps: varargs[typed]): DenseHandle =
     `@regis`
     # Acquire a stable internal ID (widx) for the entity record.
     let pid = getStableEntity(`@world`)
-    let arch = `@world`.archGraph.findArchetype(`@compIds`)
+    var arch = `@world`.archGraph.findArchetype(`@compIds`)
 
     # Allocate actual space for the entity data within the specific archetype.
     # Returns block ID (bid), internal block index (id), and the archetype instance ID (archId).
-    let (bid, id, archId) = allocateEntity(`@world`, arch, `@components`)
+    let (bid, id) = allocateEntity(`@world`, arch, `@components`)
 
     # Calculate the flat index into the handles array based on block arithmetic.
     # Combines the block ID and the local ID within the block.
@@ -44,7 +44,7 @@ macro createEntity*(world: ECSWorld, comps: varargs[typed]): DenseHandle =
 
     # Initialize entity metadata.
     e.id = makeId(bid, id)
-    e.archetypeId = archId
+    e.archetypeId = arch
 
     var d = DenseHandle()
     d.widx = pid
@@ -65,15 +65,14 @@ macro createEntities*(world: ECSWorld, n: untyped, comps: varargs[typed]): seq[D
   return quote("@") do:
     `@regis`
     var rest = newSeq[DenseHandle](`@n`)
-    var archNode = `@world`.archGraph.findArchetype(`@compIds`)
+    var arch = `@world`.archGraph.findArchetype(`@compIds`)
 
     # Acquire 'n' stable internal IDs.
     let pids = getStableEntities(`@world`, `@n`)
-    let archId = archNode.id
 
     # Allocate the block space for 'n' entities.
     # 'res' contains ranges of allocated slots across potentially multiple blocks.
-    let res = allocateEntities(`@world`, `@n`, archNode, `@components`)
+    let res = allocateEntities(`@world`, `@n`, arch, `@components`)
     var current = 0
 
     # Iterate through the allocation results (Block ID, Range of IDs)
@@ -87,7 +86,7 @@ macro createEntities*(world: ECSWorld, n: untyped, comps: varargs[typed]): seq[D
         # Map handles and initialize metadata similar to single entity creation.
         `@world`.handles[idx] = pid
         e.id = makeID(bid, id)
-        e.archetypeId = archId
+        e.archetypeId = arch
 
         # Create the handle with the specific generation for this PID.
         rest[current] = DenseHandle(world: `@world`, widx: pid, gen: `@world`.generations[pid])
@@ -163,7 +162,7 @@ template deleteEntityDefer*(dw: var DWEntity, buffer_id: int) =
 ## @param world: The mutable `ECSWorld` instance.
 ## @param d: The `DenseHandle` of the entity to migrate.
 ## @param archNode: The target `ArchetypeNode` (destination archetype).
-proc migrateEntity*(world: var ECSWorld, d: DenseHandle, archNode: ArchetypeNode) =
+proc migrateEntity*(world: var ECSWorld, d: DenseHandle, archNode: uint16) =
   check(d.widx < world.entities.len.uint32,
     "migrateEntity: handle widx=" & $d.widx &
     " is out of bounds (entities.len=" & $world.entities.len & ").")
@@ -171,14 +170,13 @@ proc migrateEntity*(world: var ECSWorld, d: DenseHandle, archNode: ArchetypeNode
   check(world.generations[d.wid] == d.gen,
     "migrateEntity: stale handle. Stored gen=" & $world.generations[d.wid] &
     " but handle gen=" & $d.gen & " (widx=" & $d.widx & "). Entity already deleted.")
-  check(not archNode.isNil, "migrateEntity: target ArchetypeNode is nil.")
-  checkWarn(archNode.id != e.archetypeId,
-    "migrateEntity: target archetype id=" & $archNode.id &
+  checkWarn(archNode != e.archetypeId,
+    "migrateEntity: target archetype id=" & $archNode &
     " is the same as the current archetype id=" & $e.archetypeId &
     ". Migration is a no-op. Verify addComponent/removeComponent logic.")
 
   # Only perform migration if the target archetype is different from the current one.
-  if archNode.id != e.archetypeId:
+  if archNode != e.archetypeId:
     let oldId = e.id # Keep this for events
 
     # Move the data.
@@ -204,9 +202,9 @@ proc migrateEntity*(world: var ECSWorld, d: DenseHandle, archNode: ArchetypeNode
     let newId = makeId(bid, id)
     
     e.id = newId
-    e.archetypeId = archNode.id
-    var ev = world.events#
-    ev.emitDenseEntityMigrated(d, oldId, lst.uint, oldArchId, archNode.id)
+    e.archetypeId = archNode
+    var ev = world.events
+    ev.emitDenseEntityMigrated(d, oldId, lst.uint, oldArchId, archNode)
 
 ## Batch migration for multiple entities (Dense storage).
 ##
@@ -216,9 +214,8 @@ proc migrateEntity*(world: var ECSWorld, d: DenseHandle, archNode: ArchetypeNode
 ## @param ents: An open array of `DenseHandle` to migrate.
 ## @param archNode: The target `ArchetypeNode`.
 template migrateEntity*(world: var ECSWorld, ents: openArray[DenseHandle],
-    archNode: ArchetypeNode) =
+    archNode: uint16) =
   if ents.len != 0:
-    check(not archNode.isNil, "migrateEntity batch: target ArchetypeNode is nil.")
     # Assume all entities in the batch share the same source archetype.
     let e = ents[0].obj
     let oldArchId = e.archetypeId
@@ -230,18 +227,18 @@ template migrateEntity*(world: var ECSWorld, ents: openArray[DenseHandle],
             "] has archetype " & $batchEnt.archetypeId &
             " but entity[0] has archetype " & $oldArchId &
             ". Mixed-archetype batches produce undefined behaviour."
-    if archNode.id != oldArchId:
+    if archNode != oldArchId:
       # Perform batch partition change.
       let (ids, toSwap, toAdd) = changePartition(world, ents, oldArchId, archNode)
       var ev = world.events
-      ev.emitDenseEntityMigratedBatch(ids, toSwap, toAdd, oldArchId, archNode.id)
+      ev.emitDenseEntityMigratedBatch(ids, toSwap, toAdd, oldArchId, archNode)
 
 ## Immediately migrates an entity to a new archetype using a DWEntity.
-proc migrateEntity*(dw: var DWEntity, archNode: ArchetypeNode) =
+proc migrateEntity*(dw: var DWEntity, archNode: uint16) =
   migrateEntity(dw.w, dw.handle, archNode)
 
 template migrateEntity*(ents: var openArray[DWEntity],
-    archNode: ArchetypeNode) =
+    archNode: uint16) =
   if ents.len != 0:
     var hnd = newSeq[DenseHandle](ents.len)
     for i in 0..<ents.len:
@@ -281,7 +278,7 @@ proc addComponent*(world: var ECSWorld, d: DenseHandle, components: openArray[in
       "addComponent: component ID=" & $cid &
       " is out of valid range [0, " & $MAX_COMPONENTS & "). " &
       "Ensure the component is registered before use.")
-  var archNode = oldArch
+  var archNode = oldArch.id
 
   # Traverse the archetype graph, adding components one by one to find the target node.
   for id in components:
@@ -322,7 +319,7 @@ macro addComponent*(
         "addComponent: component ID=" & $cid &
         " is out of valid range [0, " & $MAX_COMPONENTS & "). " &
         "Ensure the component is registered before use.")
-    var archNode = oldArch
+    var archNode = oldArch.id
 
     # Traverse the archetype graph, adding components one by one to find the target node.
     for id in components:
@@ -356,7 +353,7 @@ proc removeComponent*(world: var ECSWorld, d: DenseHandle, components: openArray
       "removeComponent: entity (archetypeId=" & $e.archetypeId &
       ") does not have component ID=" & $cid &
       ". Removing a non-existent component produces an undefined archetype edge.")
-  var archNode = oldArch
+  var archNode = oldArch.id
 
   # Traverse the archetype graph, removing components one by one to find the target node.
   for id in components:
@@ -398,7 +395,7 @@ macro removeComponent*(
         "removeComponent: entity (archetypeId=" & $e.archetypeId &
         ") does not have component ID=" & $cid &
         ". Removing a non-existent component produces an undefined archetype edge.")
-    var archNode = oldArch
+    var archNode = oldArch.id
 
     # Traverse the archetype graph, removing components one by one to find the target node.
     for id in components:
@@ -435,7 +432,7 @@ macro createSparseEntity*(world: ECSWorld, comps: varargs[
   return quote("@") do:
     block:
       `@regis`
-      let archId = `@world`.archGraph.findArchetype(`@compIds`).id.uint32
+      let archId = `@world`.archGraph.findArchetype(`@compIds`).uint32
       let id = allocateSparseEntity(`@world`, `@comps`)
       let gen = `@world`.sparse_gens[id].uint32
 
@@ -465,7 +462,7 @@ macro createSparseEntities*(
     block:
       `@regis`
       let archNode = `@world`.archGraph.findArchetype(`@compIds`)
-      let archID = archNode.id.uint32
+      let archID = archNode.uint32
       let ranges = allocateSparseEntities(`@world`, `@n`, `@comps`)
 
       var res = newSeq[SparseHandle](`@n`)
@@ -507,13 +504,13 @@ macro addComponent*(
     block addComp:
       `@regis`
       ## Walk the archetype graph with compile-time ids — result is runtime node.
-      var archNode = `@world`.archGraph.nodes[`@s`.archID]
+      var archNode = `@world`.archGraph.nodes[`@s`.archID].id
       for cid in `@addedIds`:
         archNode = `@world`.archGraph.addComponent(archNode, cid)
 
-      if archNode.id == `@s`.archID: break addComp
+      if archNode == `@s`.archID: break addComp
 
-      `@s`.archID = archNode.id
+      `@s`.archID = archNode
 
       ## Activate only the added components — typed, no vtable.
       `@activateCode`
@@ -563,17 +560,17 @@ macro addComponent*(
 
       ## Update archetype node per entity (runtime graph walk).
       var lastArchID = -1
-      var lastArch: ArchetypeNode = nil
+      var lastArch: int = -1
       for i in 0..<`@entities`.len:
         `@batchIdent`.add(`@entities`[i].id)
         let archId = `@entities`[i].archID
         if lastArchID != archID.int:
           lastArchId = archID.int
-          lastArch = `@world`.archGraph.nodes[`@entities`[i].archID]
+          lastArch = `@entities`[i].archID.int
           for cid in `@addedIds`:
-            lastArch = `@world`.archGraph.addComponent(lastArch, cid)
+            lastArch = `@world`.archGraph.addComponent(lastArch.uint16, cid).int
 
-        `@entities`[i].archID = lastArch.id
+        `@entities`[i].archID = lastArch.uint16
 
       ## Typed batch activation — one castTo + one pass per component.
       `@activateBatchCode`
@@ -601,13 +598,13 @@ macro removeComponent*(
 
   return quote("@") do:
     block remComp:
-      var archNode = `@world`.archGraph.nodes[`@s`.archID]
+      var archNode = `@world`.archGraph.nodes[`@s`.archID].id
       for cid in `@removedIds`:
         archNode = `@world`.archGraph.removeComponent(archNode, cid)
 
-      if archNode.id == `@s`.archID: break remComp
+      if archNode == `@s`.archID: break remComp
 
-      `@s`.archID = archNode.id
+      `@s`.archID = archNode
       `@deactivateCode`
 
 ## removeComponent (sparse, single) — typed, zero vtable, SWEntity overload.
@@ -650,17 +647,17 @@ macro removeComponent*(
 
       
       var lastArchID = -1
-      var lastArch: ArchetypeNode = nil
+      var lastArch: int = -1
       for i in 0..<`@entities`.len:
         let archId = `@entities`[i].archID
         if lastArchID != archID.int:
           lastArchId = archID.int
-          lastArch = `@world`.archGraph.nodes[`@entities`[i].archID]
+          lastArch = `@entities`[i].archID.int
 
           for cid in `@removedIds`:
-            lastArch = `@world`.archGraph.removeComponent(lastArch, cid)
+            lastArch = `@world`.archGraph.removeComponent(lastArch.uint16, cid).int
 
-        `@entities`[i].archID = lastArch.id
+        `@entities`[i].archID = lastArch.uint16
 
       `@deactivateBatchCode`
 ## Deletes an entity from the sparse storage.
@@ -703,12 +700,11 @@ proc isAlive*(sw: SWEntity): bool = sw.handle.gen == sw.w.sparse_gens[sw.handle.
 ## @param s: The `SparseHandle` to convert.
 ## @return: A new `DWEntity` representing the entity in dense storage.
 proc makeDense*(world: var ECSWorld, s: var SparseHandle): DenseHandle =
-  var archNode = world.archGraph.nodes[s.archID]
   var d = world.createEntity()
-  world.migrateEntity(d, archNode)
+  world.migrateEntity(d, s.archID)
 
   # Iterate through the component mask to find active components.
-  for id in archNode.componentIds:
+  for id in world.archGraph.nodes[s.archID].componentIds:
     var entry = world.registry.entries[id]
 
     # Invoke the specific copy operation (Sparse to Dense).

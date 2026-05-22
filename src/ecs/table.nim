@@ -160,8 +160,8 @@ template newECSWorld*(max_entities:int=1000000):ECSWorld =
   w
 
 proc clearEntities*(w: var ECSWorld, max_entities:int=1000000) =
-  for node in w.archGraph.nodes:
-    if not node.isNil and not node.partition.isNil:
+  for node in w.archGraph.nodes.mitems:
+    if not node.partition.isNil:
       node.partition.clear()
 
   for entry in w.registry.entries:
@@ -318,7 +318,7 @@ proc process(world: var ECSWorld, cb: var ECommandBuffer) =
   
   for i, cmds in cb.denseEntityMigrate.pairs:
     for j, cmd in cmds.pairs:    
-      world.migrateEntity(cmd.dEntities, world.archGraph.nodes[j])
+      world.migrateEntity(cmd.dEntities, j.uint16)
 
 proc clearDenseChanges*(w: var ECSWorld) =
   for entry in w.registry.entries:

@@ -4,9 +4,9 @@ import unittest
 test "archetype graph initializes with root only":
   let g = initArchetypeGraph()
 
-  check g.root != nil
-  check g.root.id == 0
-  check g.root.componentCount == 0
+  check g.root == 0
+  check g.nodes[g.root].id == 0
+  check g.nodes[g.root].componentCount == 0
   check g.nodeCount == 1
 
 test "add single component creates new node":
@@ -14,8 +14,8 @@ test "add single component creates new node":
   let n1 = g.addComponent(g.root, 1)
 
   check n1 != g.root
-  check n1.componentCount == 1
-  check cast[seq[int]](n1.getComponentIds()) == @[1]
+  check g.nodes[n1].componentCount == 1
+  check cast[seq[int]](g.nodes[n1].getComponentIds()) == @[1]
   check g.nodeCount == 2
 
 test "adding same component twice does not create new node":
@@ -33,7 +33,7 @@ test "component order does not create duplicate archetypes":
   let b = g.findArchetype([2, 1])
 
   check a == b
-  check a.componentCount == 2
+  check g.nodes[a].componentCount == 2
   check g.nodeCount == 2  # {}, {1,2}, The graph create only the immediate node, not the in betweens
 
 test "remove component returns to previous archetype":
@@ -42,8 +42,8 @@ test "remove component returns to previous archetype":
   let a = g.findArchetype([1, 2])
   let b = g.removeComponent(a, 2)
 
-  check b.componentCount == 1
-  check cast[seq[int]](b.getComponentIds()) == @[1]
+  check g.nodes[b].componentCount == 1
+  check cast[seq[int]](g.nodes[b].getComponentIds()) == @[1]
 
 test "add then remove returns same node":
   var g = initArchetypeGraph()
@@ -59,9 +59,9 @@ test "edges and removeEdges are consistent":
   let a = g.findArchetype([1])
   let b = g.addComponent(a, 2)
 
-  check a.hasEdge(2)
-  check a.getEdge(2) == b
-  check b.getRemoveEdge(2) == a
+  check g.nodes[a].hasEdge(2)
+  check g.nodes[a].getEdge(2).uint16 == b
+  check g.nodes[b].getRemoveEdge(2).uint16 == a
 
 test "findArchetypeFast cache works":
   var g = initArchetypeGraph()
@@ -91,7 +91,7 @@ test "warmupTransitions creates all edges":
   let base = g.findArchetype([1])
 
   for c in [2,3,4]:
-    check base.hasEdge(c)
+    check g.nodes[base].hasEdge(c)
 
 test "graph contains all subsets":
   var g = initArchetypeGraph()
