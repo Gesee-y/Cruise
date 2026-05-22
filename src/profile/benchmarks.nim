@@ -2,7 +2,7 @@
 ######################################################## CRUISE PROFILER ###############################################################
 ########################################################################################################################################
 
-import times, math, algorithm, strutils, tables, unicode
+import times, math, algorithm, strutils, tables, unicode, std/monotimes
 
 type
   Parameters* = object
@@ -226,12 +226,12 @@ template benchmark*(benchmarkName: string, sample, code: untyped): untyped =
   block:
     for i in 0..<sample:
       let m0 = getOccupiedMem()
-      let t0 = cpuTime()
+      let t0 = getMonoTime().ticks
       code
-      let elapsed = cpuTime() - t0
+      let elapsed = (getMonoTime().ticks - t0)
       let allocated = max(0, getOccupiedMem() - m0).float
-      
-      bench.times[i] = elapsed
+
+      bench.times.add(elapsed.float*10e-9)
       bench.mems[i] = allocated
   
   finalize(bench)
@@ -251,12 +251,12 @@ template benchmark*(benchmarkName: string, sample, warm, code: untyped): untyped
   block:
     for i in 0..<sample:
       let m0 = getOccupiedMem()
-      let t0 = cpuTime()
+      let t0 = getMonoTime().ticks
       code
-      let elapsed = cpuTime() - t0
+      let elapsed = (getMonoTime().ticks - t0)
       let allocated = max(0, getOccupiedMem() - m0).float
-      
-      bench.times.add(elapsed)
+
+      bench.times.add(elapsed.float*1e-9)
       bench.mems.add(allocated)
   
   finalize(bench)
@@ -279,12 +279,12 @@ template benchmarkWithSetup*(benchmarkName: string, sample,
       setup  # Setup avant chaque mesure
       
       let m0 = getOccupiedMem()
-      let t0 = cpuTime()
+      let t0 = getMonoTime().ticks
       code
-      let elapsed = cpuTime() - t0
+      let elapsed = (getMonoTime().ticks - t0)
       let allocated = max(0, getOccupiedMem() - m0).float
-      
-      bench.times.add(elapsed)
+
+      bench.times.add(elapsed.float*10e-9)
       bench.mems.add(allocated)
   
   finalize(bench)
@@ -306,9 +306,10 @@ template benchmarkWithSetup*(benchmarkName: string, sample, warm,
     for i in 0..<sample:
       setup
       let m0 = getOccupiedMem()
-      let t0 = cpuTime()
+      let t0 = getMonoTime().ticks
       code
-      let elapsed = cpuTime() - t0
+      let t1 = getMonoTime().ticks
+      let elapsed = (t1 - t0).float*1e-9
       let allocated = max(0, getOccupiedMem() - m0).float
 
       bench.times.add(elapsed)

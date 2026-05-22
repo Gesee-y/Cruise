@@ -5,7 +5,7 @@ include "../../src/ecs/table.nim"
 # =========================
 include "../../src/profile/benchmarks.nim"
 
-const SAMPLE = 1000
+const SAMPLE = 100
 const WARMUP = 1
 const ENTITY_COUNT = 10000
 
@@ -84,7 +84,7 @@ proc runDenseBenchmarks() =
         discard w.createEntity(Position, Velocity)
     )
   )
-  showDetailed(suite.benchmarks[0])
+  showDetailed(suite.benchmarks[^1])
 
   suite.add benchmarkWithSetup(
     "create entity batch",
@@ -100,7 +100,7 @@ proc runDenseBenchmarks() =
       discard w.createEntities(ENTITY_COUNT, Position, Velocity)
     )
   )
-  showDetailed(suite.benchmarks[1])
+  showDetailed(suite.benchmarks[^1])
 
   # ------------------------------
   # Delete dense entity
@@ -117,7 +117,7 @@ proc runDenseBenchmarks() =
     for e in ents.mitems:
       w.deleteEntity(e)
   )
-  showDetailed(suite.benchmarks[2])
+  showDetailed(suite.benchmarks[^1])
 
   suite.add benchmarkWithSetup(
     "query creation",
@@ -131,7 +131,7 @@ proc runDenseBenchmarks() =
       discard query(w, Position and Velocity)
     )
   )
-  showDetailed(suite.benchmarks[3])
+  showDetailed(suite.benchmarks[^1])
 
   suite.add benchmarkWithSetup(
     "dense query creation",
@@ -146,7 +146,7 @@ proc runDenseBenchmarks() =
         continue
     )
   )
-  showDetailed(suite.benchmarks[4])
+  showDetailed(suite.benchmarks[^1])
 
   suite.add benchmarkWithSetup(
     "iteration",
@@ -168,7 +168,7 @@ proc runDenseBenchmarks() =
           x[i] += dx[i]
     )
   )
-  showDetailed(suite.benchmarks[5])
+  showDetailed(suite.benchmarks[^1])
 
   var s = 0'f32
   suite.add benchmarkWithSetup(
@@ -186,7 +186,7 @@ proc runDenseBenchmarks() =
         s += posc[e].x
     )
   )
-  showDetailed(suite.benchmarks[6])
+  showDetailed(suite.benchmarks[^1])
   
   suite.add benchmarkWithSetup(
     "write",
@@ -202,7 +202,7 @@ proc runDenseBenchmarks() =
         posc[e] = Position(x:s)
     )
   )
-  showDetailed(suite.benchmarks[7])
+  showDetailed(suite.benchmarks[^1])
 
   suite.add benchmarkWithSetup(
     "add component",
@@ -222,7 +222,7 @@ proc runDenseBenchmarks() =
         w.addComponent(e, Acceleration)
     )
   )
-  showDetailed(suite.benchmarks[8])
+  showDetailed(suite.benchmarks[^1])
 
   suite.add benchmarkWithSetup(
     "remove component",
@@ -240,7 +240,7 @@ proc runDenseBenchmarks() =
         w.removeComponent(e, Velocity)
     )
   )
-  showDetailed(suite.benchmarks[9])
+  showDetailed(suite.benchmarks[^1])
 
   suite.add benchmarkWithSetup(
     "add remove component",
@@ -261,7 +261,7 @@ proc runDenseBenchmarks() =
         w.removeComponent(e, Acceleration)
     )
   )
-  showDetailed(suite.benchmarks[10])
+  showDetailed(suite.benchmarks[^1])
 
   suite.add benchmarkWithSetup(
     "migrate_dense_entity",
@@ -283,7 +283,7 @@ proc runDenseBenchmarks() =
         migrateEntity(w, e, archDest)
     )
   )
-  showDetailed(suite.benchmarks[11])
+  showDetailed(suite.benchmarks[^1])
   
   suite.add benchmarkWithSetup(
     "migrate dense entity batch",
@@ -302,7 +302,7 @@ proc runDenseBenchmarks() =
       migrateEntity(w, ents, archDest)
     )
   )
-  showDetailed(suite.benchmarks[12])
+  showDetailed(suite.benchmarks[^1])
   suite.showSummary()
 #  suite.saveSummary("cr_dense")
 
