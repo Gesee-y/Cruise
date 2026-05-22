@@ -112,8 +112,7 @@ type
   QueryKey* = tuple[incl: ArchetypeMask, excl: ArchetypeMask]
   QueryCacheEntry* = object
     version*: int
-    nodes*: seq[ArchetypeNode]
-    archs: set[uint16]
+    archs: seq[uint16]
 
   ECSWorld* = ref object
     registry:ComponentRegistry

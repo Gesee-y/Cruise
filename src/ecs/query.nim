@@ -237,12 +237,11 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator)
   var cacheEntry = addr world.queryCache[key]
   
   if cacheEntry.version < world.archGraph.version:
-    for i in 0..<world.archGraph.nodes.len:
-      let archNode = world.archGraph.nodes[i]
-      if archNode.id != 0 or i == 0:
-        if matchesArchetype(sig, archNode.mask) and not (i.uint16 in cacheEntry.archs):
-          cacheEntry.archs.incl(i.uint16)
-    cacheEntry.version = world.archGraph.version
+    for archNode in world.archGraph.archetypes:
+      let i = archNode.id
+      if matchesArchetype(sig, archNode.mask) and not (i in cacheEntry.archs):
+        cacheEntry.archs.add(i)
+    cacheEntry.version = world.archGraph.nodes.len
 
   for archID in cacheEntry.archs:
     if not world.archGraph.nodes[archID].partition.isNil:
@@ -290,22 +289,20 @@ proc denseQueryCache*(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
 
   let key: QueryKey = (sig.includeMask, sig.excludeMask)
   if not world.queryCache.hasKey(key):
-    world.queryCache[key] = QueryCacheEntry(version: 0, nodes: @[])
+    world.queryCache[key] = QueryCacheEntry(version: 0)
   
   template cacheEntry: untyped = world.queryCache[key]
   
   if cacheEntry.version < world.archGraph.version:
-    for i in 0..<world.archGraph.nodes.len:
-      let archNode = world.archGraph.nodes[i]
-      if archNode.id != 0 or i == 0:
-        if matchesArchetype(sig, archNode.mask) and not (i.uint16 in cacheEntry.archs):
-          cacheEntry.nodes.add(archNode)
-          cacheEntry.archs.incl(i.uint16)
+    for archNode in world.archGraph.archetypes:
+      let i = archNode.id
+      if matchesArchetype(sig, archNode.mask) and not (i in cacheEntry.archs):
+        cacheEntry.archs.add(i)
     cacheEntry.version = world.archGraph.nodes.len
 
-  for archNode in cacheEntry.nodes:
-    if not archNode.partition.isNil: 
-      result.part.add(archNode.partition)
+  for id in cacheEntry.archs:
+    if not world.archGraph.nodes[id].partition.isNil: 
+      result.part.add(world.archGraph.nodes[id].partition)
 
 iterator items*(qr:DenseQueryResult):(int, HSlice[int, int]) =
   ## Iterator for the cached `DenseQueryResult`.
