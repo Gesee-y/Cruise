@@ -91,7 +91,7 @@ suite "Add component":
     let e = createEntity(world, Pos)
     let oldId = e.obj.id
 
-    addComponent(world, e, 1)
+    addComponent(world, e, Vel)
     check e.obj.id != oldId
     check e.obj.archetypeID == 2'u
 
@@ -100,7 +100,7 @@ suite "Add component":
     let e = createEntity(world, Pos)
     let oldId = e.obj.id
 
-    addComponent(world, e, 0)
+    addComponent(world, e, Pos)
     check e.obj.id == oldId
     check e.obj.archetypeID == 1'u
 
@@ -114,9 +114,9 @@ suite "Remove component":
     let e = createEntity(world, Pos, Vel)
     let oldId = e.obj.id
 
-    removeComponent(world, e, Vel.toComponentID)
+    removeComponent(world, e, Vel)
     check e.obj.id != oldId
-    check e.obj.archetypeID == world.archGraph.findArchetype([Pos.toComponentID]).id
+    check e.obj.archetypeID == world.archGraph.findArchetype([Pos.toComponentID])
 
   test "Remove absent component does nothing":
     var world = initWorld()
@@ -124,7 +124,7 @@ suite "Remove component":
     let oldId = e.obj.id
     let oldArch = e.obj.archetypeID
 
-    removeComponent(world, e, Vel.toComponentID)
+    removeComponent(world, e, Vel)
     check e.obj.id == oldId
     check e.obj.archetypeID == oldArch
 
@@ -138,8 +138,8 @@ suite "Stress tests":
     let e = createEntity(world, Pos)
 
     for i in 0..<10000:
-      addComponent(world, e, 1)
-      removeComponent(world, e, 1)
+      addComponent(world, e, Vel)
+      removeComponent(world, e, Vel)
 
     check e.obj.archetypeID == 1'u
 
@@ -171,9 +171,9 @@ suite "Query integration":
     var q1 = query(world, Pos)
     check denseQueryCount(world, q1) == 1
 
-    addComponent(world, e, 1)
+    addComponent(world, e, Vel)
     var q2 = query(world, Pos and Vel)
     check denseQueryCount(world, q2) == 1
 
-    removeComponent(world, e, 1)
+    removeComponent(world, e, Vel)
     check denseQueryCount(world, q2) == 0

@@ -55,11 +55,8 @@ suite "QueryFilter":
     check not q.dGet(2)
 
   test "logic ops":
-    var a,b: QueryFilter
-    a.dLayer = newHiBitSet()
-    b.dLayer = newHiBitSet()
-    a.sLayer = newHiBitSet()
-    b.sLayer = newHiBitSet()
+    var a = newQueryFilter()
+    var b = newQueryFilter()
 
     a.dSet(1); b.dSet(2)
     a.sSet(1); b.sSet(2)
@@ -74,8 +71,8 @@ suite "QuerySignature building":
 
   test "include only":
     let sig = buildQuerySignature(world, @[
-      includeComp(getComponentId(world, Position)),
-      includeComp(getComponentId(world, Velocity))
+      includeComp(Position.toComponentID),
+      includeComp(Velocity.toComponentID)
     ])
 
     check sig.modified.len == 0
@@ -85,13 +82,13 @@ suite "QuerySignature building":
 
   test "exclude only":
     let sig = buildQuerySignature(world, @[
-      excludeComp(getComponentId(world, Dead))
+      excludeComp(toComponentID(Dead))
     ])
 
     check sig.excludeMask[0] != 0
 
   test "modified implies include":
-    let pid = getComponentId(world, Position)
+    let pid = toComponentID(Position)
     let sig = buildQuerySignature(world, @[
       modifiedComp(pid)
     ])
@@ -103,12 +100,12 @@ suite "matchesArchetype":
 
   test "matches include":
     let arch = maskOf(0, 1)
-    let sig = buildQuerySignature(world, @[ includeComp(getComponentId(world, Position)) ])
+    let sig = buildQuerySignature(world, @[ includeComp(toComponentID(Position)) ])
     check matchesArchetype(sig, arch)
 
   test "fails exclude":
     let arch = maskOf(0, 3)
-    let sig = buildQuerySignature(world, @[ excludeComp(getComponentId(world, Dead)) ])
+    let sig = buildQuerySignature(world, @[ excludeComp(toComponentID(Dead)) ])
     check not matchesArchetype(sig, arch)
 
 suite "Dense query basic":

@@ -66,14 +66,17 @@ proc newQueryFilter*(size=4096): QueryFilter =
   return q
 
 proc `and`*(a, b: var QueryFilter): QueryFilter =
+  result = newQueryFilter()
   result.dLayer = a.dLayer and b.dLayer
   result.sLayer = a.sLayer and b.sLayer
 
 proc `or`*(a, b: var QueryFilter): QueryFilter =
+  result = newQueryFilter()
   result.dLayer = a.dLayer or b.dLayer
   result.sLayer = a.sLayer or b.sLayer
 
 proc `xor`*(a, b: var QueryFilter): QueryFilter =
+  result = newQueryFilter()
   result.dLayer = a.dLayer xor b.dLayer
   result.sLayer = a.sLayer xor b.sLayer
 

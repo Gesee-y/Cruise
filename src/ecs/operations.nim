@@ -349,7 +349,7 @@ proc removeComponent*(world: var ECSWorld, d: DenseHandle, components: openArray
     check(cid >= 0 and cid < MAX_COMPONENTS,
       "removeComponent: component ID=" & $cid &
       " is out of valid range [0, " & $MAX_COMPONENTS & ").")
-    check(oldArch.mask.hasComponent(cid),
+    checkWarn(oldArch.mask.hasComponent(cid),
       "removeComponent: entity (archetypeId=" & $e.archetypeId &
       ") does not have component ID=" & $cid &
       ". Removing a non-existent component produces an undefined archetype edge.")
@@ -391,7 +391,7 @@ macro removeComponent*(
       check(cid >= 0 and cid < MAX_COMPONENTS,
         "removeComponent: component ID=" & $cid &
         " is out of valid range [0, " & $MAX_COMPONENTS & ").")
-      check(oldArch.mask.hasComponent(cid),
+      checkWarn(oldArch.mask.hasComponent(cid),
         "removeComponent: entity (archetypeId=" & $e.archetypeId &
         ") does not have component ID=" & $cid &
         ". Removing a non-existent component produces an undefined archetype edge.")
