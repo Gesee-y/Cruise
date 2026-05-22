@@ -3,19 +3,19 @@
 ######################################################################################################################################
 
 type
-  ArchetypeNode* = ref object
+  ArchetypeNode* = object
     id: uint16
     mask*: ArchetypeMask
     partition: TablePartition
-    edges: array[MAX_COMPONENTS, ArchetypeNode]
-    removeEdges: array[MAX_COMPONENTS, ArchetypeNode]
+    edges: array[MAX_COMPONENTS, uint16]
+    removeEdges: array[MAX_COMPONENTS, uint16]
     edgeMask: ArchetypeMask
     componentIds: seq[int]
     lastEdge:int
     lastRemEdge:int
   
   ArchetypeGraph* = ref object
-    root: ArchetypeNode
+    root: uint16
     nodes*: seq[ArchetypeNode]
     maskToId: Table[ArchetypeMask, uint16]
     requiredComps: array[MAX_COMPONENTS, seq[int]]
@@ -31,27 +31,25 @@ proc addRequired(m: var ArchetypeMask, comps: seq[int], registry: ptr array[MAX_
       m.addRequired(registry[c], registry)
 
 template hasEdge(node: ArchetypeNode, comp: int): bool =
-  let idx = comp shr 6
-  let bit = comp and 63
-  (node.edgeMask[idx] and (1'u64 shl bit)) != 0
+  node.edges[comp] > 0
 
 template setEdge(node: ArchetypeNode, comp: int) =
   let idx = comp shr 6
   let bit = comp and 63
   node.edgeMask[idx] = node.edgeMask[idx] or (1'u64 shl bit)
 
-template getEdge(node: ArchetypeNode, comp: int): ArchetypeNode =
-  node.edges[comp]
+template getEdge(g: ArchetypeGraph, node: ArchetypeNode, comp: int): ArchetypeNode =
+  g.nodes[node.edges[comp]-1]
 
-template setEdgePtr(node: ArchetypeNode, comp: int, target: ArchetypeNode) =
-  node.edges[comp] = target
+template setEdgePtr(node: var ArchetypeNode, comp: int, target: ArchetypeNode) =
+  node.edges[comp] = target.id+1
   node.setEdge(comp)
 
-template getRemoveEdge(node: ArchetypeNode, comp: int): ArchetypeNode =
-  node.removeEdges[comp]
+template getRemoveEdge(g: ArchetypeGraph, node: ArchetypeNode, comp: int): ArchetypeNode =
+  g.nodes[node.removeEdges[comp]-1]
 
 template setRemoveEdgePtr(node: ArchetypeNode, comp: int, target: ArchetypeNode) =
-  node.removeEdges[comp] = target
+  node.removeEdges[comp] = target.id+1
   
 proc setRequired(g: var ArchetypeGraph, comp: int, req: int) =
   g.requiredComps[comp].add(req)
@@ -99,15 +97,13 @@ macro initArchetypeGraph*(): ArchetypeGraph =
     
     for (m, id) in `@ARCHETYPE_ID_REGISTRY`.pairs:
       discard res.createNode(m, id.uint16)
-    
-    res.root = res.nodes[0]
     res
 
 proc addComponent*(graph: var ArchetypeGraph, 
-                   node: ArchetypeNode, 
+                   node: var ArchetypeNode, 
                    comp: int): ArchetypeNode {.inline.} =
   if node.hasEdge(comp):
-    return node.getEdge(comp)
+    return graph.getEdge(node, comp)
   
   var newMask = node.mask.withComponent(comp)
   var registry = addr graph.requiredComps
@@ -156,7 +152,7 @@ proc removeComponent*(graph: var ArchetypeGraph,
     " does not have component ID=" & $comp &
     ". Removing a non-existent component is a no-op migration " &
     "and may indicate a logic error in the calling code.")
-  result = node.getRemoveEdge(comp)
+  result = graph.getRemoveEdge(node, comp)
   if result != nil:
     node.lastRemEdge = comp
     return result
@@ -195,9 +191,9 @@ macro findArchetype*(graph: var ArchetypeGraph,
 
 proc findArchetype*(graph: var ArchetypeGraph, 
                     components: openArray[int]): ArchetypeNode =
-  result = graph.root
+  var res = addr graph.nodes[graph.root]
   for comp in components:
-    result = graph.addComponent(result, comp)
+    result = addr graph.addComponent(res[], comp)
 
 proc findArchetype*(graph: var ArchetypeGraph, 
                     mask: ArchetypeMask): ArchetypeNode =
@@ -222,13 +218,13 @@ proc findArchetypeFast*(graph: var ArchetypeGraph,
 
 {.push inline.}
 
-proc setPartition*(node: ArchetypeNode, partition: TablePartition) =
+proc setPartition*(node: var ArchetypeNode, partition: TablePartition) =
   node.partition = partition
 
 proc getPartition*(node: ArchetypeNode): TablePartition =
   node.partition
 
-proc getMask*(node: ArchetypeNode): ArchetypeMask =
+proc getMask*(node: var ArchetypeNode): ArchetypeMask =
   node.mask
 
 proc getComponentIds*(node: ArchetypeNode): seq[int] =

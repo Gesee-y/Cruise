@@ -595,3 +595,22 @@ proc clearDenseChanges*[N, P, T, S, B](f: var FragmentArray[N, P, T, S, B]) =
 proc clearSparseChanges*[N, P, T, S, B](f: var FragmentArray[N, P, T, S, B]) =
   ## Clear all sparse change tracking state.
   f.changeFilter.sLayer.clear()
+
+proc clear*[N, P, T, S, B](f: var FragmentArray[N, P, T, S, B]) =
+  f.clearDenseChanges()
+  f.clearSparseChanges()
+
+  for i in 0..<f.blkTicks.len:
+    f.blkTicks[i] = 0
+
+  for b in f.blocks.mitems:
+    if not b.isNil:
+      b.reset()
+      new(b)
+
+  for b in f.sparse.mitems:
+    b.reset()
+
+  f.freeBlocks = toSeq(0..<f.sparse.len)
+  f.sparseMask.clear()
+  f.tick = 0

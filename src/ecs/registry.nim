@@ -183,6 +183,7 @@ type
     ## Deactivate multiple sparse bits.
     deactivateSparseBitBatchOp: proc (p:pointer, i:seq[uint]) {.noSideEffect, nimcall, inline.}
 
+    clearEntityOp: proc (p:pointer) {.noSideEffect, nimcall, inline.}
     freeEntry: proc (p:pointer) {.raises: [].}
 
   ## Global registry holding all component types.
@@ -235,6 +236,7 @@ macro registerComponent(registry:ComponentRegistry, B:typed, P:static bool=false
       
       # Allocate SoA storage for the component
       var frag = `createProc`(`B`, DEFAULT_BLK_SIZE, `P`)
+      if frag.changeFilter.isNil: new(frag.changeFilter)
 
       # Prevent GC from collecting the fragment array
       GC_ref(frag)
@@ -320,6 +322,10 @@ macro registerComponent(registry:ComponentRegistry, B:typed, P:static bool=false
         var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
         fr.deactivateSparseBit(i)
 
+      let clearEntity = proc (p:pointer) {.noSideEffect, nimcall, inline.} =
+        var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
+        fr.clear()
+
       # --- Build registry entry ---
 
       var entry:ComponentEntry
@@ -341,6 +347,7 @@ macro registerComponent(registry:ComponentRegistry, B:typed, P:static bool=false
       entry.activateSparseBitOp = actSparseBit
       entry.activateSparseBitBatchOp = actBitB
       entry.deactivateSparseBitBatchOp = deactBitB
+      entry.clearEntityOp = clearEntity
       entry.freeEntry = proc (p:pointer) {.raises: [].} =
         var fr = castTo(p, `B`, DEFAULT_BLK_SIZE,`P`)
         GC_unref(fr)

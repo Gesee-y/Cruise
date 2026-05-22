@@ -97,6 +97,15 @@ type
     components:seq[int]
     fill_index:int
 
+proc clear(t: var TableRange) =
+  t.r.reset
+
+proc clear(t: var TablePartition) =
+  for z in t.zones.mitems:
+    z.clear()
+
+  t.fill_index = 0
+  
 include "archetypes.nim"
 
 type
@@ -150,6 +159,21 @@ template newECSWorld*(max_entities:int=1000000):ECSWorld =
 
   w
 
+proc clearEntities*(w: var ECSWorld, max_entities:int=1000000) =
+  for node in w.archGraph.nodes:
+    if not node.isNil and not node.partition.isNil:
+      node.partition.clear()
+
+  for entry in w.registry.entries:
+    if not entry.isNil:
+      entry.clearEntityOp(entry.rawPointer)
+
+  w.entities = newSeqofCap[Entity](max_entities)
+  w.free_list = newSeqofCap[uint32](max_entities div 2)
+  w.free_entities = newSeqofCap[uint32](max_entities div 2)
+  w.generations = newSeqofCap[uint16](max_entities)
+  w.sparse_gens = newSeqofCap[uint16](max_entities)
+
 ####################################################################################################################################################
 ####################################################################### OPERATIONS #################################################################
 ####################################################################################################################################################
@@ -177,10 +201,6 @@ template getDHandle*(w: ECSWorld, i:untyped): DenseHandle = DenseHandle(widx: i.
 template getDHandleFromID*(w: ECSWorld, i:untyped): DenseHandle = 
   var e = w.handles[i.toIdx]
   w.getDHandle(e)
-
-proc getComponentId*(world:ECSWorld, t:typedesc):int =
-  check($t in world.registry.cmap, "Component type '" & $t & "' is not registered. Call registerComponent first.")
-  return world.registry.cmap[$t]
 
 proc getArchetype*(w:ECSWorld, e:SomeEntity):ArchetypeNode =
   return w.archGraph.nodes[e.archetypeId]

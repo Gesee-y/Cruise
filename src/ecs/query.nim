@@ -229,23 +229,21 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator)
 
   let key: QueryKey = (sig.includeMask, sig.excludeMask)
   if not world.queryCache.hasKey(key):
-    world.queryCache[key] = QueryCacheEntry(version: 0, nodes: @[])
+    world.queryCache[key] = QueryCacheEntry(version: 0)
   
-  template cacheEntry: untyped = world.queryCache[key]
+  var cacheEntry = addr world.queryCache[key]
   
   if cacheEntry.version < world.archGraph.version:
     for i in 0..<world.archGraph.nodes.len:
       let archNode = world.archGraph.nodes[i]
       if not archNode.isNil:
         if matchesArchetype(sig, archNode.mask) and not (i.uint16 in cacheEntry.archs):
-          cacheEntry.nodes.add(archNode)
           cacheEntry.archs.incl(i.uint16)
     cacheEntry.version = world.archGraph.version
 
-  for archNode in cacheEntry.nodes:
-    
-    if not archNode.partition.isNil:
-      for zone in archNode.partition.zones:
+  for archID in cacheEntry.archs:
+    if not world.archGraph.nodes[archID].partition.isNil:
+      for zone in world.archGraph.nodes[archID].partition.zones:
         var masked = false
 
         # Reset mask to all-1s for each zone
@@ -272,9 +270,9 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator)
             res[i] = res[i] and qf.dLayer.getL0(zone.block_idx*sizeof(uint)*8 + i)
         
         if masked:
-          yield (zone.block_idx, DenseIterator(r:zone.r.s..<zone.r.e, m: res, masked:true))
+          yield (zone.block_idx, DenseIterator(masked:true, r:zone.r.s..<zone.r.e, m: res))
         else:
-          yield (zone.block_idx, DenseIterator(r:zone.r.s..<zone.r.e, masked:false))
+          yield (zone.block_idx, DenseIterator(masked:false, r:zone.r.s..<zone.r.e))
 
 
 proc denseQueryCache*(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
@@ -455,7 +453,7 @@ macro query*(world: untyped, expr: untyped): untyped =
   proc processExpr(world: NimNode, node: NimNode) =
     case node.kind
       of nnkInfix:
-        if node[0].strVal == "and":
+        if (node[0].kind == nnkOpenSymChoice and node[0][1].strVal == "and") or node[0].strVal == "and":
           # Recursively process left and right operands of 'and'
           processExpr(world, node[1])
           processExpr(world, node[2])
@@ -463,7 +461,7 @@ macro query*(world: untyped, expr: untyped): untyped =
           error("Unsupported operator in query: " & node[0].strVal)
       
       of nnkPrefix:
-        if node[0].strVal == "not":
+        if (node[0].kind == nnkOpenSymChoice and node[0][1].strVal == "and") or node[0].strVal == "not":
           let operand = node[1]
           
           # Check if the operand is Modified[Type]
@@ -471,34 +469,49 @@ macro query*(world: untyped, expr: untyped): untyped =
             # not Modified[Type]
             let compNode = operand[1] # The Type inside []
             components.add(quote("@") do:
-              notModifiedComp(getComponentId(`@world`, `@compNode`))
+              notModifiedComp(toComponentId(`@compNode`))
             )
           elif operand.kind in {nnkIdent, nnkSym}:
             # not Type
             components.add(quote("@") do:
-              excludeComp(getComponentId(`@world`, `@operand`))
+              excludeComp(toComponentId(`@operand`))
             )
           else:
             error("Unsupported operand for 'not': " & $operand.kind)
         else:
           error("Unsupported prefix operator in query: " & node[0].strVal)
       
+      of nnkCall:
+        # Check for Modified[Type]
+        if node[1].eqIdent("Modified"):
+          let compNode = node[2].getTypeInst()
+          components.add(quote("@") do:
+            modifiedComp(toComponentId(`@compNode`))
+          )
+        else:
+          var t = newNimNode(nnkBracketExpr)
+          t.add(node[1])
+          t.add(node[2])
+          components.add(quote("@") do:
+            includeComp(toComponentId(`@t`))
+          )
+
       of nnkBracketExpr:
         # Check for Modified[Type]
         if node[0].eqIdent("Modified"):
           let compNode = node[1] # The Type inside []
           components.add(quote("@") do:
-            modifiedComp(getComponentId(`@world`, `@compNode`))
+            modifiedComp(toComponentId(`@compNode`))
           )
         else:
           components.add(quote("@") do:
-            includeComp(getComponentId(`@world`, `@node`))
+            includeComp(toComponentId(`@node`))
           )
       
       of nnkIdent, nnkSym:
         # Process a raw type identifier (Implies 'include')
         components.add(quote("@") do:
-          includeComp(getComponentId(`@world`, `@node`))
+          includeComp(toComponentId(`@node`))
         )
       
       else:
