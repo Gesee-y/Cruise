@@ -270,7 +270,7 @@ template migrateEntityDefer*(buffer: var ECommandBuffer, d: DenseHandle,
 ## @param world: The mutable `ECSWorld` instance.
 ## @param d: The `DenseHandle` of the entity.
 ## @param components: Variadic list of Component IDs to add.
-proc addComponent*(world: var EcsWorld, d: DenseHandle, components: varargs[int]) =
+proc addComponent*(world: var ECSWorld, d: DenseHandle, components: openArray[int]) =
   check(components.len > 0,
     "addComponent: component list is empty — no structural change will occur. " &
     "Pass at least one component ID.")
@@ -292,6 +292,46 @@ proc addComponent*(world: var EcsWorld, d: DenseHandle, components: varargs[int]
   var ev = world.events
   ev.emitDenseComponentAdded(d, components)
 
+## addComponent (dense, single)
+##
+## Only activates the NEW components — the entity already has the others.
+macro addComponent*(
+  world: var ECSWorld,
+  d: DenseHandle,
+  addedComps: varargs[typed]
+): untyped =
+  var addedIds = newNimNode(nnkBracket)
+  var regis = newNimNode(nnkStmtList)
+  for c in addedComps:
+    addedIds.add quote("@") do: toComponentId(`@c`)
+    regis.add quote("@") do: discard `@world`.registerComponent(`@c`)
+  if addedIds.len == 0:
+    addedIds = quote("@") do: array[0, int](`@addedIds`)
+
+  return quote("@") do: 
+    `@regis`
+    let components = `@addedIds`
+    check(components.len > 0,
+    "addComponent: component list is empty — no structural change will occur. " &
+    "Pass at least one component ID.")
+    
+    let e = `@d`.obj
+    let oldArch = `@world`.archGraph.nodes[e.archetypeId]
+    for cid in components:
+      check(cid >= 0 and cid < MAX_COMPONENTS,
+        "addComponent: component ID=" & $cid &
+        " is out of valid range [0, " & $MAX_COMPONENTS & "). " &
+        "Ensure the component is registered before use.")
+    var archNode = oldArch
+
+    # Traverse the archetype graph, adding components one by one to find the target node.
+    for id in components:
+      archNode = `@world`.archGraph.addComponent(archNode, id)
+
+    # Perform the migration to the new archetype.
+    migrateEntity(`@world`, `@d`, archNode)
+    var ev = `@world`.events
+
 ## Adds components to an existing entity using a DWEntity.
 proc addComponent*(dw: var DWEntity, components: varargs[int]) =
   addComponent(dw.w, dw.handle, components)
@@ -303,7 +343,7 @@ proc addComponent*(dw: var DWEntity, components: varargs[int]) =
 ## @param world: The mutable `ECSWorld` instance.
 ## @param d: The `DenseHandle` of the entity.
 ## @param components: Variadic list of Component IDs to remove.
-proc removeComponent*(world: var ECSWorld, d: DenseHandle, components: varargs[int]) =
+proc removeComponent*(world: var ECSWorld, d: DenseHandle, components: openArray[int]) =
   check(components.len > 0,
     "removeComponent: component list is empty — no structural change will occur.")
   let e = d.obj
@@ -326,6 +366,48 @@ proc removeComponent*(world: var ECSWorld, d: DenseHandle, components: varargs[i
   migrateEntity(world, d, archNode)
   var ev = world.events
   ev.emitDenseComponentRemoved(d, components)
+
+## addComponent (dense, single)
+##
+## Only activates the NEW components — the entity already has the others.
+macro removeComponent*(
+  world: var ECSWorld,
+  d: DenseHandle,
+  removedComps: varargs[typed]
+): untyped =
+  var removedIds = newNimNode(nnkBracket)
+  var regis = newNimNode(nnkStmtList)
+  for c in removedComps:
+    removedIds.add quote("@") do: toComponentId(`@c`)
+    regis.add quote("@") do: discard `@world`.registerComponent(`@c`)
+  if removedIds.len == 0:
+    removedIds = quote("@") do: array[0, int](`@removedIds`)
+
+  return quote("@") do: 
+    `@regis`
+    let components = `@removedIds`
+    check(components.len > 0,
+    "removeComponent: component list is empty — no structural change will occur.")
+    let e = `@d`.obj
+    let oldArch = `@world`.archGraph.nodes[e.archetypeId]
+    for cid in components:
+      check(cid >= 0 and cid < MAX_COMPONENTS,
+        "removeComponent: component ID=" & $cid &
+        " is out of valid range [0, " & $MAX_COMPONENTS & ").")
+      check(oldArch.mask.hasComponent(cid),
+        "removeComponent: entity (archetypeId=" & $e.archetypeId &
+        ") does not have component ID=" & $cid &
+        ". Removing a non-existent component produces an undefined archetype edge.")
+    var archNode = oldArch
+
+    # Traverse the archetype graph, removing components one by one to find the target node.
+    for id in components:
+      archNode = `@world`.archGraph.removeComponent(archNode, id)
+
+    # Perform the migration to the new archetype.
+    migrateEntity(`@world`, `@d`, archNode)
+    var ev = `@world`.events
+    ev.emitDenseComponentRemoved(`@d`, components)
 
 ## Removes components from an existing entity using a DWEntity.
 proc removeComponent*(dw: var DWEntity, components: varargs[int]) =
