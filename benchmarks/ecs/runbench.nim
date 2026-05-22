@@ -5,9 +5,9 @@ include "../../src/ecs/table.nim"
 # =========================
 include "../../src/profile/benchmarks.nim"
 
-const SAMPLE = 10000
+const SAMPLE = 1000
 const WARMUP = 1
-const ENTITY_COUNT = 1000
+const ENTITY_COUNT = 10000
 
 # =========================
 # Components
@@ -163,12 +163,9 @@ proc runDenseBenchmarks() =
       for (bid, r) in w.denseQuery(query(w, Position and Velocity)):
         var x = addr posc.blocks[bid].data.x
         let dx = addr velc.blocks[bid].data.x
-        var y = addr posc.blocks[bid].data.y
-        let dy = addr velc.blocks[bid].data.y
 
         for i in r:
           x[i] += dx[i]
-          y[i] += dy[i]
     )
   )
   showDetailed(suite.benchmarks[5])

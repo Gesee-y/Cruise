@@ -7,9 +7,9 @@ include "../../src/ecs/table.nim"
 include "../../src/profile/benchmarks.nim"
 
 const
-  Samples = 50
+  Samples = 1000
   Warmup  = 1
-  ENTITY_COUNT = 10_00000
+  ENTITY_COUNT = 10_000
 
 type
   Position = object
@@ -144,7 +144,7 @@ proc runSparseBenchmarks() =
       var ents = w.createSparseEntities(ENTITY_COUNT, Position)),
     w.addComponent(ents, Velocity)
   )
-  showDetailed(suite.benchmarks[suite.benchmarks.len-1])
+  showDetailed(suite.benchmarks[^1])
 
   # ------------------------------
   # Remove component
@@ -196,12 +196,9 @@ proc runSparseBenchmarks() =
         let bid = posc.toSparse[sid]-1
         var posbx = addr posc.sparse[bid].data.x
         let velbx = addr velc.sparse[bid].data.x
-        var posby = addr posc.sparse[bid].data.y
-        let velby = addr velc.sparse[bid].data.y
 
         for i in r:
-          posbx[i] += velbx[i]+1
-          posby[i] += velby[i]+1
+          posbx[i] += velbx[i]
     )
   )
   showDetailed(suite.benchmarks[6])
@@ -232,7 +229,7 @@ proc runSparseBenchmarks() =
       var ents = w.createSparseEntities(ENTITY_COUNT, Position)),
     (
       for e in ents:
-        posc[e] = Position()
+        posc[e] = Position(x: s)
     )
   )
   showDetailed(suite.benchmarks[8])
