@@ -89,7 +89,7 @@ type
     renderer*: CSDLRenderer
     window*: SDL3Window
 
-proc markDirty*(game: var Game; entity: DenseHandle) =
+template markDirty*(game: var Game; entity: DenseHandle) =
   var t = game.world.get(Transform2D, entity)
   t.flags.incl(Dirty)
   game.world.set(entity, t)
@@ -156,7 +156,7 @@ proc createBall*(game: var Game; x, y: float32; seed: uint32) =
     speed: 14
   ))
   game.tree.addChild(entity)
-  
+ 
 proc createBrick*(game: var Game; x, y: float32; width, height: int32) =
   let entity = game.world.createEntity(Transform2d, Collide, Draw2d, Fade, Previous)
   game.world.set(entity, initTransform(vec2(x, y)))
@@ -441,7 +441,7 @@ proc sysControlBrick*(game: var Game) =
         fades[brick] = fade
 
   for brick in to_kill:
-    game.world.addComponent(brick, Dead.toComponentID)
+    game.world.addComponent(brick, Dead)
 
 proc sysShake*(game: var Game) =
   var transform = game.world.get(Transform2D, game.camera)
