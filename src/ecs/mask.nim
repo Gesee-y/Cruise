@@ -170,3 +170,32 @@ proc matches*(arch, incl, excl: ptr ArchetypeMask): bool {.inline.} =
     if (a and in_m) != in_m: return false
     if (a and ex_m) != 0: return false
   return true
+
+## Compute the `ArchetypeMask` for a list of component IDs known at compile time.
+## Required components (declared via `requireComponent`) are folded in
+## automatically by consulting `REQUIRED_COMPS`.
+macro maskOf(ids: static openArray[int]): ArchetypeMask =
+  var m: ArchetypeMask
+  for id in ids:
+    m.withComponentInPlace(id)
+    for req in getRequiredComps(id):
+      m.withComponentInPlace(req)
+  return quote do : `m`
+
+## Return a new mask that is `base` with `comp` (and its required companions)
+## added, all resolved at compile time.
+macro withComponent(base: static ArchetypeMask, comp: static int): ArchetypeMask =
+  var m = base
+  m.withComponentInPlace(comp)
+  for req in getRequiredComps(comp):
+    m.withComponentInPlace(req)
+
+  return quote do: `m`
+
+## Return a new mask that is `base` with `comp` removed at compile time.
+## Does *not* validate required-component invariants — the caller must ensure
+## the removal is legal (same rule as the runtime path).
+macro withoutComponent(base: static ArchetypeMask, comp: static int): ArchetypeMask {.compileTime.} =
+  let m = base.withoutComponentInPlace(comp)
+  return quote do: `m`
+  

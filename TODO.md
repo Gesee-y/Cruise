@@ -4,8 +4,7 @@
 
 * [] Hot-reloadable plugin system: gameplay, examples, and the editor are all shared libraries the engine loads at runtime and rebuilds in place without restarting.
 * [] First-class C ABI plugin API — plugins are written in any language that can produce a shared library, not just Nim.
-* [] Cross-platform application + windowing layer (macOS arm64 and Linux today; Windows scaffolded).
-* [] Fiber-based job system with work-stealing scheduling for parallel task graphs.
+* [X] Cross-platform application + windowing layer (macOS arm64 and Linux today; Windows scaffolded).
 * [] Lock-free queues, atomics, and a thread pool used throughout the engine internals.
 * [] Virtual file system with mount points, alias resolution, and absolute-path passthrough.
 * [] Hot-reloading asset pipeline: live file watching on mount points triggers re-imports of textures, shaders, scenes, etc.

@@ -303,7 +303,9 @@ template set*[T](ent:var DWEntity | var SWEntity, v: T, P:static bool= false):un
 include "dense.nim"
 include "sparse.nim"
 include "query.nim"
+include "typed_handles.nim"
 include "operations.nim"
+include "typed_dense.nim"
 
 proc process(world: var ECSWorld, cb: var ECommandBuffer) =
   for cmd in cb.denseEntityRemoved:
