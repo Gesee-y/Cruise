@@ -1,10 +1,11 @@
-include "../../../src/ecs/table.nim"
+import "../../../src/ecs/table.nim"
 
 # =========================
 # Benchmark template
 # =========================
-include "../../../src/profile/benchmarks.nim"
+import "../../../src/profile/benchmarks.nim"
 
+import macros
 const SAMPLE = 1000
 const WARMUP = 1
 const ENTITY_COUNT = 10000
@@ -33,7 +34,7 @@ macro initVariant(w: untyped, eCount: untyped, n: static int) =
   var code = newNimNode(nnkStmtList)
   for i in 0..<n:
     code.add quote do:
-      discard `w`.createEntities(`eCount`, A[`i`], Position)
+      discard `w`.createEntities(`eCount`, A[`i`], A[`n`])
 
   return code
 
@@ -41,7 +42,7 @@ macro initSparseVariant(w: untyped, eCount: untyped, n: static int) =
   var code = newNimNode(nnkStmtList)
   for i in 0..<n:
     code.add quote do:
-      discard `w`.createSparseEntities(`eCount`, A[`i`], Position)
+      discard `w`.createSparseEntities(`eCount`, A[`i`], A[`n`])
 
   return code
 
@@ -180,11 +181,16 @@ proc iterFrag(eCount=ENTITY_COUNT, bSample=SAMPLE, bWarm=WARMUP) =
     (
       var w = newECSWorld()
       w.initVariant(eCount, 26)
-      var posc = w.get(Position)
+      var a26 = w.get(A[26])
+      for (bid, r) in w.denseQuery(query(w, A[26])):
+        var x = addr a26.blocks[bid].data.f
+
+        for i in r:
+          x[i] *= 2
     ),
     (
-      for (bid, r) in w.denseQuery(query(w, Position)):
-        var x = addr posc.blocks[bid].data.x
+      for (bid, r) in w.denseQuery(query(w, A[26])):
+        var x = addr a26.blocks[bid].data.f
 
         for i in r:
           x[i] *= 2
@@ -245,9 +251,9 @@ proc iterSparseBaseNoDetection(eCount=ENTITY_COUNT, bSample=SAMPLE, bWarm=WARMUP
   showDetailed(suite.benchmarks[^1])
 
 proc iterSparseWide(eCount=ENTITY_COUNT, bSample=SAMPLE, bWarm=WARMUP) =
-  var suite = initSuite("iter dense wide entities")
+  var suite = initSuite("iter sparse wide entities")
   suite.add benchmarkWithSetup(
-    "iteration dense wide",
+    "iteration sparse wide",
     bSample,
     bWarm,
     (
@@ -349,11 +355,11 @@ proc iterSparseFrag(eCount=ENTITY_COUNT, bSample=SAMPLE, bWarm=WARMUP) =
     (
       var w = newECSWorld()
       w.initSparseVariant(eCount, 26)
-      var posc = w.get(Position)
+      var a26 = w.get(A[26])
     ),
     (
-      for (bid, r) in w.sparseQuery(query(w, Position)):
-        var x = addr posc.sparse[posc.toSparse[bid]-1].data.x
+      for (bid, r) in w.sparseQuery(query(w, A[26])):
+        var x = addr a26.sparse[a26.toSparse[bid]-1].data.f
 
         for i in r:
           x[i] *= 2

@@ -82,17 +82,14 @@ proc prettyPercent*(p: float): string =
   let sign = if p >= 0: "+" else: ""
   return sign & (p * 100).formatFloat(ffDecimal, 1) & "%"
 
-# ==================== Calcul de statistiques ====================
 
 proc calculateStatistics*(values: seq[float]): Statistics =
   if values.len == 0:
     return
   
+  var outlierFactor = 2.0
   var sorted = values
   sorted.sort()
-  
-  result.min = sorted[0]
-  result.max = sorted[^1]
   
   var sum = 0.0
   var variance = 0.0
@@ -106,6 +103,29 @@ proc calculateStatistics*(values: seq[float]): Statistics =
     variance += diff * diff
 
   result.stddev = sqrt(variance/sorted.len.float)
+
+  # We now remove the outliers from the calculation
+  var i = 0
+  while i < sorted.len:
+    if abs(sorted[i] - result.mean) > result.stddev * outlierFactor:
+      sorted.delete(i)
+    else:
+      inc i
+
+  for v in sorted:
+    sum += v
+    
+  result.mean = sum / sorted.len.float
+
+  for v in sorted:
+    let diff = v - result.mean
+    variance += diff * diff
+
+  result.stddev = sqrt(variance/sorted.len.float)
+
+
+  result.min = sorted[0]
+  result.max = sorted[^1]
 
   let mid = sorted.len div 2
   if sorted.len mod 2 == 0:

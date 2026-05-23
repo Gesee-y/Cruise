@@ -140,7 +140,7 @@ template vecCastTo*(obj: untyped, Ty: typedesc, N: static int,
     P: static bool = false): untyped =
   cast[FragmentArray[N, P, VecFragment[N, P, Ty], VecFragment[UINT_BITS, P, Ty], Ty]](obj)
 
-macro newSoAFragArr(Ty: typedesc, N: static int,
+macro newSoAFragArr*(Ty: typedesc, N: static int,
     P: static bool = false): untyped =
   ## Allocate and initialize a new `FragmentArray`.
   ##
@@ -157,11 +157,11 @@ macro newSoAFragArr(Ty: typedesc, N: static int,
     f.sparseMask = newHiBitSet(INITIAL_SPARSE_SIZE)
     f
 
-proc newVecFragArr[T](ty: typedesc[T], N: static int,
+proc newVecFragArr*[T](ty: typedesc[T], N: static int,
     P: static bool = false): FragmentArray[N, P, VecFragment[N,P,T], VecFragment[UINT_BITS,P,T], T] =
   new(result)
 
-proc initFragArr[N,P,T,S,B](fr: var FragmentArray[N,P,T,S,P]) =
+proc initFragArr*[N,P,T,S,B](fr: var FragmentArray[N,P,T,S,P]) =
   fr.sparse = newSeqOfCap[S](INITIAL_SPARSE_SIZE)
   fr.toSparse = newSeqOfCap[int](INITIAL_SPARSE_SIZE*UINT_BITS)
   fr.freeBlocks = newSeq[int]()

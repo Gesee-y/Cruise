@@ -1,13 +1,13 @@
-include "../../src/ecs/table.nim"
+import "../../src/ecs/table.nim"
 
 # =========================
 # Benchmark template
 # =========================
-include "../../src/profile/benchmarks.nim"
+import "../../src/profile/benchmarks.nim"
 
 const SAMPLE = 100
 const WARMUP = 1
-const ENTITY_COUNT = 10000
+const ENTITY_COUNT = 1000000
 
 # =========================
 # Components
