@@ -80,9 +80,8 @@ macro createTSparseEntities*(world: ECSWorld, n: typed, comps: varargs[typed]): 
   let (mask, archIdCT) = toArchetypeIDC(ids)
 
   return quote("@") do:
-    block:
-      let s = `@create`
-      cast[seq[TSHandle[`@mask`]]](s)
+    let s = `@create`
+    cast[seq[TSHandle[`@mask`]]](s)
 
 macro migrateEntity*[S: static ArchetypeMask](
     world:   ECSWorld,
@@ -190,12 +189,11 @@ macro addComponent*[S: static ArchetypeMask](
   var newMask = S
   for c in addComps:
     let id = getComponentIdFromRegistry(c)
-    newMask = newMask.withComponent(id)
+    newMask.withComponentInPlace(id)
     for rc in getRequiredComps(id):
-      newMask.withoutComponentInPlace(rc)
+      newMask.withComponentInPlace(rc)
 
   let (_, newArchIdCT) = toArchetypeIDC(newMask.getComponents())
-  let newMaskLit   = newMask
   let newArchIdLit = newArchIdCT
 
   var regis = newNimNode(nnkStmtList)
@@ -210,12 +208,11 @@ macro addComponent*[S: static ArchetypeMask](
         fr.activateSparseBit(`@s`.id)
 
   return quote("@") do:
-    block:
-      `@regis`
-      let destArch = `@world`.archGraph.findArchetype(`@newMask`)
-      if destArch.id != `@s`.archID:
-        `@activateCode`
-      TSHandle[`@newMaskLit`](s)
+    `@regis`
+    let destArch = `@world`.archGraph.findArchetype(`@newMask`)
+    if destArch != `@s`.archID:
+      `@activateCode`
+    TSHandle[`@newMask`](`@s`)
 
 ## Remove components from a sparse handle with a statically known mask.
 ## Deactivation is done via typed `castTo` per removed component (no vtable).
@@ -230,8 +227,7 @@ macro removeComponent*[S: static ArchetypeMask](
     newMask.withoutComponentInPlace(getComponentIdFromRegistry(c))
 
   let (_, newArchIdCT) = toArchetypeIDC(newMask.getComponents())
-  let newMaskLit   = newMask
-  let newArchIdLit = newArchIdCT
+  let newArchIdLit = newArchIdCT.uint16
 
   var deactivateCode = newNimNode(nnkStmtList)
   for c in remComps:
@@ -241,11 +237,10 @@ macro removeComponent*[S: static ArchetypeMask](
         fr.deactivateSparseBit(`@s`.id)
 
   return quote("@") do:
-    block:
-      let destArch: uint16 = `@newArchIdLit`
-      if destArch != `@s`.archID:
-        `@deactivateCode`
-      TSHandle[`@newMaskLit`](s)
+    let destArch: uint16 = `@newArchIdLit`
+    if destArch != `@s`.archID:
+      `@deactivateCode`
+    TSHandle[`@newMask`](`@s`)
 
 macro deleteEntity*[S: static ArchetypeMask](
     world: ECSWorld,

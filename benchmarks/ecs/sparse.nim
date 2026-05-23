@@ -1,13 +1,12 @@
-import times, math#, nimprof
-include "../../src/ecs/table.nim"
+import "../../src/ecs/table.nim"
 
 # =========================
 # Benchmark template
 # =========================
-include "../../src/profile/benchmarks.nim"
+import "../../src/profile/benchmarks.nim"
 
 const
-  Samples = 1000
+  Samples = 100
   Warmup  = 1
   ENTITY_COUNT = 10_000
 
@@ -59,7 +58,7 @@ proc runSparseBenchmarks() =
   # Create single sparse entity
   # ------------------------------
   suite.add benchmarkWithSetup(
-    "create entity",
+    "create sparse entity",
     Samples,
     Warmup,
     (
@@ -75,13 +74,32 @@ proc runSparseBenchmarks() =
         discard w.createSparseEntity(Position, Velocity)
     )
   )
-  showDetailed(suite.benchmarks[0])
+  showDetailed(suite.benchmarks[^1])
+
+  suite.add benchmarkWithSetup(
+    "create sparse entity typed",
+    Samples,
+    Warmup,
+    (
+      var w = setupWorld()
+      var ents:seq[TSHandle[maskOf(Position, Velocity)]]
+      for i in 0..<ENTITY_COUNT:
+        ents.add w.createTSparseEntity(Position, Velocity)
+      for e in ents.mitems:
+        w.deleteEntity(e)
+    ),
+    (
+      for i in 0..<ENTITY_COUNT:
+        discard w.createTSparseEntity(Position, Velocity)
+    )
+  )
+  showDetailed(suite.benchmarks[^1])
 
   # ------------------------------
   # Create sparse entities batch
   # ------------------------------
   suite.add benchmarkWithSetup(
-    "create entities batch 1k",
+    "create sparse entities batch",
     Samples,
     Warmup,
     (
@@ -93,13 +111,29 @@ proc runSparseBenchmarks() =
     ),
     (discard w.createSparseEntities(ENTITY_COUNT, Position, Velocity))
   )
-  showDetailed(suite.benchmarks[1])
+  showDetailed(suite.benchmarks[^1])
+
+  suite.add benchmarkWithSetup(
+    "create sparse entities batch typed",
+    Samples,
+    Warmup,
+    (
+      var w = setupWorld()
+      var ents = w.createTSparseEntities(ENTITY_COUNT, Position, Velocity)
+      for e in ents.mitems:
+        w.deleteEntity(e)
+    ),
+    (
+      discard w.createTSparseEntities(ENTITY_COUNT, Position, Velocity)
+    )
+  )
+  showDetailed(suite.benchmarks[^1])
 
   # ------------------------------
   # Delete sparse entity
   # ------------------------------
   suite.add benchmarkWithSetup(
-    "delete entity",
+    "delete sparse entity",
     Samples,
     Warmup,
     (
@@ -110,7 +144,21 @@ proc runSparseBenchmarks() =
     for e in ents.mitems:
       w.deleteEntity(e)
   )
-  showDetailed(suite.benchmarks[2])
+  showDetailed(suite.benchmarks[^1])
+
+  suite.add benchmarkWithSetup(
+    "delete sparse entity typed",
+    Samples,
+    Warmup,
+    (
+      var w = setupWorld()
+      var ents:seq[TSHandle[maskOf(Position, Velocity)]] = w.createTSparseEntities(ENTITY_COUNT, Position, Velocity)
+    )
+    ,
+    for e in ents.mitems:
+      w.deleteEntity(e)
+  )
+  showDetailed(suite.benchmarks[^1])
 
   # ------------------------------
   # Add component
@@ -130,7 +178,28 @@ proc runSparseBenchmarks() =
       w.addComponent(e, Velocity)
   )
 
-  showDetailed(suite.benchmarks[3])
+  showDetailed(suite.benchmarks[^1])
+
+  suite.add benchmarkWithSetup(
+    "add component typed",
+    Samples,
+    Warmup,
+    ( 
+      var w = setupWorld()
+      var ents = w.createTSparseEntities(ENTITY_COUNT,Position)
+      var entsV: seq[TSHandle[maskOf(Position, Velocity)]]
+      var entsP: seq[TSHandle[maskOf(Position)]]
+      
+      for e in ents.mitems:
+        entsV.add(w.addComponent(e, Velocity))
+     for e in entsV.mitems:
+        discard (w.removeComponent(e, Velocity))
+    ),
+    for e in ents.mitems:
+      discard w.addComponent(e, Velocity)
+  )
+
+  showDetailed(suite.benchmarks[^1])
 
   # ------------------------------
   # Add component batch
@@ -159,7 +228,26 @@ proc runSparseBenchmarks() =
     for i in 0..<ENTITY_COUNT:
       w.removeComponent(e, Velocity)
   )
-  showDetailed(suite.benchmarks[4])
+  showDetailed(suite.benchmarks[^1])
+
+  suite.add benchmarkWithSetup(
+    "remove component typed",
+    Samples,
+    Warmup,
+    ( 
+      var w = setupWorld()
+      var ents = w.createTSparseEntities(ENTITY_COUNT,Position)
+      var entsV: seq[TSHandle[maskOf(Position, Velocity)]]
+      var entsP: seq[TSHandle[maskOf(Position)]]
+      
+      for e in ents.mitems:
+        entsV.add(w.addComponent(e, Velocity))
+    ),
+    for e in ents.mitems:
+      discard w.removeComponent(e, Velocity)
+  )
+
+  showDetailed(suite.benchmarks[^1])
 
   # ------------------------------
   # Add + Remove (stress mask ops)
@@ -180,7 +268,29 @@ proc runSparseBenchmarks() =
       w.removeComponent(e, Velocity),
   )
 
-  showDetailed(suite.benchmarks[5])
+  showDetailed(suite.benchmarks[^1])
+
+  suite.add benchmarkWithSetup(
+    "add remove component typed",
+    Samples,
+    Warmup,
+    ( 
+      var w = setupWorld()
+      var ents = w.createTSparseEntities(ENTITY_COUNT,Position)
+      var entsV: seq[TSHandle[maskOf(Position, Velocity)]]
+      var entsP: seq[TSHandle[maskOf(Position)]]
+      
+      for e in ents.mitems:
+        entsV.add(w.addComponent(e, Velocity))
+     for e in entsV.mitems:
+        discard (w.removeComponent(e, Velocity))
+    ),
+    for e in ents.mitems:
+      var re = w.addComponent(e, Velocity)
+      discard w.addComponent(re, Velocity)
+  )
+
+  showDetailed(suite.benchmarks[^1])
 
   suite.add benchmarkWithSetup(
     "iteration",
@@ -201,7 +311,7 @@ proc runSparseBenchmarks() =
           posbx[i] += velbx[i]
     )
   )
-  showDetailed(suite.benchmarks[6])
+  showDetailed(suite.benchmarks[^1])
   
   var s = 0'f32
   suite.add benchmarkWithSetup(
@@ -217,7 +327,7 @@ proc runSparseBenchmarks() =
         s += posc[e].x
     )
   )
-  showDetailed(suite.benchmarks[7])
+  showDetailed(suite.benchmarks[^1])
 
   suite.add benchmarkWithSetup(
     "write",
@@ -232,7 +342,7 @@ proc runSparseBenchmarks() =
         posc[e] = Position(x: s)
     )
   )
-  showDetailed(suite.benchmarks[8])
+  showDetailed(suite.benchmarks[^1])
 
   # ==============================
   # Results

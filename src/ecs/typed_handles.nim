@@ -21,12 +21,22 @@ template staticArchId*[S: static ArchetypeMask](
 ## Compute the `ArchetypeMask` for a list of component IDs known at compile time.
 ## Required components (declared via `requireComponent`) are folded in
 ## automatically by consulting `REQUIRED_COMPS`.
-macro maskOf(ids: static openArray[int]): ArchetypeMask =
+macro maskOf*(ids: static openArray[int]): ArchetypeMask =
   var m: ArchetypeMask
   for id in ids:
     m.withComponentInPlace(id)
     for req in getRequiredComps(id):
       m.withComponentInPlace(req)
+  return quote do : `m`
+
+macro maskOf*(comps: varargs[typed]): ArchetypeMask =
+  var m: ArchetypeMask
+  for c in comps:
+    let id = getComponentIdFromRegistry(c)
+    m.withComponentInPlace(id)
+    for req in getRequiredComps(id):
+      m.withComponentInPlace(req)
+
   return quote do : `m`
 
 macro toTyped*(d: DenseHandle, comps: varargs[typed]): untyped =
@@ -55,7 +65,7 @@ template world*(d:TDHandle): uint32 = DenseHandle(d).world
 template gen(d:TDHandle): uint16 = DenseHandle(d).gen
 template widx(d:TDHandle): uint32 = DenseHandle(d).widx
 template wid*(d:TDHandle): uint32 = DenseHandle(d).wid
-template id*(d:TDHandle): uint32 = DenseHandle(d).world.entities[d.widx].id
+template id*(d:TDHandle): uint32 = DenseHandle(d).id
 
 template gen*(s: TSHandle): uint16 = (s.meta and MASK16).uint16
 template `gen=`*(s: TSHandle, v: untyped) = 
@@ -64,6 +74,9 @@ template `gen=`*(s: TSHandle, v: untyped) =
 template archID*(s: TSHandle): uint16 = (SparseHandle(s).meta shr SHIFT16).uint16
 template `archID=`(s: TSHandle, v: untyped) = 
   SparseHandle(s).meta = (SparseHandle(s).meta and MASK16) or (v.uint32 shl SHIFT16)
+
+template id*(d:TSHandle): uint32 = SparseHandle(d).id
+template meta*(d:TSHandle): uint32 = SparseHandle(d).meta
 
 ## Retrieves component data from a `FragmentArray` using a raw `Entity`.
 template `[]`*[N,P,T,S,B](f: FragmentArray[N,P,T,S,B], d: TDHandle):untyped = f[d.DenseHandle]

@@ -122,6 +122,22 @@ proc runDenseBenchmarks() =
   )
   showDetailed(suite.benchmarks[^1])
 
+  suite.add benchmarkWithSetup(
+    "create entity typed batch",
+    SAMPLE,
+    WARMUP,
+    (
+      var w = setupWorldNoEnt()
+      var ents:seq[TDHandle[maskOf(Position, Velocity)]] = w.createTEntities(ENTITY_COUNT, Position, Velocity)
+      for e in ents.mitems:
+        w.deleteEntity(e)
+    ),
+    (
+      discard w.createTEntities(ENTITY_COUNT, Position, Velocity)
+    )
+  )
+  showDetailed(suite.benchmarks[^1])
+
   # ------------------------------
   # Delete dense entity
   # ------------------------------
@@ -134,6 +150,19 @@ proc runDenseBenchmarks() =
       var ents:seq[DenseHandle] = w.createEntities(ENTITY_COUNT, Position, Velocity)
     )
     ,
+    for e in ents.mitems:
+      w.deleteEntity(e)
+  )
+  showDetailed(suite.benchmarks[^1])
+
+  suite.add benchmarkWithSetup(
+    "delete entity typed",
+    Sample,
+    Warmup,
+    (
+      var w = setupWorldNoEnt()
+      var ents:seq[TDHandle[maskOf(Position, Velocity)]] = w.createTEntities(ENTITY_COUNT, Position, Velocity)
+    ),
     for e in ents.mitems:
       w.deleteEntity(e)
   )
@@ -285,6 +314,26 @@ proc runDenseBenchmarks() =
   showDetailed(suite.benchmarks[^1])
 
   suite.add benchmarkWithSetup(
+    "remove component typed",
+    SAMPLE,
+    WARMUP,
+    (
+      var w = setupWorldNoEnt()
+      var ents:seq[TDHandle[[3'u, 0'u, 0'u, 0'u]]] = w.createTEntities(ENTITY_COUNT, Position, Velocity)
+      var entsRes:seq[TDHandle[[7'u, 0'u, 0'u, 0'u]]]
+      var entsRun:seq[TDHandle[[3'u, 0'u, 0'u, 0'u]]]
+
+      for e in ents:
+        entsRes.add w.addComponent(e, Acceleration)
+    ),
+    (
+      for e in entsRes:
+        discard w.removeComponent(e, Acceleration)
+    )
+  )
+  showDetailed(suite.benchmarks[^1])
+
+  suite.add benchmarkWithSetup(
     "add remove component",
     SAMPLE,
     WARMUP,
@@ -301,6 +350,29 @@ proc runDenseBenchmarks() =
       for e in ents:
         w.addComponent(e, Acceleration)
         w.removeComponent(e, Acceleration)
+    )
+  )
+  showDetailed(suite.benchmarks[^1])
+
+  suite.add benchmarkWithSetup(
+    "add/remove component typed",
+    SAMPLE,
+    WARMUP,
+    (
+      var w = setupWorldNoEnt()
+      var ents:seq[TDHandle[[3'u, 0'u, 0'u, 0'u]]] = w.createTEntities(ENTITY_COUNT, Position, Velocity)
+      var entsRes:seq[TDHandle[[7'u, 0'u, 0'u, 0'u]]]
+      var entsRun:seq[TDHandle[[3'u, 0'u, 0'u, 0'u]]]
+
+      for e in ents:
+        entsRes.add w.addComponent(e, Acceleration)
+      for e in entsRes:
+        entsRun.add w.removeComponent(e, Acceleration)
+    ),
+    (
+      for e in ents:
+        let re = w.addComponent(e, Acceleration)
+        discard w.removeComponent(re, Acceleration)
     )
   )
   showDetailed(suite.benchmarks[^1])

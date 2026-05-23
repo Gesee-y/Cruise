@@ -30,7 +30,7 @@ template `gen=`(s: SparseHandle, v: untyped) =
   s.meta = (s.meta and not MASK16) or v
 
 template archID*(s: SparseHandle): uint16 = (s.meta shr SHIFT16).uint16
-template `archID=`(s: SparseHandle, v: untyped) = 
+template `archID=`*(s: SparseHandle, v: untyped) = 
   s.meta = (s.meta and MASK16) or (v.uint32 shl SHIFT16)
 
 ## Retrieves component data from a `FragmentArray` using a raw `Entity`.
