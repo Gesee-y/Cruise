@@ -167,3 +167,88 @@ macro createTSparseEntities*(world: ECSWorld, n: typed, comps: varargs[typed]): 
           inc current
 
       res
+
+
+macro addComponent*[S: static ArchetypeMask](
+    world:    ECSWorld,
+    d:        TDHandle[S],
+    addComps: varargs[typed]
+): untyped =
+  
+  var newMask = S
+  for c in addComps:
+    let id = getComponentIdFromRegistry(c)
+    newMask = newMask.withComponent(id)
+    for rc in getRequiredComps(id):
+      newMask.withoutComponentInPlace(rc)
+
+  let (_, newArchIdCT) = toArchetypeIDC(newMask.getComponents())
+  let newMaskLit   = newMask
+  let newArchIdLit = newArchIdCT
+
+  var regis = newNimNode(nnkStmtList)
+  for c in addComps:
+    regis.add quote("@") do: discard `@world`.registerComponent(`@c`)
+
+  return quote("@") do:
+    block:
+      `@regis`
+      const destArch: uint16 = `@newArchIdLit`
+      let e = `@d`.obj
+      check(`@world`.generations[`@d`.wid] == `@d`.gen,
+        "tAddComponent: stale handle (widx=" & $`@d`.widx & ").")
+
+      if destArch != e.archetypeId:
+        ## Both S and NewS are statically known here — tChangePartitionD
+        ## infers oldComps, newComps, and shared entirely from them.
+        let (lst, id, bid) = changePartition[](
+          `@world`, `@S`, `@newMaskLit`, e.id, e.archetypeId, destArch
+        )
+        `@world`.handles[id + bid * DEFAULT_BLK_SIZE] = `@world`.handles[e.id.toIdx]
+        let (beid, eid) = e.id.getDenseMeta
+        `@world`.handles[eid + beid * DEFAULT_BLK_SIZE] = `@world`.handles[lst]
+        `@world`.entities[`@world`.handles[lst]].id = e.id
+        e.id = makeId(bid, id)
+        e.archetypeId = destArch
+
+      TDHandle[`@newMaskLit`](world: `@world`, widx: `@d`.widx, gen: `@d`.gen)
+
+## Remove one or more components from a typed dense handle.
+##
+## Mirror of `tAddComponent` — `NewS` is derived from `S` minus `remComps`,
+## all at compile time.  `tChangePartitionD[S, NewS]` handles the vtable-free
+## data move.
+##
+## Returns `TDHandle[NewS]`.
+macro removeComponent*[S: static ArchetypeMask](
+    world:    ECSWorld,
+    d:        TDHandle[S],
+    remComps: varargs[typed]
+): untyped =
+  var newMask = S
+  for c in remComps:
+    newMask = newMask.withoutComponent(getComponentIdFromRegistry(c))
+
+  let (_, newArchIdCT) = toArchetypeIDC(newMask.getComponents())
+  let newMaskLit   = newMask
+  let newArchIdLit = newArchIdCT
+
+  return quote("@") do:
+    block:
+      const destArch: uint16 = `@newArchIdLit`
+      let e = `@d`.obj
+      check(`@world`.generations[`@d`.wid] == `@d`.gen,
+        "tRemoveComponent: stale handle (widx=" & $`@d`.widx & ").")
+
+      if destArch != e.archetypeId:
+        let (lst, id, bid) = tChangePartitionD[S, `@newMaskLit`](
+          `@world`, e.id, e.archetypeId, destArch
+        )
+        `@world`.handles[id + bid * DEFAULT_BLK_SIZE] = `@world`.handles[e.id.toIdx]
+        let (beid, eid) = e.id.getDenseMeta
+        `@world`.handles[eid + beid * DEFAULT_BLK_SIZE] = `@world`.handles[lst]
+        `@world`.entities[`@world`.handles[lst]].id = e.id
+        e.id = makeId(bid, id)
+        e.archetypeId = destArch
+
+      TDHandle[`@newMaskLit`](world: `@world`, widx: `@d`.widx, gen: `@d`.gen)

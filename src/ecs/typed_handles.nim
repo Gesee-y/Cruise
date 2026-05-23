@@ -17,3 +17,15 @@ template staticArchId*[S: static ArchetypeMask](
     _: typedesc[TDHandle[S]] | typedesc[TSHandle[S]]): uint16 =
   const (_, id) = toArchetypeIDC(S.getComponents())
   id.uint16
+
+## Compute the `ArchetypeMask` for a list of component IDs known at compile time.
+## Required components (declared via `requireComponent`) are folded in
+## automatically by consulting `REQUIRED_COMPS`.
+macro maskOf(ids: static openArray[int]): ArchetypeMask =
+  var m: ArchetypeMask
+  for id in ids:
+    m.withComponentInPlace(id)
+    for req in getRequiredComps(id):
+      m.withComponentInPlace(req)
+  return quote do : `m`
+
