@@ -186,6 +186,16 @@ macro findArchetype*(graph: var ArchetypeGraph,
     
     `@id`.uint16
 
+macro findArchetype*(graph: var ArchetypeGraph, 
+                    mask: static ArchetypeMask): uint16 =
+  let (m, id) = toArchetypeIDC(mask.getComponents)
+  
+  return quote("@") do:
+    if `@id` >= `@graph`.nodes.len or (`@graph`.nodes[`@id`].id == 0 and `@id` != 0):
+      discard `@graph`.createNode(`@m`, `@id`.uint16)
+    
+    `@id`.uint16
+
 proc findArchetype*(graph: var ArchetypeGraph, 
                     components: openArray[int]): uint16 =
   result = graph.root

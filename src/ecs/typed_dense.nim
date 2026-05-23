@@ -20,6 +20,7 @@ macro deleteRow(
 
   ## Emit one typed overrideVals per component in S.
   var swapCode = newNimNode(nnkStmtList)
+  var lid = ident"lid"
   for cid in compIds:
     ## We need the NimNode for the type, not the integer.
     ## `ID_TO_COMPONENT` maps compile-time IDs → NimNode (populated by toComponentId).
@@ -27,7 +28,7 @@ macro deleteRow(
     swapCode.add quote("@") do:
       block:
         var fr = castTo(`@table`.registry.entries[`@cid`].rawPointer, `@cNode`, DEFAULT_BLK_SIZE)
-        fr.overrideVals(i, lid)   ## `lid` bound in the outer quote below
+        fr.overrideVals(`@i`, `@lid`)   ## `lid` bound in the outer quote below
 
   return quote("@") do:
     block:
@@ -49,9 +50,9 @@ macro deleteRow(
 
       let last = zone.r.e - 1
       let bid  = zone.block_idx.uint
-      let lid  = makeId(bid, last)   ## packed ID of the last live slot
+      let `@lid`  = makeId(bid, last)   ## packed ID of the last live slot
 
-      if lid != `@i`:
+      if `@lid` != `@i`:
         `@swapCode`
 
       zone.r.e -= 1
@@ -90,12 +91,15 @@ macro changePartition(
     s
 
   var copyCode = newNimNode(nnkStmtList)
+  var destBase = ident"destBase"
+  var blast = ident"blast"
+  var last = ident"last"
   for cid in sharedIds:
     let cNode = ID_TO_COMPONENT[cid]
     copyCode.add quote("@") do:
       block:
         var fr = castTo(`@table`.registry.entries[`@cid`].rawPointer, `@cNode`, DEFAULT_BLK_SIZE)
-        fr.overrideVals(destBase, `@i`)
+        fr.overrideVals(`@destBase`, `@i`)
 
   var swapCode = newNimNode(nnkStmtList)
   for cid in oldIds:
@@ -103,16 +107,15 @@ macro changePartition(
     swapCode.add quote("@") do:
       block:
         var fr = castTo(`@table`.registry.entries[`@cid`].rawPointer, `@cNode`, DEFAULT_BLK_SIZE)
-        fr.overrideVals(`@i`, makeId(blast, last))
+        fr.overrideVals(`@i`, makeId(`@blast`, `@last`))
 
   var newBlockCode = newNimNode(nnkStmtList)
   for cid in newIds:
-    if not OldS.hasComponent(cid):
-      let cNode = ID_TO_COMPONENT[cid]
-      newBlockCode.add quote("@") do:
-        block:
-          var fr = castTo(`@table`.registry.entries[`@cid`].rawPointer, `@cNode`, DEFAULT_BLK_SIZE)
-          fr.newBlockAt(`@table`.blockCount)
+    let cNode = ID_TO_COMPONENT[cid]
+    newBlockCode.add quote("@") do:
+      block:
+        var fr = castTo(`@table`.registry.entries[`@cid`].rawPointer, `@cNode`, DEFAULT_BLK_SIZE)
+        fr.newBlockAt(`@table`.blockCount)
 
   return quote("@") do:
     block:
@@ -122,7 +125,7 @@ macro changePartition(
       let oldPartition = `@table`.archGraph.nodes[`@oldArch`].partition
       check(not oldPartition.isNil,
         "tChangePartition: source archetype " & $`@oldArch` & " has no partition.")
-      let newPartition = createPartition(`@table`, `@newArch`)
+      let newPartition = createPartition(`@table`, `@newArch`.uint16)
 
       if oldPartition.zones.len <= oldPartition.fill_index or
           isEmpty(oldPartition.zones[oldPartition.fill_index]):
@@ -131,8 +134,8 @@ macro changePartition(
         oldPartition.fill_index -= 1
 
       let oldZone = addr oldPartition.zones[oldPartition.fill_index]
-      let last    = oldZone.r.e - 1
-      let blast   = oldZone.block_idx
+      let `@last`    = oldZone.r.e - 1
+      let `@blast`   = oldZone.block_idx
       oldZone.r.e -= 1
 
       if newPartition.zones.len <= newPartition.fill_index:
@@ -149,18 +152,18 @@ macro changePartition(
       let newZone  = addr newPartition.zones[newPartition.fill_index]
       let new_id   = newZone.r.e.uint
       let bid      = newZone.block_idx.uint
-      let destBase = makeId(bid, new_id)
+      let `@destBase` = makeId(bid, new_id)
 
       `@copyCode`
 
-      if (`@i` and ID_MASK.uint32) != last.uint32:
+      if (`@i` and ID_MASK.uint32) != `@last`.uint32:
         `@swapCode`
 
       newZone.r.e += 1
       if isFull(newZone):
         newPartition.fill_index += 1
 
-      (last + blast * DEFAULT_BLK_SIZE, new_id, bid)
+      (`@last` + `@blast` * DEFAULT_BLK_SIZE, new_id, bid)
 
 macro changePartition[OldS: static ArchetypeMask](
     table:   ECSWorld,
@@ -180,13 +183,12 @@ macro changePartition[OldS: static ArchetypeMask](
  
   var newBlockCode = newNimNode(nnkStmtList)
   for cid in newIds:
-    if not OldS.hasComponent(cid):
-      let cNode = ID_TO_COMPONENT[cid]
-      newBlockCode.add quote("@") do:
-        block:
-          var fr = castTo(`@table`.registry.entries[`@cid`].rawPointer, `@cNode`, DEFAULT_BLK_SIZE)
-          fr.newBlockAt(`@table`.blockCount)
- 
+    let cNode = ID_TO_COMPONENT[cid]
+    newBlockCode.add quote("@") do:
+      block:
+        var fr = castTo(`@table`.registry.entries[`@cid`].rawPointer, `@cNode`, DEFAULT_BLK_SIZE)
+        fr.newBlockAt(`@table`.blockCount)
+
   var batchCopyCode = newNimNode(nnkStmtList)
   for cid in sharedIds:
     let cNode = ID_TO_COMPONENT[cid]
@@ -202,7 +204,7 @@ macro changePartition[OldS: static ArchetypeMask](
       let oldPartition = `@table`.archGraph.nodes[`@oldArch`].partition
       check(not oldPartition.isNil,
         "tChangePartitionBatchD: source archetype " & $`@oldArch` & " has no partition.")
-      let newPartition = createPartition(`@table`, `@newArch`)
+      let newPartition = createPartition(`@table`, `@newArch`.uint16)
  
       var toSwap = newSeq[uint32](`@ents`.len)
       var m      = `@ents`.len

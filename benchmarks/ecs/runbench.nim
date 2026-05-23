@@ -7,7 +7,7 @@ import "../../src/profile/benchmarks.nim"
 
 const SAMPLE = 100
 const WARMUP = 1
-const ENTITY_COUNT = 1000000
+const ENTITY_COUNT = 10000
 
 # =========================
 # Components
@@ -82,6 +82,26 @@ proc runDenseBenchmarks() =
     (
       for i in 0..<ENTITY_COUNT:
         discard w.createEntity(Position, Velocity)
+    )
+  )
+  showDetailed(suite.benchmarks[^1])
+
+  suite.add benchmarkWithSetup(
+    "create entity typed",
+    SAMPLE,
+    WARMUP,
+    (
+      var w = setupWorldNoEnt()
+      var node = w.archGraph.findArchetype([0, 1])
+      var ents:seq[TDHandle[[3'u, 0'u, 0'u, 0'u]]]
+      for i in 0..<ENTITY_COUNT:
+        ents.add w.createTEntity(Position, Velocity)
+      for e in ents.mitems:
+        w.deleteEntity(e)
+    ),
+    (
+      for i in 0..<ENTITY_COUNT:
+        discard w.createTEntity(Position, Velocity)
     )
   )
   showDetailed(suite.benchmarks[^1])
@@ -220,6 +240,28 @@ proc runDenseBenchmarks() =
     (
       for e in ents:
         w.addComponent(e, Acceleration)
+    )
+  )
+  showDetailed(suite.benchmarks[^1])
+
+  suite.add benchmarkWithSetup(
+    "add component typed",
+    SAMPLE,
+    WARMUP,
+    (
+      var w = setupWorldNoEnt()
+      var ents:seq[TDHandle[[3'u, 0'u, 0'u, 0'u]]] = w.createTEntities(ENTITY_COUNT, Position, Velocity)
+      var entsRes:seq[TDHandle[[7'u, 0'u, 0'u, 0'u]]]
+      var entsRun:seq[TDHandle[[3'u, 0'u, 0'u, 0'u]]]
+
+      for e in ents:
+        entsRes.add w.addComponent(e, Acceleration)
+      for e in entsRes:
+        entsRun.add w.removeComponent(e, Acceleration)
+    ),
+    (
+      for e in ents:
+        discard w.addComponent(e, Acceleration)
     )
   )
   showDetailed(suite.benchmarks[^1])

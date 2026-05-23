@@ -306,6 +306,7 @@ include "query.nim"
 include "typed_handles.nim"
 include "operations.nim"
 include "typed_dense.nim"
+include "typed_operations.nim"
 
 proc process(world: var ECSWorld, cb: var ECommandBuffer) =
   for cmd in cb.denseEntityRemoved:

@@ -3,8 +3,8 @@
 ####################################################################################################################################################
 
 type
-  TDHandle[S: static ArchetypeMask] = DenseHandle
-  TSHandle[S: static ArchetypeMask] = SparseHandle
+  TDHandle*[S: static ArchetypeMask] = distinct DenseHandle
+  TSHandle*[S: static ArchetypeMask] = distinct SparseHandle
 
 ## Return the `ArchetypeMask` encoded in a `TDHandle` or `TSHandle` type
 ## parameter at compile time.  The mask is the `static ArchetypeMask` `S`.
@@ -29,3 +29,52 @@ macro maskOf(ids: static openArray[int]): ArchetypeMask =
       m.withComponentInPlace(req)
   return quote do : `m`
 
+macro toTyped*(d: DenseHandle, comps: varargs[typed]): untyped =
+  var newMask: ArchetypeMask
+  for c in comps:
+    let id = getComponentIdFromRegistry(c)
+    newMask = newMask.withComponent(id)
+    for rc in getRequiredComps(id):
+      newMask.withoutComponentInPlace(rc)
+
+  return quote do: cast[TDHandle[`newMask`]](`d`)
+
+macro toTyped*(s: SparseHandle, comps: varargs[typed]): untyped =
+  var newMask: ArchetypeMask
+  for c in comps:
+    let id = getComponentIdFromRegistry(c)
+    newMask = newMask.withComponent(id)
+    for rc in getRequiredComps(id):
+      newMask.withoutComponentInPlace(rc)
+
+  return quote do: cast[TSHandle[`newMask`]](`s`)
+
+template obj*(d: TDHandle): ptr Entity = addr DenseHandle(d).world.entities[DenseHandle(d).widx]
+
+template world*(d:TDHandle): uint32 = DenseHandle(d).world
+template gen(d:TDHandle): uint16 = DenseHandle(d).gen
+template widx(d:TDHandle): uint32 = DenseHandle(d).widx
+template wid*(d:TDHandle): uint32 = DenseHandle(d).wid
+template id*(d:TDHandle): uint32 = DenseHandle(d).world.entities[d.widx].id
+
+template gen*(s: TSHandle): uint16 = (s.meta and MASK16).uint16
+template `gen=`*(s: TSHandle, v: untyped) = 
+  SparseHandle(s).meta = (SparseHandle(s).meta and not MASK16) or v
+
+template archID*(s: TSHandle): uint16 = (SparseHandle(s).meta shr SHIFT16).uint16
+template `archID=`(s: TSHandle, v: untyped) = 
+  SparseHandle(s).meta = (SparseHandle(s).meta and MASK16) or (v.uint32 shl SHIFT16)
+
+## Retrieves component data from a `FragmentArray` using a raw `Entity`.
+template `[]`*[N,P,T,S,B](f: FragmentArray[N,P,T,S,B], d: TDHandle):untyped = f[d.DenseHandle]
+
+## Sets component data in a `FragmentArray` for a raw `Entity`.
+template `[]=`*[N,P,T,S,B](f:var FragmentArray[N,P,T,S,B], d: TDHandle, v:B) = 
+  f[d.DenseHandle] = vx
+
+## Retrieves component data from a `FragmentArray` using a raw `Entity`.
+template `[]`*[N,P,T,S,B](f: FragmentArray[N,P,T,S,B], d: TSHandle):untyped = f[d.SparseHandle]
+
+## Sets component data in a `FragmentArray` for a raw `Entity`.
+template `[]=`*[N,P,T,S,B](f:var FragmentArray[N,P,T,S,B], d: TSHandle, v:B) = 
+  f[d.SparseHandle] = vx
