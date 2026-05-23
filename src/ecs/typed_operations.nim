@@ -168,6 +168,61 @@ macro createTSparseEntities*(world: ECSWorld, n: typed, comps: varargs[typed]): 
 
       res
 
+macro migrateEntity*[S: static ArchetypeMask](
+    world:   ECSWorld,
+    d:       TDHandle[S],
+    NewS: static ArchetypeMask
+): untyped =
+  let (_, newArchIdCT) = toArchetypeIDC(NewS.getComponents())
+  let newArchIdLit = newArchIdCT
+
+  return quote("@") do:
+    block:
+      const destArch: uint16 = `@newArchIdLit`
+      let e = `@d`.obj
+      check(`@world`.generations[`@d`.wid] == `@d`.gen,
+        "MigrateEntity: stale handle (widx=" & $`@d`.widx & ").")
+      checkWarn(destArch != e.archetypeId,
+        "MigrateEntity: source and destination archetypes are identical.")
+
+      if destArch != e.archetypeId:
+        let (lst, id, bid) = ChangePartition(
+          `@world`, `@S`, `@NewS`, e.id, e.archetypeId, destArch
+        )
+        `@world`.handles[id + bid * DEFAULT_BLK_SIZE] = `@world`.handles[e.id.toIdx]
+        let (beid, eid) = e.id.getDenseMeta
+        `@world`.handles[eid + beid * DEFAULT_BLK_SIZE] = `@world`.handles[lst]
+        `@world`.entities[`@world`.handles[lst]].id = e.id
+        e.id = makeId(bid, id)
+        e.archetypeId = destArch
+
+      TDHandle[NewS](world: `@world`, widx: `@d`.widx, gen: `@d`.gen)
+
+macro migrateEntity*[S: static ArchetypeMask](
+    world: ECSWorld,
+    ents:  openArray[TDHandle[S]],
+    NewS: static ArchetypeMask
+): (seq[uint32], seq[uint32], seq[uint32]) =
+  let (_, newArchIdCT) = toArchetypeIDC(NewS.getComponents())
+  let newArchIdLit = newArchIdCT
+
+  return quote("@") do:
+    block:
+      if `@ents`.len == 0:
+        (@[], @[], @[])
+      else:
+        const destArch: uint16 = `@newArchIdLit`
+        when not defined(danger):
+          let srcArch = `@ents`[0].obj.archetypeId
+          for bci in 1..<`@ents`.len:
+            check(`@ents`[bci].obj.archetypeId == srcArch,
+              "MigrateEntityBatch: mixed-archetype batch at index " & $bci &
+              " (expected " & $srcArch & ", got " &
+              $`@ents`[bci].obj.archetypeId & ").")
+        checkWarn(destArch != `@ents`[0].obj.archetypeId,
+          "MigrateEntityBatch: source and destination archetypes are identical — no-op.")
+        changePartition(
+          `@world`, `@ents`, `@NewS`, `@ents`[0].obj.archetypeId, destArch
 
 macro addComponent*[S: static ArchetypeMask](
     world:    ECSWorld,
@@ -196,7 +251,7 @@ macro addComponent*[S: static ArchetypeMask](
       const destArch: uint16 = `@newArchIdLit`
       let e = `@d`.obj
       check(`@world`.generations[`@d`.wid] == `@d`.gen,
-        "tAddComponent: stale handle (widx=" & $`@d`.widx & ").")
+        "AddComponent: stale handle (widx=" & $`@d`.widx & ").")
 
       if destArch != e.archetypeId:
         ## Both S and NewS are statically known here — tChangePartitionD
@@ -215,7 +270,7 @@ macro addComponent*[S: static ArchetypeMask](
 
 ## Remove one or more components from a typed dense handle.
 ##
-## Mirror of `tAddComponent` — `NewS` is derived from `S` minus `remComps`,
+## Mirror of `AddComponent` — `NewS` is derived from `S` minus `remComps`,
 ## all at compile time.  `tChangePartitionD[S, NewS]` handles the vtable-free
 ## data move.
 ##
@@ -238,7 +293,7 @@ macro removeComponent*[S: static ArchetypeMask](
       const destArch: uint16 = `@newArchIdLit`
       let e = `@d`.obj
       check(`@world`.generations[`@d`.wid] == `@d`.gen,
-        "tRemoveComponent: stale handle (widx=" & $`@d`.widx & ").")
+        "RemoveComponent: stale handle (widx=" & $`@d`.widx & ").")
 
       if destArch != e.archetypeId:
         let (lst, id, bid) = tChangePartitionD[S, `@newMaskLit`](
@@ -252,3 +307,114 @@ macro removeComponent*[S: static ArchetypeMask](
         e.archetypeId = destArch
 
       TDHandle[`@newMaskLit`](world: `@world`, widx: `@d`.widx, gen: `@d`.gen)
+
+macro addComponent*[S: static ArchetypeMask](
+    world:    ECSWorld,
+    s:        TSHandle[S],
+    addComps: varargs[typed]
+): untyped =
+  var newMask = S
+  for c in addComps:
+    let id = getComponentIdFromRegistry(c)
+    newMask = newMask.withComponent(id)
+    for rc in getRequiredComps(id):
+      newMask.withoutComponentInPlace(rc)
+
+  let (_, newArchIdCT) = toArchetypeIDC(newMask.getComponents())
+  let newMaskLit   = newMask
+  let newArchIdLit = newArchIdCT
+
+  var regis = newNimNode(nnkStmtList)
+  for c in addComps:
+    regis.add quote("@") do: discard `@world`.registerComponent(`@c`)
+
+  var activateCode = newNimNode(nnkStmtList)
+  for c in addComps:
+    activateCode.add quote("@") do:
+      block:
+        var fr = castTo(`@world`.registry.entries[toComponentId(`@c`)].rawPointer, `@c`, DEFAULT_BLK_SIZE)
+        fr.activateSparseBit(`@s`.id)
+
+  return quote("@") do:
+    block:
+      `@regis`
+      const destArch: uint16 = `@newArchIdLit`
+      if destArch != `@s`.archID:
+        `@activateCode`
+      TSHandle[`@newMaskLit`](id: `@s`.id, meta: (destArch.uint32 shl 16) or `@s`.gen.uint32)
+
+## Remove components from a sparse handle with a statically known mask.
+## Deactivation is done via typed `castTo` per removed component (no vtable).
+## Returns a `TSHandle[NewMask]`.
+macro removeComponent*[S: static ArchetypeMask](
+    world:    ECSWorld,
+    s:        TSHandle[S],
+    remComps: varargs[typed]
+): untyped =
+  var newMask = S
+  for c in remComps:
+    newMask.withoutComponentInPlace(getComponentIdFromRegistry(c))
+
+  let (_, newArchIdCT) = toArchetypeIDC(newMask.getComponents())
+  let newMaskLit   = newMask
+  let newArchIdLit = newArchIdCT
+
+  var deactivateCode = newNimNode(nnkStmtList)
+  for c in remComps:
+    deactivateCode.add quote("@") do:
+      block:
+        var fr = castTo(`@world`.registry.entries[toComponentId(`@c`)].rawPointer, `@c`, DEFAULT_BLK_SIZE)
+        fr.deactivateSparseBit(`@s`.id)
+
+  return quote("@") do:
+    block:
+      const destArch: uint16 = `@newArchIdLit`
+      if destArch != `@s`.archID:
+        `@deactivateCode`
+      TSHandle[`@newMaskLit`](id: `@s`.id, meta: (destArch.uint32 shl 16) or `@s`.gen.uint32)
+
+macro deleteEntity*[S: static ArchetypeMask](
+    world: ECSWorld,
+    d:     TDHandle[S]
+): untyped =
+  return quote("@") do:
+    block:
+      check(`@d`.widx < `@world`.entities.len.uint32,
+        "tDeleteEntity: handle widx=" & $`@d`.widx & " out of bounds.")
+      check(`@world`.generations[`@d`.wid] == `@d`.gen,
+        "tDeleteEntity: stale handle (widx=" & $`@d`.widx & ").")
+
+      let e = `@d`.obj
+      ## S is statically known here — tDeleteRowS[S] infers the component loop.
+      let l = deleteRow(`@world`, S, e.id, e.archetypeId)
+
+      let (bid, id) = e.id.getDenseMeta
+      `@world`.handles[id + bid * DEFAULT_BLK_SIZE] = `@world`.handles[l]
+      `@world`.entities[`@world`.handles[l]].id = e.id
+
+      `@world`.generations[`@d`.widx] += 1.uint16
+      `@world`.free_entities.add(`@d`.widx)
+
+## Delete a typed sparse entity.
+##
+## Component deactivation is unrolled at compile time from `S` — no vtable,
+## no user-supplied component list.
+macro deleteEntity*[S: static ArchetypeMask](
+    world: ECSWorld,
+    s:     TSHandle[S]
+): untyped =
+  ## Derive component IDs from S at macro-expansion time.
+  let compIds = S.getComponents()
+
+  var deactivateCode = newNimNode(nnkStmtList)
+  for cid in compIds:
+    let cNode = ID_TO_COMPONENT[cid]
+    deactivateCode.add quote("@") do:
+      block:
+        var fr = castTo(`@world`.registry.entries[`@cid`].rawPointer, `@cNode`, DEFAULT_BLK_SIZE)
+        fr.deactivateSparseBit(`@s`.id)
+
+  return quote("@") do:
+    block:
+      `@deactivateCode`
+      `@world`.sparse_gens[`@s`.id] += 1

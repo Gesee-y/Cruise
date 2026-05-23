@@ -72,7 +72,7 @@ macro deleteRow(
 ##   • shared    = OldS ∩ NewS            → data-copy loop
 ##
 ## Returns `(lastFlatIdx, newOffset, newBlockId)`.
-macro ChangePartition(
+macro changePartition(
     table:   ECSWorld,
     OldS: static ArchetypeMask,
     NewS: static ArchetypeMask,
@@ -162,7 +162,7 @@ macro ChangePartition(
 
       (last + blast * DEFAULT_BLK_SIZE, new_id, bid)
 
-macro ChangePartition[OldS: static ArchetypeMask](
+macro changePartition[OldS: static ArchetypeMask](
     table:   ECSWorld,
     ents:    openArray[TDHandle[OldS]],
     NewS: static ArchetypeMask,
