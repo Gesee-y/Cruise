@@ -27,6 +27,7 @@ static:
 
 proc getComponentIdFromRegistry(T:NimNode): int =
   let str = T.repr
+  #echo str
   let hash = T.repr.hash.int
   let maxComp = MAX_COMPONENT_LAYER*UINT_BITS
 
@@ -62,8 +63,8 @@ proc getRequiredCompsNode(id:int): seq[NimNode] {.compileTime.} =
   return res
 
 macro toComponentId*(T:typedesc): int =
-  let id = getComponentIdFromRegistry(T)
-  ID_TO_COMPONENT[id] = T
+  let id = getComponentIdFromRegistry(T.getTypeInst()[1])
+  ID_TO_COMPONENT[id] = T.getTypeInst()[1]
 
   return quote do: `id`
 
@@ -199,7 +200,7 @@ macro registerLayout(ty, createProcName, castProcName: untyped) =
 
 macro castTo*(obj: untyped, Ty: typedesc, N: static int,
     P: static bool = false): untyped =
-  let cid = getComponentIdFromRegistry(Ty)
+  let cid = getComponentIdFromRegistry(Ty.getTypeInst()[1])
   let layout = COMPONENT_TO_LAYOUT[cid]
   let (createProc, castProc) = ID_TO_LAYOUT[layout.repr.hash.int]
 

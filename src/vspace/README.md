@@ -67,14 +67,14 @@ func fromCartesian*(_: typedesc[CToroidalCoord],
 ## Built-in types
 
 **Colors (`CBoundedSpace`)**
-| Type | Description |
-|---|---|
-| `CRGBA` | Float RGBA, pivot type |
-| `CRGBAi` | Integer RGBA [0, 255] |
-| `CRGBf` | Float RGB, no alpha |
-| `CHSVColor` | Hue / Saturation / Value |
-| `CXYZColor` | CIE XYZ (D65) |
-| `CLABColor` | CIELAB perceptual space |
+|     Type    |        Description        |
+|-------------|---------------------------|
+| `CRGBA`     | Float RGBA, pivot type    |
+| `CRGBAi`    | Integer RGBA [0, 255]     |
+| `CRGBf`     | Float RGB, no alpha       |
+| `CHSVColor` | Hue / Saturation / Value  |
+| `CXYZColor` | CIE XYZ (D65)             |
+| `CLABColor` | CIELAB perceptual space   |
 
 **Coordinates (`CUnboundedSpace`)**
 | Type | Description |
