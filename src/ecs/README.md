@@ -92,6 +92,14 @@ world.registerComponent(Tag)
 world.registerComponent(Inventory[Sword])
 ```
 
+* **Typed functional API**: That allows for way faster operations per entities by encoding the entity signature in the handle. This is totally compatible with the old API
+
+```nim
+let e = world.createEntity(Position) # or createTEntity to directly make a typed entity
+let et = e.toTyped(Position) # We list the component that the entity has
+let et2 = world.addComponent(et, Position) # Now et2 has the new signature, this is way faster that doing it with `e` which would use vtable
+```
+
 * **Setters / getters**: Cruise allows you to define setters and getters for your components. This makes tracking changes easier and simplifies component usage. The compiler ensures they have no side effects.
 
 ```nim
