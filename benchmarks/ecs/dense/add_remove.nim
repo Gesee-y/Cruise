@@ -60,6 +60,30 @@ proc addRemoveDense(eCount=ENTITY_COUNT, bSample=SAMPLE, bWarm=WARMUP) =
   )
   showDetailed(suite.benchmarks[^1])
 
+proc addRemoveDenseTyped(eCount=ENTITY_COUNT, bSample=SAMPLE, bWarm=WARMUP) =
+  var suite = initSuite("add remove dense typed")
+  suite.add benchmarkWithSetup(
+    "add/remove dense typed",
+    bSample,
+    bWarm,
+    (
+      var w = newECSWorld()
+      var ents = w.createTEntities(eCount)
+      var entsP: seq[TDHandle[maskof(A)]]
+
+      for e in ents:
+        entsP.add w.addComponent(e, A)
+      for e in entsP:
+        discard w.removeComponent(e, A)
+    ),
+    (
+      for e in ents:
+        let r = w.addComponent(e, A)
+        discard w.removeComponent(r, A)
+    )
+  )
+  showDetailed(suite.benchmarks[^1])
+
 proc addRemoveSparse(eCount=ENTITY_COUNT, bSample=SAMPLE, bWarm=WARMUP) =
   var suite = initSuite("add remove sparse")
   suite.add benchmarkWithSetup(
@@ -102,6 +126,29 @@ proc addRemoveBigDense(eCount=ENTITY_COUNT, bSample=SAMPLE, bWarm=WARMUP) =
       for e in ents:
         w.addComponent(e, Mat4)
         w.removeComponent(e, Mat4)
+    )
+  )
+  showDetailed(suite.benchmarks[^1])
+
+proc addRemoveBigDenseTyped(eCount=ENTITY_COUNT, bSample=SAMPLE, bWarm=WARMUP) =
+  var suite = initSuite("add remove big dense typed")
+  suite.add benchmarkWithSetup(
+    "add/remove big dense typed",
+    bSample,
+    bWarm,
+    (
+      var w = newECSWorld()
+      var ents = w.createTEntities(eCount, Mat[0], Mat[1], Mat[2], Mat[3], Mat[4])
+      var entsP: seq[TDHandle[maskof(Mat[0], Mat[1], Mat[2], Mat[3], Mat[4], Mat4)]]
+      for e in ents:
+        entsP.add w.addComponent(e, Mat4)
+      for e in entsP:
+        discard w.removeComponent(e, Mat4)
+    ),
+    (
+      for e in ents:
+        let r = w.addComponent(e, Mat4)
+        discard w.removeComponent(r, Mat4)
     )
   )
   showDetailed(suite.benchmarks[^1])
@@ -156,6 +203,38 @@ proc addRemoveVeryBigDense(eCount=ENTITY_COUNT, bSample=SAMPLE, bWarm=WARMUP) =
   )
   showDetailed(suite.benchmarks[^1])
 
+proc addRemoveVeryBigDenseTyped(eCount=ENTITY_COUNT, bSample=SAMPLE, bWarm=WARMUP) =
+  var suite = initSuite("add remove very big dense typed")
+  suite.add benchmarkWithSetup(
+    "add/remove very big dense typed",
+    bSample,
+    bWarm,
+    (
+      var w = newECSWorld()
+      var ents = w.createTEntities(eCount, Mat[0], Mat[1], Mat[2], Mat[3], Mat[4], 
+        Mat[5], Mat[6], Mat[7], Mat[8], Mat[9], Mat[10], Mat[11], Mat[12], Mat[13], Mat[14], Mat[15], Mat[16], Mat[17], Mat[18], Mat[19],
+        Mat[20], Mat[21], Mat[22], Mat[23], Mat[24], Mat[25], Mat[26], Mat[27], Mat[28], Mat[29], Mat[30], Mat[31], Mat[32], Mat[33], Mat[34],
+        Z[0], Z[1], Z[2], Z[3], Z[4], Z[5], Z[6], B, C, D, E, F)
+
+      var entsP: seq[TDHandle[maskof(Mat[0], Mat[1], Mat[2], Mat[3], Mat[4], 
+        Mat[5], Mat[6], Mat[7], Mat[8], Mat[9], Mat[10], Mat[11], Mat[12], Mat[13], Mat[14], Mat[15], Mat[16], Mat[17], Mat[18], Mat[19],
+        Mat[20], Mat[21], Mat[22], Mat[23], Mat[24], Mat[25], Mat[26], Mat[27], Mat[28], Mat[29], Mat[30], Mat[31], Mat[32], Mat[33], Mat[34],
+        Z[0], Z[1], Z[2], Z[3], Z[4], Z[5], Z[6], B, C, D, E, F, Mat[43], Mat[44], Mat[45], Mat[46], Mat[47], Mat[48], Mat[49])]]
+      
+      for e in ents:
+        entsP.add w.addComponent(e, Mat[43], Mat[44], Mat[45], Mat[46], Mat[47], Mat[48], Mat[49])
+      for e in entsP:
+        discard w.removeComponent(e, Mat[43], Mat[44], Mat[45], Mat[46], Mat[47], Mat[48], Mat[49])
+    ),
+    (
+      for e in ents:
+        let r1 = w.addComponent(e, Mat[43], Mat[44], Mat[45], Mat[46], Mat[47], Mat[48], Mat[49])
+        let r2 = w.removeComponent(r1, Mat[43], Mat[44], Mat[45], Mat[46], Mat[47], Mat[48], Mat[49])
+        discard w.removeComponent(r2, Z[0], Z[1], Z[2], Z[3], Z[4], Z[5], Z[6])
+    )
+  )
+  showDetailed(suite.benchmarks[^1])
+
 proc addRemoveVeryBigSparse(eCount=ENTITY_COUNT, bSample=SAMPLE, bWarm=WARMUP) =
   var suite = initSuite("add remove very big sparse")
   suite.add benchmarkWithSetup(
@@ -184,8 +263,11 @@ proc addRemoveVeryBigSparse(eCount=ENTITY_COUNT, bSample=SAMPLE, bWarm=WARMUP) =
   showDetailed(suite.benchmarks[^1])
 
 addRemoveDense()
+addRemoveDenseTyped()
 addRemoveSparse()
 addRemoveBigDense()
+addRemoveBigDenseTyped()
 addRemoveBigSparse()
 addRemoveVeryBigDense()
+addRemoveVeryBigDenseTyped()
 addRemoveVeryBigSparse()
