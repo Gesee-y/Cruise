@@ -18,6 +18,12 @@
 # We will analyze the liveliness of each variable
 
 type
+  CBytecodeOps = enum
+    cbAdd
+    cbSub
+    cbMul
+    cbDiv
+
   CLiveness = object
     birth: NodePos
     death: NodePos
@@ -127,10 +133,50 @@ proc getLiveness(ctx: CIRContext): CIRControlNode =
         for n in current.args:
           stack.add(n)
 
+proc findVar(node: CIRControlNode, name: string): CLiveness {.raise: [KeyError].} =
+  ## Search `node` and all descendants for `name`. Raises if not found.
+  if name in node.variables: return node.variables[name]
+  if not parent.isNil:
+    return parent.findVar(name)
+
+  raise newException(KeyError, "variable '" & name & "' not found in scope tree")
+
+
+# ###########################
+# Cruise Memory Map
+# ## 0-7 -> Outputs registers, store the outputs of a shader (vertex, fragments)
+# ## 8-51 -> Buffers register, Used to identify buffers, stored by bindings
+# ## 52-67 -> Sampler data
+# ## 68-end -> User data, All user data
+# 
+
+const
+  OUTPUT_START_REG = 0
+  BUFFER_START_REG = 8
+  SAMPLER_START_REG = 52
+  USER_START_REG = 68
+  MAX_REGISTER = 2048
+
 proc emitCBytecode(ctx: var CIRContext): CBytecode =
   ## Emit bytecode that should be
   var allocator: CRegisterAllocator
-  let liveness = ctx.getLiveness
+  let liveNode = ctx.getLiveness
+
+  var stack: seq[CIRNode] = @[ctx.body.args[1]]
+  var ccursor = 0
+
+  while ccursor < stack.len:
+    let current = stack[ccursor]
+    let line = current.src.line
+
+    case current.kind:
+      of cnkSym:
+        let v = liveNode.findVar(current.name)
+
+
+    allocator.updateTick(current.src.line)
+
+
 
 
 
