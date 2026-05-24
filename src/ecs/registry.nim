@@ -26,8 +26,8 @@ static:
   inc NEXT_ARCHETYPE_ID
 
 proc getComponentIdFromRegistry(T:NimNode): int =
-  let str = T.getTypeInst.repr
-  let hash = T.getTypeInst.repr.hash.int
+  let str = T.repr
+  let hash = T.repr.hash.int
   let maxComp = MAX_COMPONENT_LAYER*UINT_BITS
 
   if hash notin COMPONENT_ID_REGISTRY:

@@ -121,6 +121,7 @@ type
     handles*:seq[uint32]
     generations:seq[uint16]
     sparse_gens:seq[uint16]
+    sparse_arch:seq[uint16]
     free_entities:seq[uint32]
     archGraph*:ArchetypeGraph
     free_list:seq[uint32]
@@ -151,6 +152,7 @@ template newECSWorld*(max_entities:int=1000000):ECSWorld =
   w.free_entities = newSeqofCap[uint32](max_entities div 2)
   w.generations = newSeqofCap[uint16](max_entities)
   w.sparse_gens = newSeqofCap[uint16](max_entities)
+  w.sparse_arch = newSeqofCap[uint16](max_entities)
   
   var ev = initEventManager()
   GC_ref(ev)
@@ -281,11 +283,11 @@ macro requireComponent*(w: var ECSWorld, base: typedesc, comps:typedesc, layout:
     `@w`.archGraph.requiredComps[toComponentId(`@base`)].add(toComponentId(`@comps`))
 
 template get*[T](world:ECSWorld,t:typedesc[T], P:static bool= false):untyped =
-  let id = toComponentId(t)
+  let id = toComponentId(T)
   getValue[T](world.registry.entries[id], P)
 
 template get*[T](world:ECSWorld, t:typedesc[T], i:untyped, P:static bool= false):untyped =
-  let id = toComponentId(t)
+  let id = toComponentId(T)
   let f = getValue[T](world.registry.entries[id], P)
   f[i]
 

@@ -103,6 +103,7 @@ macro allocateSparseEntity*(
           "Recycle sparse entities to avoid exhaustion.")
         `@table`.max_index += UINT_BITS
         `@table`.sparse_gens.setLen(`@table`.max_index)
+        `@table`.sparse_arch.setLen(`@table`.max_index)
 
         ## Activate only the first slot of the fresh block.
         `@activateCode`
@@ -198,6 +199,7 @@ macro allocateSparseEntities*(
         `@newBlocksCode`
 
       `@table`.sparse_gens.setLen(`@table`.max_index)
+      `@table`.sparse_arch.setLen(`@table`.max_index)
       res
 
 ## Overrides component values from entity j into entity i

@@ -29,7 +29,7 @@ macro maskOf*(ids: static openArray[int]): ArchetypeMask =
       m.withComponentInPlace(req)
   return quote do : `m`
 
-macro maskOf*(comps: varargs[typed]): ArchetypeMask =
+macro maskOf*(comps: varargs[untyped]): ArchetypeMask =
   var m: ArchetypeMask
   for c in comps:
     let id = getComponentIdFromRegistry(c)
@@ -83,11 +83,11 @@ template `[]`*[N,P,T,S,B](f: FragmentArray[N,P,T,S,B], d: TDHandle):untyped = f[
 
 ## Sets component data in a `FragmentArray` for a raw `Entity`.
 template `[]=`*[N,P,T,S,B](f:var FragmentArray[N,P,T,S,B], d: TDHandle, v:B) = 
-  f[d.DenseHandle] = vx
+  f[d.DenseHandle] = v
 
 ## Retrieves component data from a `FragmentArray` using a raw `Entity`.
 template `[]`*[N,P,T,S,B](f: FragmentArray[N,P,T,S,B], d: TSHandle):untyped = f[d.SparseHandle]
 
 ## Sets component data in a `FragmentArray` for a raw `Entity`.
 template `[]=`*[N,P,T,S,B](f:var FragmentArray[N,P,T,S,B], d: TSHandle, v:B) = 
-  f[d.SparseHandle] = vx
+  f[d.SparseHandle] = v

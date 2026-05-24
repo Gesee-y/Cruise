@@ -187,7 +187,7 @@ proc runSparseBenchmarks() =
     ( 
       var w = setupWorld()
       var ents = w.createTSparseEntities(ENTITY_COUNT,Position)
-      var entsV: seq[TSHandle[maskOf(Position, Velocity)]]
+      var entsV: seq[TSHandle[[3'u, 0'u, 0'u, 0'u]]]
       var entsP: seq[TSHandle[maskOf(Position)]]
       
       for e in ents.mitems:

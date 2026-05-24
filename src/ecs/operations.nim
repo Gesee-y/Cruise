@@ -432,13 +432,14 @@ macro createSparseEntity*(world: ECSWorld, comps: varargs[
   return quote("@") do:
     block:
       `@regis`
-      let archId = `@world`.archGraph.findArchetype(`@compIds`).uint32
+      let archID = `@world`.archGraph.findArchetype(`@compIds`)
       let id = allocateSparseEntity(`@world`, `@comps`)
-      let gen = `@world`.sparse_gens[id].uint32
+      let gen = `@world`.sparse_gens[id]
 
       var s = SparseHandle()
       s.id = id
-      s.meta = (archID shl 16) or gen
+      s.gen =  gen
+      `@world`.sparse_arch[id] = archID
       var ev = `@world`.events
       ev.emitSparseEntityCreated(s)
       s
@@ -461,16 +462,16 @@ macro createSparseEntities*(
   return quote("@") do:
     block:
       `@regis`
-      let archNode = `@world`.archGraph.findArchetype(`@compIds`)
-      let archID = archNode.uint32
+      let archID = `@world`.archGraph.findArchetype(`@compIds`)
       let ranges = allocateSparseEntities(`@world`, `@n`, `@comps`)
 
       var res = newSeq[SparseHandle](`@n`)
       var current = 0
       for r in ranges:
         for i in r.s..<r.e:
-          let gen = `@world`.sparse_gens[i].uint32
-          res[current] = SparseHandle(id: i.uint32, meta: (archID shl 16) or gen)
+          let gen = `@world`.sparse_gens[i]
+          `@world`.sparse_arch[i] = archID
+          res[current] = SparseHandle(id: i.uint32, gen: gen)
           current += 1
 
       res
@@ -480,7 +481,7 @@ macro createSparseEntities*(
 ## Only activates the NEW components — the entity already has the others.
 macro addComponent*(
   world: var ECSWorld,
-  s: var SparseHandle,
+  s: SparseHandle,
   addedComps: varargs[typed]
 ): untyped =
   var addedIds = newNimNode(nnkBracket)
@@ -504,13 +505,12 @@ macro addComponent*(
     block addComp:
       `@regis`
       ## Walk the archetype graph with compile-time ids — result is runtime node.
-      var archNode = `@world`.archGraph.nodes[`@s`.archID].id
+      var archID = `@world`.archGraph.nodes[`@world`.sparse_arch[`@s`.id]].id
       for cid in `@addedIds`:
-        archNode = `@world`.archGraph.addComponent(archNode, cid)
+        archID = `@world`.archGraph.addComponent(archID, cid)
 
-      if archNode == `@s`.archID: break addComp
-
-      `@s`.archID = archNode
+      if archID == `@world`.sparse_arch[`@s`.id]: break addComp
+      `@world`.sparse_arch[`@s`.id] = archID
 
       ## Activate only the added components — typed, no vtable.
       `@activateCode`
@@ -531,7 +531,7 @@ macro addComponent*(
 ## per added component type — Component-Outside Entity-Inside pattern.
 macro addComponent*(
   world: ECSWorld,
-  entities: var openArray[SparseHandle],
+  entities: openArray[SparseHandle],
   addedComps: varargs[typed]
 ): untyped =
 
@@ -563,14 +563,14 @@ macro addComponent*(
       var lastArch: int = -1
       for i in 0..<`@entities`.len:
         `@batchIdent`.add(`@entities`[i].id)
-        let archId = `@entities`[i].archID
+        let archId = `@world`.sparse_arch[`@entities`[i].id]
         if lastArchID != archID.int:
           lastArchId = archID.int
-          lastArch = `@entities`[i].archID.int
+          lastArch = `@world`.sparse_arch[`@entities`[i].id].int
           for cid in `@addedIds`:
             lastArch = `@world`.archGraph.addComponent(lastArch.uint16, cid).int
-
-        `@entities`[i].archID = lastArch.uint16
+        
+        `@world`.sparse_arch[`@entities`[i].id] = archID
 
       ## Typed batch activation — one castTo + one pass per component.
       `@activateBatchCode`
@@ -579,7 +579,7 @@ macro addComponent*(
 ## removeComponent (sparse, single) — typed, zero vtable.
 macro removeComponent*(
   world: var ECSWorld,
-  s: var SparseHandle,
+  s: SparseHandle,
   removedComps: varargs[typed]
 ): untyped =
   var removedIds = newNimNode(nnkBracket)
@@ -598,13 +598,13 @@ macro removeComponent*(
 
   return quote("@") do:
     block remComp:
-      var archNode = `@world`.archGraph.nodes[`@s`.archID].id
+      var archNode = `@world`.archGraph.nodes[`@world`.sparse_arch[`@s`.id]].id
       for cid in `@removedIds`:
         archNode = `@world`.archGraph.removeComponent(archNode, cid)
 
-      if archNode == `@s`.archID: break remComp
+      if archNode == `@world`.sparse_arch[`@s`.id]: break remComp
 
-      `@s`.archID = archNode
+      `@world`.sparse_arch[`@s`.id] = archNode
       `@deactivateCode`
 
 ## removeComponent (sparse, single) — typed, zero vtable, SWEntity overload.
@@ -619,7 +619,7 @@ macro removeComponent*(
 ## removeComponent batch (sparse) — typed, zero vtable.
 macro removeComponent*(
   world: ECSWorld,
-  entities: var openArray[SparseHandle],
+  entities: openArray[SparseHandle],
   removedComps: varargs[typed]
 ): untyped =
 
@@ -649,15 +649,15 @@ macro removeComponent*(
       var lastArchID = -1
       var lastArch: int = -1
       for i in 0..<`@entities`.len:
-        let archId = `@entities`[i].archID
+        let archId = `@world`.sparse_arch[`@entities`[i].id]
         if lastArchID != archID.int:
           lastArchId = archID.int
-          lastArch = `@entities`[i].archID.int
+          lastArch = `@world`.sparse_arch[`@entities`[i].id].int
 
           for cid in `@removedIds`:
             lastArch = `@world`.archGraph.removeComponent(lastArch.uint16, cid).int
 
-        `@entities`[i].archID = lastArch.uint16
+        `@world`.sparse_arch[`@entities`[i].id] = archID
 
       `@deactivateBatchCode`
 ## Deletes an entity from the sparse storage.
@@ -667,7 +667,7 @@ macro removeComponent*(
 proc deleteEntity*(w: var ECSWorld, s: SparseHandle) =
   var ev = w.events
   ev.emitSparseEntityDestroyed(s)
-  w.deleteSparseRow(s.id, w.archGraph.nodes[s.archID].componentIds)
+  w.deleteSparseRow(s.id, w.archGraph.nodes[w.sparse_arch[s.id]].componentIds)
   # Increment generation to invalidate handles.
   w.sparse_gens[s.id] += 1
 
@@ -677,14 +677,14 @@ proc deleteEntity*(sw: var SWEntity) =
 
 proc migrateEntity(w: var ECSWorld, s: var SparseHandle,
     newArch: var ArchetypeNode) =
-  let oldNode = addr w.archGraph.nodes[s.archID]
-  if newArch.id == s.archID: return
+  let oldNode = addr w.archGraph.nodes[w.sparse_arch[s.id]]
+  if newArch.id == w.sparse_arch[s.id]: return
 
   let toActivate = newArch.mask and not (oldNode.mask)
   let toDeactivate = oldNode.mask and not (newArch.mask)
 
   w.deactivateComponentsSparse(s.id, toDeactivate)
-  s.archID = newArch.id
+  w.sparse_arch[s.id] = newArch.id
   w.activateComponentsSparse(s.id, toActivate)
 
 proc isAlive*(dw: DWEntity): bool = isAlive(dw.w, dw.handle)
@@ -701,10 +701,10 @@ proc isAlive*(sw: SWEntity): bool = sw.handle.gen == sw.w.sparse_gens[sw.handle.
 ## @return: A new `DWEntity` representing the entity in dense storage.
 proc makeDense*(world: var ECSWorld, s: var SparseHandle): DenseHandle =
   var d = world.createEntity()
-  world.migrateEntity(d, s.archID)
+  world.migrateEntity(d, world.sparse_arch[s.id])
 
   # Iterate through the component mask to find active components.
-  for id in world.archGraph.nodes[s.archID].componentIds:
+  for id in world.archGraph.nodes[world.sparse_arch[s.id]].componentIds:
     var entry = world.registry.entries[id]
 
     # Invoke the specific copy operation (Sparse to Dense).

@@ -120,17 +120,17 @@ macro changePartition(
   return quote("@") do:
     block:
       check(`@oldArch`.int < `@table`.archGraph.nodes.len,
-        "tChangePartition: source archetypeId=" & $`@oldArch` & " out of bounds.")
+        "changePartition: source archetypeId=" & $`@oldArch` & " out of bounds.")
 
       let oldPartition = `@table`.archGraph.nodes[`@oldArch`].partition
       check(not oldPartition.isNil,
-        "tChangePartition: source archetype " & $`@oldArch` & " has no partition.")
+        "changePartition: source archetype " & $`@oldArch` & " has no partition.")
       let newPartition = createPartition(`@table`, `@newArch`.uint16)
 
       if oldPartition.zones.len <= oldPartition.fill_index or
           isEmpty(oldPartition.zones[oldPartition.fill_index]):
         check(oldPartition.fill_index > 0,
-          "tChangePartition: source fill_index would underflow.")
+          "changePartition: source fill_index would underflow.")
         oldPartition.fill_index -= 1
 
       let oldZone = addr oldPartition.zones[oldPartition.fill_index]

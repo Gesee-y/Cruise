@@ -140,15 +140,15 @@ macro migrateEntity*[S: static ArchetypeMask](
 macro addComponent*[S: static ArchetypeMask](
     world:    ECSWorld,
     d:        TDHandle[S],
-    addComps: varargs[typed]
+    addComps: varargs[untyped]
 ): untyped =
-  
-  var newMask = S
+  var newComps = S.getComponents
   for c in addComps:
     let id = getComponentIdFromRegistry(c)
-    newMask = newMask.withComponent(id)
+    newComps.add(id)
     for rc in getRequiredComps(id):
-      newMask.withoutComponentInPlace(rc)
+      newComps.add(rc)
+  let newMask = maskOf(newComps) or S
 
   var regis = newNimNode(nnkStmtList)
   for c in addComps:
@@ -168,15 +168,13 @@ macro addComponent*[S: static ArchetypeMask](
 macro removeComponent*[S: static ArchetypeMask](
     world:    ECSWorld,
     d:        TDHandle[S],
-    remComps: varargs[typed]
+    remComps: varargs[untyped]
 ): untyped =
-  var newMask = S
+  var newComps = S.getComponents
+  var newMask = maskOf(newComps)
   for c in remComps:
-    newMask = newMask.withoutComponent(getComponentIdFromRegistry(c))
-
-  let (_, newArchIdCT) = toArchetypeIDC(newMask.getComponents())
-  let newMaskLit   = newMask
-  let newArchIdLit = newArchIdCT
+    let id = getComponentIdFromRegistry(c)
+    newMask.withoutComponentInPlace(id)
 
   return quote("@") do:
     migrateEntity(`@world`, `@d`, `@newMask`)
@@ -186,13 +184,13 @@ macro addComponent*[S: static ArchetypeMask](
     s:        TSHandle[S],
     addComps: varargs[typed]
 ): untyped =
-  var newMask = S
+  var newComps = S.getComponents
   for c in addComps:
     let id = getComponentIdFromRegistry(c)
-    newMask.withComponentInPlace(id)
+    newComps.add(id)
     for rc in getRequiredComps(id):
-      newMask.withComponentInPlace(rc)
-
+      newComps.add(rc)
+  let newMask = maskOf(newComps) or S
   let (_, newArchIdCT) = toArchetypeIDC(newMask.getComponents())
   let newArchIdLit = newArchIdCT
 
@@ -207,11 +205,12 @@ macro addComponent*[S: static ArchetypeMask](
         var fr = castTo(`@world`.registry.entries[toComponentId(`@c`)].rawPointer, `@c`, DEFAULT_BLK_SIZE)
         fr.activateSparseBit(`@s`.id)
 
+  if newMask == S: return quote("@") do: `@s`
   return quote("@") do:
     `@regis`
     let destArch = `@world`.archGraph.findArchetype(`@newMask`)
-    if destArch != `@s`.archID:
-      `@activateCode`
+    `@activateCode`
+    `@world`.sparse_arch[`@s`.id] = destArch
     TSHandle[`@newMask`](`@s`)
 
 ## Remove components from a sparse handle with a statically known mask.
@@ -222,9 +221,11 @@ macro removeComponent*[S: static ArchetypeMask](
     s:        TSHandle[S],
     remComps: varargs[typed]
 ): untyped =
-  var newMask = S
+  var newComps = S.getComponents
+  var newMask = maskOf(newComps)
   for c in remComps:
-    newMask.withoutComponentInPlace(getComponentIdFromRegistry(c))
+    let id = getComponentIdFromRegistry(c)
+    newMask.withoutComponentInPlace(id)
 
   let (_, newArchIdCT) = toArchetypeIDC(newMask.getComponents())
   let newArchIdLit = newArchIdCT.uint16
@@ -236,10 +237,11 @@ macro removeComponent*[S: static ArchetypeMask](
         var fr = castTo(`@world`.registry.entries[toComponentId(`@c`)].rawPointer, `@c`, DEFAULT_BLK_SIZE)
         fr.deactivateSparseBit(`@s`.id)
 
+  if newMask == S: return quote("@") do: `@s` 
   return quote("@") do:
     let destArch: uint16 = `@newArchIdLit`
-    if destArch != `@s`.archID:
-      `@deactivateCode`
+    `@deactivateCode`
+    `@world`.sparse_arch[`@s`.id] = destArch
     TSHandle[`@newMask`](`@s`)
 
 macro deleteEntity*[S: static ArchetypeMask](
@@ -286,4 +288,5 @@ macro deleteEntity*[S: static ArchetypeMask](
   return quote("@") do:
     block:
       `@deactivateCode`
+      `@world`.free_list.add(`@s`.id)
       `@world`.sparse_gens[`@s`.id] += 1

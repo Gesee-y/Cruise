@@ -17,21 +17,13 @@ type
 type
   SparseHandle* = object
     id*   : uint32       ## The unique identifier of the entity in sparse storage.
-    meta  : uint32     ## The generation counter for validity checks on 16 bits and archetype ID on another 16 bits.
+    gen  : uint16     ## The generation counter for validity checks on 16 bits and archetype ID on another 16 bits.
 
 ####################################################################################################################################################
 #################################################################### ACCESSORS #####################################################################
 ####################################################################################################################################################
 
 template obj*(d: DenseHandle): ptr Entity = addr d.world.entities[d.widx]
-
-template gen*(s: SparseHandle): uint16 = (s.meta and MASK16).uint16
-template `gen=`(s: SparseHandle, v: untyped) = 
-  s.meta = (s.meta and not MASK16) or v
-
-template archID*(s: SparseHandle): uint16 = (s.meta shr SHIFT16).uint16
-template `archID=`*(s: SparseHandle, v: untyped) = 
-  s.meta = (s.meta and MASK16) or (v.uint32 shl SHIFT16)
 
 ## Retrieves component data from a `FragmentArray` using a raw `Entity`.
 template `[]`*[N,P,T,S,B](f: FragmentArray[N,P,T,S,B], d: DenseHandle):untyped = f[d.world.entities[d.widx]]
