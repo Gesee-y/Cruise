@@ -24,12 +24,28 @@ type
     cbMul
     cbDiv
 
+  InfixPrec* = enum
+    ipBit
+    ipAdd
+    ipMul
+    ipCall
+    ipPar
+
+  FlatOp* = object
+    op*:    string
+    left*:  CIRNode
+    right*: CIRNode
+    prec*:  InfixPrec
+    src*:   NodePos
+    inner*: seq[FlatOp]
+
   CLiveness = object
     birth: NodePos
     death: NodePos
 
   CIRControlNode = ref object
     variables: Table[string, CLiveness]
+    registers: Table[string, int] 
     children: seq[CIRControlNode]
     parent: CIRControlNode
     stackCount: int
@@ -155,15 +171,104 @@ const
   BUFFER_START_REG = 8
   SAMPLER_START_REG = 52
   USER_START_REG = 68
+  REG_SIZE = 8
   MAX_REGISTER = 2048
+
+proc getTypeSize(name: string): int =
+  case name:
+    of "float", "int", "uint": 32
+    of "vec2": 64
+    of "vec3": 96
+    of "vec4": 128
+    else: 0
+
+proc infixPrec(op: string): InfixPrec =
+  case op:
+  of "and", "or", "not": ipBit
+  of "+", "-": ipAdd
+  of "*", "/": ipMul
+  else:        ipAdd 
+
+proc flattenNode*(node: CIRNode): seq[FlatOp]
+proc collectNode(acc: var seq[FlatOp], n: CIRNode): int =
+    case n.kind:
+
+    of cnkInfix:
+      let opName = n.args[0].name
+      let left   = n.args[1]
+      let right  = n.args[2]
+      let lid = collectNode(left)
+      let rid = collectNode(right)
+      acc.add FlatOp(
+        op:    opName,
+        left:  left,
+        right: right,
+        prec:  infixPrec(opName),
+        src:   n.src)
+
+    of cnkCall:
+      var argInner: seq[FlatOp]
+      for i in 1 ..< n.args.len:
+        argInner.add flattenNode(n.args[i])
+      let firstArg =
+        if n.args.len > 1: n.args[1]
+        else: newCIRNode(cnkEmpty)
+      acc.add FlatOp(
+        op:    n.args[0].name,
+        left:  firstArg,
+        right: newCIRNode(cnkEmpty),
+        prec:  ipCall,
+        src:   n.src,
+        inner: argInner)
+
+    of cnkPar:
+      let innerOps = flattenNode(n.args[0])
+      acc.add FlatOp(
+        op:    "()",
+        left:  n.args[0],
+        right: newCIRNode(cnkEmpty),
+        prec:  ipPar,
+        src:   n.src,
+        inner: innerOps)
+
+    of cnkBracketExpr:
+      let lid = collectNode(n.args[0])  # base
+      let rid = collectNode(n.args[1])  # index (may itself be an expression)
+      acc.add FlatOp(
+        op:    "[]",
+        left:  n.args[0],
+        right: n.args[1],
+        prec:  ipCall,
+        src:   n.src)
+
+    of cnkPrefix:
+      let id = collectNode(n.args[1])
+      acc.add FlatOp(
+        op:    n.args[0].name,
+        left:  n.args[1],
+        right: newCIRNode(cnkEmpty),
+        prec:  ipMul,
+        src:   n.src)
+
+    else:
+      discard
+
+    acc.len
+
+proc flattenNode*(node: CIRNode): seq[FlatOp] =
+  var acc: seq[FlatOp]
+  let id = acc.collectNode(node)
+  acc.sort(proc(a, b: FlatOp): int = cmp(b.prec, a.prec))
+  acc
 
 proc emitCBytecode(ctx: var CIRContext): CBytecode =
   ## Emit bytecode that should be
   var allocator: CRegisterAllocator
-  let liveNode = ctx.getLiveness
+  var liveNode = ctx.getLiveness
 
   var stack: seq[CIRNode] = @[ctx.body.args[1]]
   var ccursor = 0
+  var currentOp = 0
 
   while ccursor < stack.len:
     let current = stack[ccursor]
@@ -172,6 +277,11 @@ proc emitCBytecode(ctx: var CIRContext): CBytecode =
     case current.kind:
       of cnkSym:
         let v = liveNode.findVar(current.name)
+        let reg = liveNode.findReg(current.name)
+        result.data[^1] = result.data[^1] or (reg.uin32 shl (currentOp*REG_SIZE))
+      of cnkIdentDef:
+        let s = allocator.alloc(getTypeSize(current.args[1].name, line))
+        liveNode.registers[current.args[0].name] = s
 
 
     allocator.updateTick(current.src.line)
