@@ -149,13 +149,21 @@ proc getLiveness(ctx: CIRContext): CIRControlNode =
         for n in current.args:
           stack.add(n)
 
-proc findVar(node: CIRControlNode, name: string): CLiveness {.raise: [KeyError].} =
+proc findVar(node: CIRControlNode, name: string): CLiveness {.raises: [KeyError].} =
   ## Search `node` and all descendants for `name`. Raises if not found.
   if name in node.variables: return node.variables[name]
-  if not parent.isNil:
-    return parent.findVar(name)
+  if not node.parent.isNil:
+    return node.parent.findVar(name)
 
   raise newException(KeyError, "variable '" & name & "' not found in scope tree")
+
+proc findReg(node: CIRControlNode, name: string): int {.raises: [KeyError].} =
+  ## Search `node` and all descendants for `name`. Raises if not found.
+  if name in node.registers: return node.registers[name]
+  if not node.parent.isNil:
+    return node.parent.findReg(name)
+
+  raise newException(KeyError, "Register '" & name & "' not found in scope tree")
 
 
 # ###########################
@@ -197,8 +205,8 @@ proc collectNode(acc: var seq[FlatOp], n: CIRNode): int =
       let opName = n.args[0].name
       let left   = n.args[1]
       let right  = n.args[2]
-      let lid = collectNode(left)
-      let rid = collectNode(right)
+      let lid = acc.collectNode(left)
+      let rid = acc.collectNode(right)
       acc.add FlatOp(
         op:    opName,
         left:  left,
@@ -232,8 +240,8 @@ proc collectNode(acc: var seq[FlatOp], n: CIRNode): int =
         inner: innerOps)
 
     of cnkBracketExpr:
-      let lid = collectNode(n.args[0])  # base
-      let rid = collectNode(n.args[1])  # index (may itself be an expression)
+      let lid = acc.collectNode(n.args[0])  # base
+      let rid = acc.collectNode(n.args[1])  # index (may itself be an expression)
       acc.add FlatOp(
         op:    "[]",
         left:  n.args[0],
@@ -242,7 +250,7 @@ proc collectNode(acc: var seq[FlatOp], n: CIRNode): int =
         src:   n.src)
 
     of cnkPrefix:
-      let id = collectNode(n.args[1])
+      let id = acc.collectNode(n.args[1])
       acc.add FlatOp(
         op:    n.args[0].name,
         left:  n.args[1],
@@ -278,10 +286,11 @@ proc emitCBytecode(ctx: var CIRContext): CBytecode =
       of cnkSym:
         let v = liveNode.findVar(current.name)
         let reg = liveNode.findReg(current.name)
-        result.data[^1] = result.data[^1] or (reg.uin32 shl (currentOp*REG_SIZE))
+        result.data[^1] = result.data[^1] or (reg.uint32 shl (currentOp*REG_SIZE))
       of cnkIdentDef:
-        let s = allocator.alloc(getTypeSize(current.args[1].name, line))
+        let s = allocator.alloc(getTypeSize(current.args[1].name), line)
         liveNode.registers[current.args[0].name] = s
+      else: discard
 
 
     allocator.updateTick(current.src.line)

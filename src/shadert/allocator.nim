@@ -4,8 +4,6 @@
 
 const MAX_INTERPRETER_MEM = 128
 
-include "hibitset.nim"
-
 type
   CRegisterAllocator = object
     active: Table[(int, int), int]
@@ -13,13 +11,13 @@ type
     tick: int
 
 proc alloc(c: var CRegisterAllocator, size, line: int): int =
-  let s = c.getSpace(size)
-  c.fillAlloc(s, size)
+  let s = c.allocator.getSpace(size)
+  c.allocator.fillAlloc(s, size)
   c.active[(s, size)] = line
   s
 
 proc free(c: var CRegisterAllocator, s, size: int) =
-  c.freeRange(s, size)
+  c.allocator.freeRange(s, size)
   c.active.del((s, size))
 
 proc updateTick(c: var CRegisterAllocator, t: int) =

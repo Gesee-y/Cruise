@@ -2,22 +2,22 @@
 ############################################################ TRANSPILER NIM -> CRUISE IR #################################################################
 ##########################################################################################################################################################
 
-import sets, macros, tables, strutils, strformat, hashes, algorithm
+import sets, macros, tables, strutils, strformat, hashes, algorithm, bitops
 
 ##########################################################################################################################################################
 ################################################################## TYPES #################################################################################
 ##########################################################################################################################################################
 
 type
-  Uniform*[T] = distinct T ## uniform T name;
-  UniformReadOnly*[T] = distinct T ## layout(...) readonly buffer
-  UniformWriteOnly*[T] = distinct T ## layout(...) writeonly buffer
-  SSBO*[T] = distinct T ## layout(std430) buffer { T name[]; };
+  Uniform*[T] = distinct T 
+  UniformReadOnly*[T] = distinct T 
+  UniformWriteOnly*[T] = distinct T
+  SSBO*[T] = distinct T
   GlobalIndex*[N:static int, T] = distinct T
   LocalIndex*[N:static int, T] = distinct T
   LocalSize*[N:static int, T] = distinct T
-  Image2D*[T] = distinct T ## layout(rgba32f) writeonly uniform image2D
-  Sampler2D* = object ## uniform sampler2D name;
+  Image2D*[T] = distinct T
+  Sampler2D* = object
 
   ParsingContext* = enum
     pcNone, pcReturn, pcWhile, pcFor, pcIf
