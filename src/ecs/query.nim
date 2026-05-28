@@ -114,8 +114,8 @@ iterator maskIter(it: uint): int =
   ## This uses the "Brian Kernighan's algorithm" approach (`m & (m-1)`), which efficiently
   ## jumps to the next set bit.
   ##
-  ## @param it: The bitmask (uint) to iterate over.
-  ## @return: The index (int) of each set bit found.
+  ## param: it: The bitmask (uint) to iterate over.
+  ## return: The index (int) of each set bit found.
 
   var m = it
   while m != 0:
@@ -177,9 +177,9 @@ proc buildQuerySignature(world: ECSWorld, components: seq[QueryComponent]): Quer
   ## Note: Processing logic for qModified/qNotModified is not implemented here per request,
   ## only the ID is cached in the components sequence.
   ##
-  ## @param world: The `ECSWorld` (used for context or future expansion).
-  ## @param components: A sequence of `QueryComponent` objects defining the filter.
-  ## @return: A fully constructed `QuerySignature`.
+  ## param: world: The `ECSWorld` (used for context or future expansion).
+  ## param: components: A sequence of `QueryComponent` objects defining the filter.
+  ## return: A fully constructed `QuerySignature`.
 
   result.components = components
   
@@ -283,9 +283,9 @@ proc denseQueryCache*(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
   ## Useful if you need to iterate over the results multiple times, as it avoids
   ## re-scanning the archetype graph on subsequent iterations.
   ##
-  ## @param world: The `ECSWorld` to query.
-  ## @param sig: The `QuerySignature` defining the filter.
-  ## @return: A `DenseQueryResult` containing the matching partitions.
+  ## param: world: The `ECSWorld` to query.
+  ## param: sig: The `QuerySignature` defining the filter.
+  ## return: A `DenseQueryResult` containing the matching partitions.
 
   let key: QueryKey = (sig.includeMask, sig.excludeMask)
   if not world.queryCache.hasKey(key):
@@ -307,7 +307,7 @@ proc denseQueryCache*(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
 iterator items*(qr:DenseQueryResult):(int, HSlice[int, int]) =
   ## Iterator for the cached `DenseQueryResult`.
   ##
-  ## @param qr: The `DenseQueryResult` to iterate over.
+  ## param: qr: The `DenseQueryResult` to iterate over.
   ## @yield: A tuple containing:
   ##         - `int`: The Block Index.
   ##         - `HSlice[int, int]`: The range of entity indices.
@@ -387,7 +387,7 @@ iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, SparseIterato
 iterator items*(sr:sparseQueryResult):(int, uint) =
   ## Iterator for the cached `sparseQueryResult`.
   ##
-  ## @param sr: The `sparseQueryResult` to iterate over.
+  ## param: sr: The `sparseQueryResult` to iterate over.
   ## @yield: A tuple containing:
   ##         - `int`: The Chunk Index.
   ##         - `uint`: The bitmask of valid entities within the chunk.
@@ -444,9 +444,9 @@ macro query*(world: untyped, expr: untyped): untyped =
   ## The macro parses the Abstract Syntax Tree (AST) of the expression and converts
   ## the identifiers (types) into their Component IDs using the world's registry.
   ##
-  ## @param world: The `ECSWorld` instance.
-  ## @param expr: The query expression (e.g., `Pos and Modified[Vel]`).
-  ## @return: A `QuerySignature` ready for use in query functions.
+  ## param: world: The `ECSWorld` instance.
+  ## param: expr: The query expression (e.g., `Pos and Modified[Vel]`).
+  ## return: A `QuerySignature` ready for use in query functions.
 
   var components = newSeq[NimNode]()
   

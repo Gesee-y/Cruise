@@ -11,15 +11,15 @@ const
   UINT_BITS = sizeof(uint)*8
   BIT_DIVIDER = floor(log(UINT_BITS.float, 2.0)).int
   BIT_REMAINDER = UINT_BITS-1
-  ## Bit shift used to extract block indices from packed IDs.
+  # Bit shift used to extract block indices from packed IDs.
   BLK_SHIFT = 20
   ID_SHIFT = 32 - BLK_SHIFT
-  ## Mask used to extract local indices from packed IDs.
+  # Mask used to extract local indices from packed IDs.
   BLK_MASK = (1 shl BLK_SHIFT) - 1
   ID_MASK = (1 shl ID_SHIFT) - 1
-  ## Default size (in elements) of a dense block.
+  # Default size (in elements) of a dense block.
   DEFAULT_BLK_SIZE = UINT_BITS*UINT_BITS
-  ## Initial capacity of the sparse storage.
+  # Initial capacity of the sparse storage.
   INITIAL_SPARSE_SIZE = 10000
 
 type 
