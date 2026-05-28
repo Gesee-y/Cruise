@@ -3,25 +3,27 @@
 ####################################################################################################################################################
 
 type
+  # Self Explanatory
   TDHandle*[S: static ArchetypeMask] = distinct DenseHandle
   TSHandle*[S: static ArchetypeMask] = distinct SparseHandle
 
-## Return the `ArchetypeMask` encoded in a `TDHandle` or `TSHandle` type
-## parameter at compile time.  The mask is the `static ArchetypeMask` `S`.
-template staticMask*[S: static ArchetypeMask](h: TDHandle[S] | TSHandle[S]): ArchetypeMask = S
+template staticMask*[S: static ArchetypeMask](h: TDHandle[S] | TSHandle[S]): ArchetypeMask = 
+  ## Return the `ArchetypeMask` encoded in a `TDHandle` or `TSHandle` type
+  ## parameter at compile time.  The mask is the `static ArchetypeMask` `S`.
+  S
 
-## Resolve the runtime archetype node ID for a typed handle's mask.
-## Because `S` is statically known, `toArchetypeIDC` (compile-time proc) gives
-## us the integer without any hash-table lookup at runtime.
 template staticArchId*[S: static ArchetypeMask](
     _: typedesc[TDHandle[S]] | typedesc[TSHandle[S]]): uint16 =
+  ## Resolve the runtime archetype node ID for a typed handle's mask.
+  ## Because `S` is statically known, `toArchetypeIDC` (compile-time proc) gives
+  ## us the integer without any hash-table lookup at runtime.
   const (_, id) = toArchetypeIDC(S.getComponents())
   id.uint16
 
-## Compute the `ArchetypeMask` for a list of component IDs known at compile time.
-## Required components (declared via `requireComponent`) are folded in
-## automatically by consulting `REQUIRED_COMPS`.
 macro maskOf*(ids: static openArray[int]): ArchetypeMask =
+  ## Compute the `ArchetypeMask` for a list of component IDs known at compile time.
+  ## Required components (declared via `requireComponent`) are folded in
+  ## automatically by consulting `REQUIRED_COMPS`.
   var m: ArchetypeMask
   for id in ids:
     m.withComponentInPlace(id)
@@ -40,6 +42,7 @@ macro maskOf*(comps: varargs[untyped]): ArchetypeMask =
   return quote do : `m`
 
 macro toTyped*(d: DenseHandle, comps: varargs[typed]): untyped =
+  ## Convert a dense handle to a typed dense handle (but you have to specify all the components the entity have, else it will crash)
   var newMask: ArchetypeMask
   for c in comps:
     let id = getComponentIdFromRegistry(c)
@@ -50,6 +53,7 @@ macro toTyped*(d: DenseHandle, comps: varargs[typed]): untyped =
   return quote do: cast[TDHandle[`newMask`]](`d`)
 
 macro toTyped*(s: SparseHandle, comps: varargs[typed]): untyped =
+  ## Convert a sparse handle to a typed sparse handle (but you have to specify all the components the entity have, else it will crash)
   var newMask: ArchetypeMask
   for c in comps:
     let id = getComponentIdFromRegistry(c)
@@ -78,16 +82,18 @@ template `archID=`(s: TSHandle, v: untyped) =
 template id*(d:TSHandle): uint32 = SparseHandle(d).id
 template meta*(d:TSHandle): uint32 = SparseHandle(d).meta
 
-## Retrieves component data from a `FragmentArray` using a raw `Entity`.
-template `[]`*[N,P,T,S,B](f: FragmentArray[N,P,T,S,B], d: TDHandle):untyped = f[d.DenseHandle]
+template `[]`*[N,P,T,S,B](f: FragmentArray[N,P,T,S,B], d: TDHandle):untyped = 
+  ## Retrieves component data from a `FragmentArray` using a raw `Entity`.
+  f[d.DenseHandle]
 
-## Sets component data in a `FragmentArray` for a raw `Entity`.
 template `[]=`*[N,P,T,S,B](f:var FragmentArray[N,P,T,S,B], d: TDHandle, v:B) = 
+  ## Sets component data in a `FragmentArray` for a raw `Entity`.
   f[d.DenseHandle] = v
 
-## Retrieves component data from a `FragmentArray` using a raw `Entity`.
-template `[]`*[N,P,T,S,B](f: FragmentArray[N,P,T,S,B], d: TSHandle):untyped = f[d.SparseHandle]
+template `[]`*[N,P,T,S,B](f: FragmentArray[N,P,T,S,B], d: TSHandle):untyped = 
+  ## Retrieves component data from a `FragmentArray` using a raw `Entity`.
+  f[d.SparseHandle]
 
-## Sets component data in a `FragmentArray` for a raw `Entity`.
 template `[]=`*[N,P,T,S,B](f:var FragmentArray[N,P,T,S,B], d: TSHandle, v:B) = 
+  ## Sets component data in a `FragmentArray` for a raw `Entity`.
   f[d.SparseHandle] = v

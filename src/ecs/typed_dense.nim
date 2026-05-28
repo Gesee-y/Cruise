@@ -1,34 +1,23 @@
-## Internal typed swap-remove inside a single archetype partition.
-##
-## Everything that `deleteRow` does, but component copies are unrolled at
-## compile time from `S` — the static mask already on the handle — so there is
-## no `partition.components` iteration and no `overrideValsOp` vtable call.
-##
-## `i`   — packed entity ID (block<<ID_SHIFT | offset) of the slot to free.
-## Returns the flat index of the last slot that was swapped in (identical
-## contract to the untyped `deleteRow`).
-##
-## Not public — called only by `tDeleteEntity` and `tChangePartitionD`.
 macro deleteRow(
     table: ECSWorld,
     S: static ArchetypeMask,
     i:     uint32,
 ): uint =
-  ## Derive the component ID list from S at compile time.
-  let compIds = S.getComponents()   ## seq[int], evaluated at macro expansion
+  # Derive the component ID list from S at compile time.
+  let compIds = S.getComponents()   # seq[int], evaluated at macro expansion
   let arch = ARCHETYPE_ID_REGISTRY[S]
 
-  ## Emit one typed overrideVals per component in S.
+  # Emit one typed overrideVals per component in S.
   var swapCode = newNimNode(nnkStmtList)
   var lid = ident"lid"
   for cid in compIds:
-    ## We need the NimNode for the type, not the integer.
-    ## `ID_TO_COMPONENT` maps compile-time IDs → NimNode (populated by toComponentId).
+    # We need the NimNode for the type, not the integer.
+    # `ID_TO_COMPONENT` maps compile-time IDs → NimNode (populated by toComponentId).
     let cNode = ID_TO_COMPONENT[cid]
     swapCode.add quote("@") do:
       block:
         var fr = castTo(`@table`.registry.entries[`@cid`].rawPointer, `@cNode`, DEFAULT_BLK_SIZE)
-        fr.overrideVals(`@i`, `@lid`)   ## `lid` bound in the outer quote below
+        fr.overrideVals(`@i`, `@lid`)   # `lid` bound in the outer quote below
 
   return quote("@") do:
     block:
@@ -58,21 +47,6 @@ macro deleteRow(
       zone.r.e -= 1
       last.uint + bid * DEFAULT_BLK_SIZE
 
-####################################################################################################################################################
-################################################ TYPED DENSE changePartition (single) ##############################################################
-####################################################################################################################################################
-
-## Internal fully-typed single-entity partition migration.
-##
-## `OldS` and `NewS` are the static masks of the source and destination
-## archetypes respectively — both known at the call site without the user
-## ever spelling them out.  The macro derives from them:
-##
-##   • oldComps  = OldS.getComponents()   → swap-remove loop
-##   • newComps  = NewS.getComponents()   → newBlockAt loop
-##   • shared    = OldS ∩ NewS            → data-copy loop
-##
-## Returns `(lastFlatIdx, newOffset, newBlockId)`.
 macro changePartition(
     table:   ECSWorld,
     OldS: static ArchetypeMask,
@@ -199,11 +173,11 @@ macro changePartition[OldS: static ArchetypeMask](
  
   return quote("@") do:
     block:
-      check(`@ents`.len > 0, "tChangePartitionBatchD: empty entity batch.")
+      check(`@ents`.len > 0, "changePartitionBatch: empty entity batch.")
  
       let oldPartition = `@table`.archGraph.nodes[`@oldArch`].partition
       check(not oldPartition.isNil,
-        "tChangePartitionBatchD: source archetype " & $`@oldArch` & " has no partition.")
+        "changePartitionBatch: source archetype " & $`@oldArch` & " has no partition.")
       let newPartition = createPartition(`@table`, `@newArch`.uint16)
  
       var toSwap = newSeq[uint32](`@ents`.len)
@@ -212,13 +186,13 @@ macro changePartition[OldS: static ArchetypeMask](
  
       if oldPartition.zones.len <= ofil or isEmpty(addr oldPartition.zones[ofil]):
         check(ofil > 0,
-          "tChangePartitionBatchD: source partition underflow — batch larger than partition.")
+          "changePartitionBatch: source partition underflow — batch larger than partition.")
         ofil -= 1
  
       var c = 0
       while c < `@ents`.len:
         check(ofil >= 0,
-          "tChangePartitionBatchD: source partition exhausted before batch complete.")
+          "changePartitionBatch: source partition exhausted before batch complete.")
         let zone = addr oldPartition.zones[ofil]
         let lo   = max(0, zone.r.e - m)
         let bid  = zone.block_idx.uint
@@ -267,9 +241,9 @@ macro changePartition[OldS: static ArchetypeMask](
  
       for idx in 0..<`@ents`.len:
         let h  = `@ents`[idx]
-        check(not h.obj.isNil,   "tChangePartitionBatchD: nil entity pointer.")
+        check(not h.obj.isNil,   "changePartitionBatch: nil entity pointer.")
         check(h.gen == `@table`.generations[h.widx],
-          "tChangePartitionBatchD: stale handle (widx=" & $h.widx & ").")
+          "changePartitionBatch: stale handle (widx=" & $h.widx & ").")
  
         let e     = h.obj
         let swap  = toSwap[idx]
