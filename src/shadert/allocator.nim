@@ -5,6 +5,8 @@
 const MAX_INTERPRETER_MEM = 128
 
 type
+  CAllocation = object
+    pos, size: int
   CRegisterAllocator = object
     active: Table[(int, int), int]
     allocator: CAHibitset

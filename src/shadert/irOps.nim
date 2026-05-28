@@ -241,7 +241,7 @@ proc collectNode(acc: var seq[FlatOp], n: CIRNode): int =
 
     of cnkBracketExpr:
       let lid = acc.collectNode(n.args[0])  # base
-      let rid = acc.collectNode(n.args[1])  # index (may itself be an expression)
+      let rid = acc.collectNode(n.args[1])  # index 
       acc.add FlatOp(
         op:    "[]",
         left:  n.args[0],
@@ -269,6 +269,11 @@ proc flattenNode*(node: CIRNode): seq[FlatOp] =
   acc.sort(proc(a, b: FlatOp): int = cmp(b.prec, a.prec))
   acc
 
+proc processFlatOps(node: CIRNode, allocator: var CRegisterAllocator, data: seq[FlatOp]): int =
+  for n in data:
+    if n.inner.len > 0:
+      processFlatOps(n.inner)
+
 proc emitCBytecode(ctx: var CIRContext): CBytecode =
   ## Emit bytecode that should be
   var allocator: CRegisterAllocator
@@ -289,7 +294,7 @@ proc emitCBytecode(ctx: var CIRContext): CBytecode =
         result.data[^1] = result.data[^1] or (reg.uint32 shl (currentOp*REG_SIZE))
       of cnkIdentDef:
         let s = allocator.alloc(getTypeSize(current.args[1].name), line)
-        liveNode.registers[current.args[0].name] = s
+        liveNode.registers[current.args[0].name] = 
       else: discard
 
 

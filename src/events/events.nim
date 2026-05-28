@@ -10,32 +10,52 @@ import os
 import algorithm
 import sequtils
 
+## Cruise Events is an event system built for game development. Inspired by godot signal, it offers an ergonomic and highly flexible event pipeline.
+
+
+## Determine how many event can be queued for deletion
 const CHANNEL_SIZE = 64
 
 type
   TaskVar = enum
+    ## Determine how a group of callbacks should be called in a multithreaded context.
+    ## By default, `tsSingle` is used.
+    ## - `tsSingle` -> Callback are executed one after the other in a single task
+    ## - `tsMulti` -> A task is created for each callback and they all run in parallel
     tsSingle, tsMulti
 
   EmissionVar = enum
+    ## Determine how the callback are called. `emSync` is used by default.
+    ## - `emSync` -> Synchronous calls
+    ## - `emParallel` -> Asynchronous calls
     emSync, emParallel
 
   NotifVar = enum
+    ## Determine whether the `Notifier` should keep track of the latest emitted value or not.
+    ## By default `nEmit` is used.
+    ## - `nValue` -> Keep the latest emitted value
+    ## - `nEmit` -> Ignore it
     nValue, nEmit
 
   ExecVar = enum
+    ## Determine which callbacks should be called. By default `exAll` is used.
+    ## - `exAll`: All the callbacks are executed
+    ## - `exOldest`: Only the oldest callbacks are called, and the others are ignored until they finish
+    ## - `exLatest`: Only the latest callbacks are called, and the others are ignored until they finish.
+    ## > **Note**:
+    ## > `exOldest` and `exLatest` are mostly useful in multithreaded context when you don't want to be flooded by useless callbacks 
     exAll, exOldest, exLatest
 
   DelayVar = enum
+    ## Whether there is a delay between emissions or not.
+    ## Self explanatory.
+    ## `dNone` is used by default.
     dNone, dDelay
 
-  # First our emission hierarchy
-
-  Notification = ref object
-
-  ##[ Encapsultate how the Notifier can be executed
-  They define how it should emit signals (synchronously, asynchronously, etc).
-  ]##
   EmissionState = object
+    ## Encapsultate how the Notifier can be executed
+    ## They define how it should emit signals (synchronously, asynchronously, etc).
+    ## They are basically his current state for emission.
     mode:TaskMode
     consumes:bool
     case kind : EmissionVar
@@ -44,10 +64,9 @@ type
     of emParallel:
       wait:bool
   
-  ##[
-  The notifier State, it contains all the necessary information about the state of the notifier.
-  ]##
   NotifierState[T] = ref object
+    ## The notifier State, it contains all the necessary information about the state of the notifier.
+    ## Influenced by NotifVar.
     case kind: NotifVar
     of nValue:
       value:T
@@ -55,16 +74,13 @@ type
     of nEmit:
       discard
 
-  ##[
-  TaskMode define how the emission should be done for the asynchronous state.
-  ]##
   TaskMode = object
+    ## TaskMode define how the emission should be done for the asynchronous state.
     kind:TaskVar
 
-  ##[
-  Define if there should be a delay between emissions.
-  ]##
   DelayMode = object
+    ## Define if there should be a delay between emissions.
+    ## if yes, allows you to configure it (if the first emission should be delayed, the duration, etc)
     case kind:DelayVar
     of dNone:
       discard
@@ -72,50 +88,35 @@ type
       first:bool
       duration:int
 
-  ##[
-  Represent the ways in which Listeners can be organized.
-  ]##
   ExecMode = object
+    ## Represent the ways in which Listeners are filtered.
     case kind:ExecVar
     of exAll:
       discard
     of exLatest, exOldest:
       count:int 
         
-  ##[
-  Exception thrown when a function is called on Notifier with the wrong state.
-  ]##
-  StateMismatch = object of CatchableError
+  StateMismatch* = object of CatchableError
+    ##Exception thrown when a function is called on Notifier with the wrong state.
 
-  ##[
-  This represents the interface any listener type should implement in order to be considered a listener
-  ]##
-  AbstractListener = concept x
-    callback(x)
-    consume(x)
-    getpriority(x)
-    shouldstop(x)
-
-  ##[
-  Concrete Listener. Is used by default.
-  ]##
   Listener*[T] = ref object
+    ## Concrete Listeners impl.
+    ## Where `T` is the callback type
+    ## `Consume` is the whether the callback should be remoed after its execution
+    ## `priority` define if it will be executed before the other.
     callback:T
     consume:bool
     priority:int
     stop:bool
 
-  ##[
-  List of listeners for a given callback. Serves for registration purposes.
-  ]##
   EmissionCallback[T,L] = object
+    ## Concrete instance of an emission of a notifier. Useful for filtering.
+    ## Listener instance for this emission is copied (necessary for it to be a snapshot of the current state of the notifier)
     listeners:seq[Listener[L]]
     data:T
 
-  ##[
-  Keep all the necessary information about the state of a Notifier
-  ]##
   StateData[T,L] = ref object
+    ## Keep all the necessary information about the state of a Notifier
     emission:EmissionState
     mode:NotifierState[T]
     exec:ExecMode
@@ -123,10 +124,9 @@ type
     stream:Channel[EmissionCallback[T,L]]
     check:bool
 
-  ##[
-  This object can be used for the observer pattern. It uses a state machine to allow users to modify its behavior at runtime.
-  ]##
   Notifier*[T,L] = ref object
+    ## Concrete Notifier object, used for the observer pattern.
+    ## It uses a state machine to allow users to modify its behavior at runtime.
     cond:Cond
     lck:Lock
     listeners*:seq[Listener[L]]
@@ -136,20 +136,33 @@ type
   Observer[T] = proc(val: T) {.closure.}
 
   CRSubject*[T] = ref object
+    ## Lightweight implementation of the Notifiers
+    ## Less overhead, less powers
     value*: T
     observers: seq[Observer[T]]
 
-############################################################### ACCESSORS ###############################################################
+# ############################################################## ACCESSORS ###############################################################
 
 proc newCRSubject*[T](value: T): CRSubject[T] =
+  ## Create a new lightweight subject with value type `T` (the type the new notifier will accept, better enter a value)
   CRSubject[T](value: value, observers: @[])
 
-proc callback[L](l:Listener[L]) = l.callback
-proc getstate*(n:Notifier) = 
-  return n.state
-proc getstream(s:StateData) = s.stream
+proc callback*[L](l:Listener[L]): L = 
+  ## Return the callback of a lister
+  l.callback
 
-############################################################# CONSTRUCTORS ##############################################################
+template getstate*(n:Notifier): untyped = 
+  ## Return the state of a notifier
+  return n.state
+
+template getstream(s:StateData): untyped = 
+  ## Return the channel storing all the emissions
+  ## The `stream`.
+  s.stream
+
+# ############################################################ CONSTRUCTORS ##############################################################
+
+# All the names are self-explanatory
 
 proc ExecAll():ExecMode =
   return ExecMode(kind:exAll)
@@ -170,33 +183,35 @@ proc MultipleTask():TaskMode =
   return TaskMode(kind:tsMulti)
 
 proc NoDelay():DelayMode =
-  return DelayMode(kind:dNone)
+  return DelayMode(kind: dNone)
 
-proc Delay(first:bool, dur:int):DelayMode =
-  return DelayMode(kind:dDelay, first:first, duration:dur)
+proc Delay(first:bool, dur:int): DelayMode =
+  return DelayMode(kind: dDelay, first:first, duration:dur)
 
 proc SyncState(priorities=false, consumes:bool=false): EmissionState =
-  return EmissionState(mode:SingleTask(),kind:emSync, priorities:priorities, consumes:consumes)
+  return EmissionState(mode: SingleTask(), kind: emSync, priorities: priorities, consumes: consumes)
 
 proc ParallelState(w:bool, mode:TaskMode=SingleTask(), consumes:bool=false): EmissionState =
-  return EmissionState(mode:mode,kind:emParallel, wait:w, consumes:consumes)
+  return EmissionState(mode: mode, kind: emParallel, wait: w, consumes: consumes)
 
-proc ValState[T](ignore_eqvalue:bool):NotifierState[T] =
-  return NotifierState[T](kind:nValue, ignore_eqvalue:ignore_eqvalue)
+proc ValState[T](ignore_eqvalue:bool): NotifierState[T] =
+  return NotifierState[T](kind: nValue, ignore_eqvalue: ignore_eqvalue)
 
-proc EmitState[T]():NotifierState[T] =
-  return NotifierState[T](kind:nEmit)
+proc EmitState[T](): NotifierState[T] =
+  return NotifierState[T](kind: nEmit)
 
-proc newStateData[T,L]() :StateData[T,L] = 
+proc newStateData[T,L](): StateData[T,L] = 
   var chan = Channel[EmissionCallback[T,L]]()
-
   chan.open(CHANNEL_SIZE)
   
-  return StateData[T,L](emission:EmissionState(mode:TaskMode(kind:tsSingle), kind:emSync, priorities:false, consumes:false), 
-    mode:NotifierState[T](kind:nEmit), 
-    exec:ExecMode(kind:exAll), delay:DelayMode(kind:dNone), stream:chan, check:false)
+  return StateData[T,L](emission: SyncState(), 
+    mode: EmitState[T](), 
+    exec: ExecAll(), delay: NoDelay, stream: chan, check:false)
 
-proc newNotifier*[T,L]() :Notifier[T,L] =
+proc newNotifier*[T,L](): Notifier[T,L] =
+  ## Build a new notifier
+  ## `T` is a tuple of the data the notifier accept.
+  ## `L` is the type of the proc that are used as callbacks 
   var cond = Cond()
   var lck = Lock()
 
@@ -207,38 +222,37 @@ proc newNotifier*[T,L]() :Notifier[T,L] =
 
 ################################################################ HELPERS ################################################################
 
-##[
-Create a typed notifier with named parameters.
-  
-This macro generates a notifier with a specific signature based on the provided parameters.
-It automatically infers the tuple type for data and the procedure type for callbacks.
-  
-Parameters:
-  - `args`: Untyped arguments where first element is the notifier name, followed by name:type pairs
-  
-Returns:
-  A notifier declaration initialized with the appropriate types
-  
-Example:
-```nim
-# Create a notifier for mouse events with x, y coordinates
-notifier mouseClick(x: int, y: int)
-# Creates: var mouseClick = newNotifier[(x: int, y: int), proc(x: int, y: int)]()
-    
-# Create a notifier for simple string messages
-notifier messageReceived(msg: string)
-# Creates: var messageReceived = newNotifier[(msg: string), proc(msg: string)]()
-    
-# Use the notifier
-mouseClick.open()
-proc onMouseClick(x: int, y: int) =
-  echo "Clicked at: ", x, ", ", y
-    
-mouseClick.connect(onMouseClick)
-mouseClick.emit((10, 20))  # Prints "Clicked at: 10, 20"
-```
-]##
 macro notifier*(args:untyped) =
+  ## Create a typed notifier with named parameters.
+  ##   
+  ## This macro generates a notifier with a specific signature based on the provided parameters.
+  ## It automatically infers the tuple type for data and the procedure type for callbacks.
+  ##   
+  ## Parameters:
+  ##   - `args`: Untyped arguments where first element is the notifier name, followed by name:type pairs
+  ##  
+  ## Returns:
+  ##   A notifier declaration initialized with the appropriate types
+  ##  
+  ## Example:
+  ## ```nim
+  ## # Create a notifier for mouse events with x, y coordinates
+  ## notifier mouseClick(x: int, y: int)
+  ## # Creates: var mouseClick = newNotifier[(x: int, y: int), proc(x: int, y: int)]()
+  ##    
+  ## # Create a notifier for simple string messages
+  ## notifier messageReceived(msg: string)
+  ## # Creates: var messageReceived = newNotifier[(msg: string), proc(msg: string)]()
+  ##    
+  ## # Use the notifier
+  ## mouseClick.open()
+  ## proc onMouseClick(x: int, y: int) =
+  ##  echo "Clicked at: ", x, ", ", y
+  ##    
+  ## mouseClick.connect(onMouseClick)
+  ## mouseClick.emit((10, 20))  # Prints "Clicked at: 10, 20"
+  ## ```
+
   let nname = args[0]
   nname.expectKind(nnkIdent)
 
@@ -271,13 +285,10 @@ macro notifier*(args:untyped) =
   return quote do:
     var `nname` = newNotifier[`namedtypes`, `procty`]()
 
-##[
-Call a function with tuple elements as separate arguments.
-  
-This macro unpacks a tuple and passes each element as an individual argument to the function.
-Allows calling fn(tup[0], tup[1], ..., tup[n]) with cleaner syntax.
-]##
-macro destructuredCall*(fn:untyped, tup:typed) =
+# Call a function with tuple elements as separate arguments.  
+# This macro unpacks a tuple and passes each element as an individual argument to the function.
+# Allows calling fn(tup[0], tup[1], ..., tup[n]) with cleaner syntax.
+macro destructuredCall(fn:untyped, tup:typed) =
   let n = len(getType(tup))-1
   var callex = newNimNode(nnkCall)
   callex.add(fn)
@@ -289,12 +300,9 @@ macro destructuredCall*(fn:untyped, tup:typed) =
   return quote do:
    `callex`
 
-##[
-Call a function with tuple elements and capture the return value.
-  
-Similar to destructuredCall but stores the result in a variable.
-]##
-macro destructuredCallRet*(name:untyped, fn:untyped, tup:typed) =
+# Call a function with tuple elements and capture the return value.
+# Similar to destructuredCall but stores the result in a variable.
+macro destructuredCallRet(name:untyped, fn:untyped, tup:typed) =
   let n = len(getType(tup))-1
   var callex = newNimNode(nnkCall)
   callex.add(fn)
@@ -305,14 +313,10 @@ macro destructuredCallRet*(name:untyped, fn:untyped, tup:typed) =
   return quote do:
    let `name` = `callex`
 
-
+# Generate an anonymous function with parameters inferred from a typed object.
+# Creates a lambda that accepts individual parameters and bundles them into a tuple
+# for processing in the function body.
 macro anoFunc(name:untyped, obj:typed, body:untyped) =
-  ##[
-  Generate an anonymous function with parameters inferred from a typed object.
-  
-  Creates a lambda that accepts individual parameters and bundles them into a tuple
-  for processing in the function body.
-  ]##
   var data = obj.getType()[1]
 
   var f = newNimNode(nnkLambda)
