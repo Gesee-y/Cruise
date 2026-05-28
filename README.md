@@ -53,7 +53,7 @@ let c = a.cross(b)
 
 - **[Projective Geometrical Algebra](https://github.com/Gesee-y/Cruise/tree/main/src/pga)**: Being one of the first Nim's engine to provide this, Cruise allows your to use PGA for your games which allows unified 2D and 3D logics, simple collision detection, and more.
 
-- **[Vector spaces]**(https://github.com/Gesee-y/Cruise/tree/main/src/vspace): Offers a generalized interface for vector/color space, allowing the use of user defined type as colors or coordinates.
+- **[Vector spaces](https://github.com/Gesee-y/Cruise/tree/main/src/vspace)**: Offers a generalized interface for vector/color space, allowing the use of user defined type as colors or coordinates.
 
 - **[Event System](https://github.com/Gesee-y/Cruise/tree/main/src/events)**: Cruise provides you 2 event system, a lightweight synchronous one that can be use for simple cases, and a complex one leveraging the full powers of reactive programming such as merging, filtering, delays, throttling,  etc.
 

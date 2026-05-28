@@ -15,12 +15,11 @@ type
     id*:uint32
     archetypeId* {.align: 4.}:uint16
 
-  SomeEntity = 
-    ## A type class (concept-like alias) encompassing various raw Entity forms.
-    ##
-    ## This allows generic procedures to accept either a pointer to an Entity,
-    ## a value Entity, or a mutable reference to an Entity.
-    ptr Entity | Entity | var Entity
+  ## A type class (concept-like alias) encompassing various raw Entity forms.
+  ##
+  ## This allows generic procedures to accept either a pointer to an Entity,
+  ## a value Entity, or a mutable reference to an Entity.
+  SomeEntity = ptr Entity | Entity | var Entity
 
 # ################################################################################################################################################## #
 # ################################################################## ACCESSORS ##################################################################### #

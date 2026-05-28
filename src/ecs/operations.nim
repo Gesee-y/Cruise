@@ -266,7 +266,7 @@ template migrateEntityDefer*(buffer: var ECommandBuffer, d: DenseHandle,
   ## - d: The `DenseHandle` of the entity to migrate.
   ## - archNode: The target `ArchetypeNode` id.
   ## - buffer_id: The ID of the command buffer.
-  buffer.addCommand(eckRemEntity, d, archNode.)
+  buffer.addCommand(eckRemEntity, d, archNode)
 
 proc addComponent*(world: var ECSWorld, d: DenseHandle, components: openArray[int]) =
   ## Adds components to an existing entity (Dense storage).

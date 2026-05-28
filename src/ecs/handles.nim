@@ -35,7 +35,7 @@ template `[]=`*[N,P,T,S,B](f:var FragmentArray[N,P,T,S,B], d: DenseHandle, v:B) 
 
 template `[]`*[N,P,T,S,B](f: FragmentArray[N,P,T,S,B], d:SparseHandle):untyped = 
   ## Retrieves component data from a `FragmentArray` using a `SparseHandle`.
-  ## Sparse storage typically maps an Entity ID to a component value.
+  ## Sparse storage maps an Entity ID to a component value.
   let S = sizeof(uint)*8 # Size of the bucket range (e.g., 64 bits).
   
   # Calculate the bucket index via toSparse indirection.
