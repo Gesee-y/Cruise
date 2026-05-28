@@ -144,7 +144,8 @@ proc mergePlugin*(p1:var Plugin, p2:var Plugin) =
         let stop = idmap[j.idx]
 
         discard addDependency(p1, start, stop)
-
+  
+  p1.res_manager.mergeResourceManager(p2.res_manager, idmap)
   p1.dirty = true
 
 template exec_node(f, n) =

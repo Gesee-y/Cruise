@@ -127,3 +127,32 @@ proc getAccessGraph(res: var PluginResource): DiGraph =
 
   return res.cachedGraph
 
+proc mergeResourceManager*(p1, p2: var PResourceManager, idmap: Table[int, int]) =
+  for t, resourceIds in p2.toId:
+    if t notin p1.toId:
+      p1.toId[t] = newSeq[int]()
+
+    for resIdx in resourceIds:
+      var resource = p2.resources[resIdx]
+
+      # Remap read requests
+      var newReadRequests = newBitSet()
+      for i in resource.readRequests:
+        if i in idmap:
+          newReadRequests.incl(idmap[i])
+      resource.readRequests = newReadRequests
+
+      # Remap write requests
+      var newWriteRequests = newBitSet()
+      for i in resource.writeRequests:
+        if i in idmap:
+          newWriteRequests.incl(idmap[i])
+      resource.writeRequests = newWriteRequests
+
+      resource.dirty = true
+
+      p1.toId[t].add(p1.resources.len)
+      p1.resources.add(resource)
+
+  p1.dirty = true
+

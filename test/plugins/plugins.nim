@@ -27,9 +27,6 @@ genSystem(T1)
 genSystem(T2)
 genSystem(T3)
 
-method getObject(n:TestNode):int = n.id
-method getCapability(n:TestNode):int = 42
-
 proc newTestNode(mainthread=false): TestNode =
   TestNode(
     enabled: true,
@@ -54,6 +51,7 @@ suite "Plugin system core":
 
   test "Add system assigns id and marks plugin dirty":
     var p: Plugin
+    new(p)
     let n = TestNode()
     let id = addSystem(p, n)
 
@@ -64,6 +62,7 @@ suite "Plugin system core":
 
   test "Remove system is safe and idempotent":
     var p: Plugin
+    new(p)
     let n = TestNode()
     let id = addSystem(p, n)
 
@@ -74,6 +73,7 @@ suite "Plugin system core":
 
   test "Add dependency registers graph edge and deps table":
     var p: Plugin
+    new(p)
     let a = TestNode()
     let b = OtherTestNode()
 
@@ -90,6 +90,7 @@ suite "Plugin system core":
 
   test "Dependency removal clears deps table":
     var p: Plugin
+    new(p)
     let a = TestNode()
     let b = T1()
 
@@ -115,6 +116,7 @@ suite "Plugin system core":
 
   test "Error during update marks node as failed":
     var p: Plugin
+    new(p)
     let n = TestNode()
     n.failOnUpdate = true
 
@@ -126,6 +128,7 @@ suite "Plugin system core":
 
   test "smap respects topological order":
     var p: Plugin
+    new(p)
     let a = TestNode()
     let b = OtherTestNode()
 
@@ -141,6 +144,7 @@ suite "Plugin system core":
 
   test "computeParallelLevel groups nodes by dependency depth":
     var p: Plugin
+    new(p)
     let a = TestNode()
     let b = T1()
     let c = T2(mainthread:true)
@@ -159,6 +163,7 @@ suite "Plugin system core":
 
   test "pmap executes all nodes once":
     var p: Plugin
+    new(p)
     let a = TestNode()
     let b = T1(mainthread:true)
 
@@ -172,6 +177,8 @@ suite "Plugin system core":
 
   test "mergePlugin merges nodes and dependencies correctly":
     var p1, p2: Plugin
+    new(p1)
+    new(p2)
 
     let a = TestNode()
     let b = T1()

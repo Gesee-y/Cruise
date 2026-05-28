@@ -15,7 +15,7 @@ type
     x1, x2, y1, y2: float32
 
 let a = MyVec3(x: 1, y: 3, z: 4)
-echo a.length  // Works automatically via concepts
+echo a.length  # Works automatically via concepts
 
 let r1 = MyRect2D(x1: 1, x2: 4, y1: 1, y2: 4)
 let r2 = MyRect2D(x1: 2, x2: 1, y1: 3, y2: 6)
