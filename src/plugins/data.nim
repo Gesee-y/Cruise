@@ -154,5 +154,5 @@ proc mergeResourceManager*(p1, p2: var PResourceManager, idmap: Table[int, int])
       p1.toId[t].add(p1.resources.len)
       p1.resources.add(resource)
 
-  p1.dirty = true
+    p1.dirty = true
 
