@@ -106,7 +106,7 @@ proc remDependency*(p:var Plugin, start:int, to:int) =
 proc getReadResource*[T](node: PluginNode): T =
   let id = node.plugin.res_manager.getId(T)[0]
   let res = node.plugin.res_manager.resources[id]
-  if res.readRequests.contains(node.id):
+  if not res.readRequests.contains(node.id):
     raise newException(ValueError, "Can't access resources as read.")
 
   return cast[T](res.rawPointer)
@@ -114,7 +114,7 @@ proc getReadResource*[T](node: PluginNode): T =
 proc getWriteResource*[T](node: PluginNode): var T =
   let id = node.plugin.res_manager.getId(T)
   let res = node.plugin.res_manager.resources[id]
-  if res.writeRequests.contains(node.id):
+  if not res.writeRequests.contains(node.id):
     raise newException(ValueError, "Can't access resources as write.")
 
   var resul = cast[T](res.rawPointer)
