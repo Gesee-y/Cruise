@@ -1,6 +1,6 @@
-####################################################################################################################################################
-######################################################################## ECS TABLE #################################################################
-####################################################################################################################################################
+# ################################################################################################################################################## #
+# ####################################################################### ECS TABLE ################################################################ #
+# ################################################################################################################################################## #
 
 import tables, bitops, typetraits, hashes, sequtils, math
 
@@ -28,41 +28,39 @@ type
 
   ArchetypeMask = array[MAX_COMPONENT_LAYER, uint]
 
-## ── Graduated safety checks ─────────────────────────────────────────────────
-## Three severity levels for different build configurations:
-##
-##  checkWarn      — Debug builds only (no -d:release, no -d:danger).
-##                   Emits a non-fatal warning via debugEcho.
-##                   Use for near-limit situations, suspicious-but-safe state.
-##
-##  check          — Debug + Release (disabled by -d:danger).
-##                   Raises AssertionDefect on violation.
-##                   Use for errors that would silently corrupt ECS state.
-##
-##  checkCritical  — Always active, even under -d:danger.
-##                   Raises Defect. Use for invariant violations that are
-##                   *always* programming errors regardless of build mode
-##                   (null dereference, OOB access, infinite loops, etc.)
-
-template checkWarn*(code: untyped, msg: string) =
-  ## Non-fatal warning emitted only in debug (un-optimised) builds.
+# Three severity levels for different build configurations:
+#
+#  checkWarn      — Debug builds only (no -d:release, no -d:danger).
+#                   Emits a non-fatal warning via debugEcho.
+#                   Use for near-limit situations, suspicious-but-safe state.
+#
+#  check          — Debug + Release (disabled by -d:danger).
+#                   Raises AssertionDefect on violation.
+#                   Use for errors that would silently corrupt ECS state.
+#
+#  checkCritical  — Always active, even under -d:danger.
+#                   Raises Defect. Use for invariant violations that are
+#                   *always* programming errors regardless of build mode
+#                   (null dereference, OOB access, infinite loops, etc.)
+template checkWarn(code: untyped, msg: string) =
+  # Non-fatal warning emitted only in debug (un-optimised) builds.
   when not defined(release) and not defined(danger):
     if not (code):
       debugEcho "[ECS WARN] " & msg
 
-template check*(code: untyped, msg: string) =
-  ## Hard assertion active in debug + release, suppressed by -d:danger.
+template check(code: untyped, msg: string) =
+  # Hard assertion active in debug + release, suppressed by -d:danger.
   when not defined(danger):
     doAssert code, "[ECS ERROR] " & msg
 
-template checkCritical*(code: untyped, msg: string) =
-  ## Always-active guard — fires even under -d:danger.
-  ## Use for invariants whose violation is always a programming error.
+template checkCritical(code: untyped, msg: string) =
+  # Always-active guard — fires even under -d:danger.
+  # Use for invariants whose violation is always a programming error.
   if unlikely(not (code)):
     raise newException(Defect, "[ECS CRITICAL] " & msg)
 
-template onDanger*(code: untyped) =
-  ## Code that executes only when NOT in -d:danger mode.
+template onDanger(code: untyped) =
+  # Code that executes only when NOT in -d:danger mode.
   when not defined(danger):
     code
 
@@ -70,9 +68,8 @@ include "sparseset.nim"
 include "hibitset.nim"
 
 type
-  ## Represent an independent filter that can be used narrow queries
   QueryFilter* = ref object
-
+    ## Represent an independent filter that can be used to narrow queries.
     # Dense Query
     dLayer*:HibitsetType
 
@@ -89,10 +86,12 @@ registerLayout(VecFragment, newVecFragArr, vecCastTo)
 
 type
   TableRange* = object
+    ## Represent a range of entities for the dense storage, used for patitions
     r:Range
     block_idx:int
 
   TablePartition* = ref object
+    ## Conceptually represent an archetype but in a contiguous storage.
     zones:seq[TableRange]
     components:seq[int]
     fill_index:int
@@ -103,7 +102,6 @@ proc clear(t: var TableRange) =
 proc clear(t: var TablePartition) =
   for z in t.zones.mitems:
     z.clear()
-
   t.fill_index = 0
   
 include "archetypes.nim"
@@ -115,6 +113,9 @@ type
     archs: seq[uint16]
 
   ECSWorld* = ref object
+    ## The main object representing the ECSWorld.
+    ## Avoid using more than one ECS world at the same time
+    ## Since Cruise ECS use static optimization, world shoudl not overlap (in their components layout and stuffs)
     registry:ComponentRegistry
     entities*:seq[Entity]
     evmanager: pointer
@@ -136,6 +137,8 @@ include "commands.nim"
 include "events.nim"
 
 template newECSWorld*(max_entities:int=1000000):ECSWorld =
+  ## Build a new world with `max_entities` reserved
+  ## Only one world shoud exist at the same time
   var w:ECSWorld
   new(w)
   checkWarn(max_entities > 0,
@@ -144,7 +147,7 @@ template newECSWorld*(max_entities:int=1000000):ECSWorld =
   checkWarn(max_entities <= 1_000_000_000,
     "newECSWorld: max_entities=" & $max_entities &
     " exceeds 1 billion. Initial capacities may cause OOM at startup.")
-  #new(w.registry)
+  
   w.archGraph = initArchetypeGraph()
   w.entities = newSeqofCap[Entity](max_entities)
   w.handles = newSeqofCap[uint32](max_entities)
@@ -157,7 +160,6 @@ template newECSWorld*(max_entities:int=1000000):ECSWorld =
   var ev = initEventManager()
   GC_ref(ev)
   w.evmanager = cast[pointer](ev)
-
   w
 
 proc clearEntities*(w: var ECSWorld, max_entities:int=1000000) =
@@ -175,47 +177,56 @@ proc clearEntities*(w: var ECSWorld, max_entities:int=1000000) =
   w.generations = newSeqofCap[uint16](max_entities)
   w.sparse_gens = newSeqofCap[uint16](max_entities)
 
-####################################################################################################################################################
-####################################################################### OPERATIONS #################################################################
-####################################################################################################################################################
+# ################################################################################################################################################## #
+# ###################################################################### OPERATIONS ################################################################ #
+# ################################################################################################################################################## #
 
-template events*(w: ECSWorld): EventManager = cast[EventManager](w.evmanager)
+template events*(w: ECSWorld): EventManager = 
+  ## Return the event manager of the ECS manager
+  cast[EventManager](w.evmanager)
 
 {.push inline.}
 
 proc addResource*[T](w: var ECSWorld, r:T) =
+  ## Add the new resource in the ECS world
+  ## You can later fetch it with `getResource`
+  ## Resorces are registered per types
   w.resources[$T] = cast[pointer](r)
 
 proc getResource*[T](w: ECSWorld): T =
+  ## Return a resource of type `T`
+  ## Error if not found.
   let t = $T
-
   check(t in w.resources, "Error: Resource of type " & t & " not found.")
   cast[T](w.resources[$T])
 
 proc unsafeGetResource*[T](w: ECSWorld): T =
+  ## Returns a resource but without checking if it actually exist
   cast[T](w.resources[$T])
 
 proc isEmpty(t:TableRange | ptr TableRange):bool = t.r.s == t.r.e
 proc isFull(t:TableRange | ptr TableRange):bool = t.r.e - t.r.s == DEFAULT_BLK_SIZE
 
-template getDHandle*(w: ECSWorld, i:untyped): DenseHandle = DenseHandle(widx: i.uint32, gen: w.generations[i], world: w)
+template getDHandle*(w: ECSWorld, i:untyped): DenseHandle = 
+  ## Return an handle for entity id `i`
+  ## `i` is the global ID of the entity, not the id in the storage
+  DenseHandle(widx: i.uint32, gen: w.generations[i], world: w)
+
 template getDHandleFromID*(w: ECSWorld, i:untyped): DenseHandle = 
+  ## Return a dense handle for the storage id `i` if it exist.
+  ## Else it will error.
   var e = w.handles[i.toIdx]
   w.getDHandle(e)
 
 proc getArchetype*(w:ECSWorld, e:SomeEntity):ArchetypeNode =
+  ## Return the archetype node of an entity
   return w.archGraph.nodes[e.archetypeId]
 proc getArchetype*(w:ECSWorld, d:DenseHandle):ArchetypeNode =
   return w.getArchetype(d.obj)
 
 template makeId*(bid,idx:untyped):uint32 =
+  ## Bild an entity storage ID from a block id `bid` and intra id `idx`
   (bid.uint32 shl ID_SHIFT) or idx.uint32
-
-template makeId(i:int):uint32 =
-  let bid = i.uint32 div DEFAULT_BLK_SIZE
-  let idx = i.uint32 mod DEFAULT_BLK_SIZE
-
-  (bid shl ID_SHIFT) or idx
 
 template makeId(i:untyped):uint32 =
   let bid = i.uint32 div DEFAULT_BLK_SIZE.uint32
@@ -228,6 +239,8 @@ proc isAlive*(w:ECSWorld, d:DenseHandle):bool =
 
 {.pop.}
 
+# Return an entity id
+# This is used to allocate new entities
 template getStableEntity(world:ECSWorld):uint32 =
   if world.free_entities.len > 0:
     world.free_entities.pop()
@@ -240,6 +253,7 @@ template getStableEntity(world:ECSWorld):uint32 =
     world.generations.setLen(id + 1)
     id
 
+# Same as above but allocate multiple entities
 proc getStableEntities(world:ECSWorld, n:int):seq[uint32] =
   result.setLen(n)
   let free_len = world.free_entities.len
@@ -265,9 +279,14 @@ proc getStableEntities(world:ECSWorld, n:int):seq[uint32] =
       inc c
 
 template registerComponent*(world:var ECSWorld, t:typed, P:static bool=false, layout: untyped=SoAFragment):int =
+  ## Register a components `t` in the world context (module), `P` is to activate change tracking and `layout is the orrganization of the chunks
+  ## This is mostly automated so no need to use it most of the time.
+  ## But you can do it to have deterministic component ID (that you can get with `toComponentID(componentType)`)
   registerComponent(world.registry, t, P, layout)
 
 macro requireComponent*(w: var ECSWorld, base: typedesc, comps:typedesc, layout: untyped=SoAFragment) =
+  ## Allows you to bind to component so `base` require `comps`
+  ## This means that if `base` is added then `comps` will be added
   if base.repr == comps.repr: return
   else:
     let bid = getComponentIdFromRegistry(base)
@@ -283,18 +302,27 @@ macro requireComponent*(w: var ECSWorld, base: typedesc, comps:typedesc, layout:
     `@w`.archGraph.requiredComps[toComponentId(`@base`)].add(toComponentId(`@comps`))
 
 template get*[T](world:ECSWorld,t:typedesc[T], P:static bool= false):untyped =
+  ## Let you get the components pool for the component `T`
+  ## `P` is to enable change tracking on that specific instance.
   let id = toComponentId(T)
   getValue[T](world.registry.entries[id], P)
 
-template get*[T](world:ECSWorld, t:typedesc[T], i:untyped, P:static bool= false):untyped =
+template get*[T](world:ECSWorld, t:typedesc[T], i:untyped):untyped =
+  ## Let you get the components an index `i` for the component `T`
+  ## `i` is whethever that can index a `FragmentArray`
   let id = toComponentId(T)
-  let f = getValue[T](world.registry.entries[id], P)
+  let f = getValue[T](world.registry.entries[id], false)
   f[i]
 
-template get*[T](ent:DWEntity | SWEntity, t:typedesc[T], P:static bool= false):untyped =
-  get[T](ent.w, t, ent.handle, P)
+template get*[T](ent:DWEntity | SWEntity, t:typedesc[T]):untyped =
+  ## For handles that possess a reference to the world
+  ## You can use this to get one of ther components
+  get[T](ent.w, t, ent.handle, false)
 
 template set*[T](world:var ECSWorld, i:untyped, v: T, P:static bool= false):untyped =
+  ## For handles that possess a reference to the world
+  ## You can use this to set one of ther components
+  ## `P` enable change tracking if true
   let id = toComponentId(T)
   var f = getValue[T](world.registry.entries[id], P)
   f[i] = v
