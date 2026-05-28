@@ -1,7 +1,5 @@
-#[
-Event system for Cruise
-This implements a stateful event system. You can change the state of the events to make them behave differently 
-]#
+# Event system for Cruise
+# This implements a stateful event system. You can change the state of the events to make them behave differently 
 import macros
 import locks
 import threadpool
