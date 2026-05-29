@@ -11,7 +11,7 @@ include "data.nim"
 type
 
   PluginStatus* = enum
-    PLUGIN_OK, PLUGIN_ERR, PLUGIN_DEPRECATED, PLUGIN_OFF
+    PLUGIN_OK, PLUGIN_ERR, PLUGIN_DEPRECATED, PLUGIN_WAITING, PLUGIN_OFF
   
   PluginNode* = ref object of RootObj
     id*:int
@@ -47,6 +47,7 @@ template setStatus*(s:typed, st:PluginStatus) =
   s.status = st
 
 method awake*(p:PluginNode) {.base.} = p.setStatus(PLUGIN_OK)
+method isReady*(p:PluginNode): bool {.base.} = true
 method update*(p:PluginNode) {.base.} = discard
 method shutdown*(p:PluginNode) {.base.} = p.setStatus(PLUGIN_OFF)
 method merge*(p:PluginNode, p2:PluginNode):PluginNode {.base.} = p

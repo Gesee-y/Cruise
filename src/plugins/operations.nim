@@ -5,7 +5,9 @@
 template isinitialized*(s:typed):untyped = getstatus(s) == PLUGIN_OK
 template isuninitialized*(s:typed):untyped = getstatus(s) == PLUGIN_OFF
 template isDeprecated*(s:typed):untyped = getstatus(s) == PLUGIN_DEPRECATED
+template isWaiting*(s:typed):untyped = getstatus(s) == PLUGIN_WAITING
 template hasFailed*(s:typed):untyped = getstatus(s) == PLUGIN_ERR
+
 
 template getLastError*(s:typed):untyped = s.lasterr
 template setLastErr*(s:typed, e) = 
@@ -17,6 +19,13 @@ template hasFailedDeps*(s:typed):untyped =
     if hasfailed(v):
       res = true
 
+  res
+
+template hasWaitingDeps*(s:typed):untyped = 
+  var res = false
+  for k,v in s.deps.pairs:
+    if isWaiting(v):
+      res = true
   res
 
 template hasUninitializedDeps*(s:typed):untyped = 
@@ -149,6 +158,9 @@ proc mergePlugin*(p1:var Plugin, p2:var Plugin) =
   p1.dirty = true
 
 template exec_node(f, n) =
+  if not n.isReady:
+    n.setStatus(PLUGIN_WAITING)
+    return
   try:
     f(n)
   except CatchableError as e:
