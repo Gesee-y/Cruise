@@ -46,11 +46,11 @@ proc getResource*[T](manager: PResourceManager, i:int=0, sys:int=-1): Option[T] 
   var res = addr manager.resources[manager.toId[$T][i]]
   if sys >= 0: 
     if sys in res.readRequests:
-      if sys in res.isReadRequested or res.isWriteRequested.len > 0:
+      if res.isWriteRequested.len > 0:
         return none(T)
       res.isReadRequested.incl(sys)
     elif sys in res.writeRequests:
-      if sys in res.isWriteRequested or res.isWriteRequested.len > 0:
+      if res.isReadRequested.len > 0 or res.isWriteRequested.len > 0:
         return none(T)
       res.isWriteRequested.incl(sys)
 
