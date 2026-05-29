@@ -7,6 +7,8 @@ type
     data: pointer
     readRequests: BitSet   # sys ids who read this resource
     writeRequests: BitSet  # sys ids who write this resource
+    isWriteRequested: BitSet
+    isReadRequested: BitSet
     dirty: bool
     cachedGraph: DiGraph
 
@@ -15,6 +17,7 @@ type
     maxRequestId: int
     cachedGraph: DiGraph
     toId:Table[string, seq[int]]
+    sysToRes: Table[int, seq[int]]
     dirty: bool
     inited: bool
 
@@ -39,17 +42,37 @@ proc getId[T](m:PResourceManager, t:typedesc[T], i: int = 0): int =
 proc getResourceFromId*[T](manager: PResourceManager, id: int): T =
   return cast[T](manager.resources[id].data)
 
-proc getResource*[T](manager: PResourceManager, i:int=0): T =
-  return cast[T](manager.resources[manager.toId[$T][i]].data)
+proc getResource*[T](manager: PResourceManager, i:int=0, sys:int=-1): Option[T] =
+  var res = addr manager.resources[manager.toId[$T][i]]
+  if sys >= 0: 
+    if sys in res.readRequests:
+      if sys in res.isReadRequested or res.isWriteRequested.len > 0:
+        return none(T)
+      res.isReadRequested.incl(sys)
+    elif sys in res.writeRequests:
+      if sys in res.isWriteRequested or res.isWriteRequested.len > 0:
+        return none(T)
+      res.isWriteRequested.incl(sys)
+
+  return cast[T](res.data)
+
+proc resetRequest(res: var PluginResource, sys: int) =
+  res.isWriteRequested.excl(sys)
+  res.isReadRequested.excl(sys)
 
 proc addReadRequest*(manager: var PResourceManager, sys, id: int) =
   # A sys cannot read and write the same resource
   assert not manager.resources[id].writeRequests.contains(sys),
     "sys " & $sys & " already has a write request on resource " & $id
-  
+  if sys in manager.resources[id].readRequests: return
+
   if sys > manager.maxRequestId:
     manager.maxRequestId = sys
 
+  if sys notin manager.sysToRes:
+    manager.sysToRes[sys] = @[]
+
+  manager.sysToRes[sys].add(id)
   manager.resources[id].dirty = true
   manager.dirty = true
   manager.resources[id].readRequests.incl sys
@@ -61,10 +84,15 @@ proc addWriteRequest*(manager: var PResourceManager, sys, id: int) =
   # A sys cannot read and write the same resource
   assert not manager.resources[id].readRequests.contains(sys),
     "sys " & $sys & " already has a read request on resource " & $id
+  if sys in manager.resources[id].writeRequests: return
   
   if sys > manager.maxRequestId:
     manager.maxRequestId = sys
   
+  if sys notin manager.sysToRes:
+    manager.sysToRes[sys] = @[]
+
+  manager.sysToRes[sys].add(id)
   manager.resources[id].dirty = true
   manager.dirty = true
   manager.resources[id].writeRequests.incl sys

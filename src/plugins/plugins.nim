@@ -2,7 +2,7 @@
 ######################################################### PLUGIN SYSTEM ############################################################################
 ####################################################################################################################################################
 
-import tables, typetraits, macros
+import tables, typetraits, macros, options
 import ../graph/graph
 import ../events/events
 include "bitset.nim"
@@ -19,7 +19,7 @@ type
     status:PluginStatus
     lasterr:CatchableError
     deps:Table[string, PluginNode]
-    res:Table[string, pointer]
+    res:Bitset
     plugin:pointer
 
   EffectivePluginNode = concept node

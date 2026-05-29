@@ -18,7 +18,7 @@ template hasFailedDeps*(s:typed):untyped =
   for k,v in s.deps.pairs:
     if hasfailed(v):
       res = true
-
+      break
   res
 
 template hasWaitingDeps*(s:typed):untyped = 
@@ -26,6 +26,7 @@ template hasWaitingDeps*(s:typed):untyped =
   for k,v in s.deps.pairs:
     if isWaiting(v):
       res = true
+      break
   res
 
 template hasUninitializedDeps*(s:typed):untyped = 
@@ -33,7 +34,7 @@ template hasUninitializedDeps*(s:typed):untyped =
   for k,v in s.deps.pairs:
     if isuninitialized(v):
       res = true
-
+      break
   res
 
 template hasAllDepsInitialized*(s:typed):untyped =
@@ -57,7 +58,7 @@ template getNodeid*(n:typed, s:string):untyped =
   for i,v in n.idtonode:
     if $(v.getObject.typeof) == s:
       res = i
-
+      break
   res 
 
 template addSystem*(p:var Plugin, obj):int =
@@ -166,6 +167,10 @@ template exec_node(f, n) =
   except CatchableError as e:
     n.setLastErr(e[])
     n.setStatus(PLUGIN_ERR)
+  finally:
+    var p = cast[Plugin](n.plugin)
+    for i in p.res_manager.sysToRes[n.id]:
+      p.res_manager.resources[id].resetRequest(n.id)
 
 proc computeParallelLevel*(p:var Plugin) =
   var graph = p.graph
