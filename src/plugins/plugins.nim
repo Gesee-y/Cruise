@@ -2,7 +2,7 @@
 ######################################################### PLUGIN SYSTEM ############################################################################
 ####################################################################################################################################################
 
-import tables, typetraits, macros, options
+import tables, typetraits, macros, options, std/monotimes
 import ../graph/graph
 import ../events/events
 include "bitset.nim"
@@ -11,7 +11,7 @@ include "data.nim"
 type
 
   PluginStatus* = enum
-    PLUGIN_OK, PLUGIN_ERR, PLUGIN_DEPRECATED, PLUGIN_WAITING, PLUGIN_OFF
+    PLUGIN_OK, PLUGIN_ERR, PLUGIN_DEPRECATED, PLUGIN_WAITING, PLUGIN_NOT_READY, PLUGIN_OFF
   
   PluginNode* = ref object of RootObj
     id*:int
@@ -20,9 +20,10 @@ type
     lasterr:CatchableError
     deps:Table[string, PluginNode]
     res:Bitset
-    execAmout: int
+    execAmount: int
     execCount: int
-    plugin:pointer
+    ticks: int
+    plugin: Plugin
 
   EffectivePluginNode = concept node
     awake(node)
@@ -57,10 +58,13 @@ method getObject(p:PluginNode):RootRef {.base.} = nil
 method getCapability(p:PluginNode):RootRef {.base.} = nil
 template asKey*(t:typedesc): string = $t
 method asKey*(p:PluginNode):string {.base.} = asKey(p.typeof)
-method increaseExecCount(p: var PluginNode, n: int) = p.execCount += n
-method getExecCount(p: var PluginNode): int = p.execCount
+method increaseExecCount*(p: var PluginNode, n: int) {.base.} = p.execCount += n
+method getExecCount(p: PluginNode): int {.base.} = p.execCount
+method getExecAmount*(p: PluginNode): int {.base.} = 
+  if p.execAmount == 0: 1 
+  else: p.execAmount
 method setExecAmount*(p: var PluginNode, n:int=1) {.base.} =
-  p.execAmout = n
+  p.execAmount = n
 
 macro makeAsKey*(name) =
   return quote do:

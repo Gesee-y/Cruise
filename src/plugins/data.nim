@@ -42,7 +42,7 @@ proc getId[T](m:PResourceManager, t:typedesc[T], i: int = 0): int =
 proc getResourceFromId*[T](manager: PResourceManager, id: int): T =
   return cast[T](manager.resources[id].data)
 
-proc getResource*[T](manager: PResourceManager, i:int=0, sys:int=-1): Option[T] =
+proc getResource*[T](manager: PResourceManager, i:int=0, sys:int = -1): Option[T] =
   var res = addr manager.resources[manager.toId[$T][i]]
   if sys >= 0: 
     if sys in res.readRequests:
@@ -54,7 +54,7 @@ proc getResource*[T](manager: PResourceManager, i:int=0, sys:int=-1): Option[T] 
         return none(T)
       res.isWriteRequested.incl(sys)
 
-  return cast[T](res.data)
+  return some(cast[T](res.data))
 
 proc resetRequest(res: var PluginResource, sys: int) =
   res.isWriteRequested.excl(sys)

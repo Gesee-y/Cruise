@@ -30,6 +30,11 @@ newSystem TMPlugin, TimerSystem[var CTimerPool]:
 
 method update(p: TimerSystem) =
   var tm = p.getWriteResource(CTimerPool)
+  if tm.isNone:
+    p.setStatus(PLUGIN_WAITING)
+    return
+  
+  p.setStatus(PLUGIN_OK)
   p.paused && return
   
   var (start, stop) = (0, tm.timers.len-1)

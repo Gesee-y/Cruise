@@ -40,23 +40,23 @@ template hasUninitializedDeps*(s:typed):untyped =
 template hasAllDepsInitialized*(s:typed):untyped =
   var res = true
   for k,v in s.deps.pairs:
-    if isuninitialized(v) or hasfailed(v):
+    if not isinitialized(v):
       res = false
       break
   res
 
 proc isBorrowingResources*(n: PluginNode): bool =
-  var p = cast[Plugin](n.plugin)
+  var p = n.plugin
   for i in p.res_manager.sysToRes[n.id]:
-    if sys in p.res_manager.resources[id].isReadRequested or sys in p.res_manager.resources[id].isWriteRequested:
+    if n.id in p.res_manager.resources[n.id].isReadRequested or n.id in p.res_manager.resources[n.id].isWriteRequested:
       return false
 
   return true
 
 proc isResourcesAvailable*(n: PluginNode): bool =
-  var p = cast[Plugin](n.plugin)
+  var p = n.plugin
   for i in p.res_manager.sysToRes[n.id]:
-    if p.res_manager.resources[id].isWriteRequested.len > 0
+    if p.res_manager.resources[n.id].isWriteRequested.len > 0:
       return false
 
   return true
@@ -79,6 +79,7 @@ template getNodeid*(n:typed, s:string):untyped =
 
 template addSystem*(p:var Plugin, obj):int =
   var id = -1
+  var sys = obj
   for i in 0..<p.idtonode.len:
     if p.idtonode[i].asKey == obj.asKey:
       id = i
@@ -90,11 +91,11 @@ template addSystem*(p:var Plugin, obj):int =
     if id >= p.idtonode.len:
       p.idtonode.setLen(id+1)
     
-    p.idtonode[id] = obj
+    p.idtonode[id] = sys
 
-    obj.id = id
+    sys.id = id
     p.dirty = true
-    obj.plugin = cast[pointer](p)
+    sys.plugin = p
 
   if id > p.res_manager.maxRequestId:
     p.res_manager.maxRequestId = id
@@ -148,13 +149,14 @@ proc getWriteResource*[T](node: PluginNode): var T =
   return resul
 
 proc releaseResource*(n: PluginNode, id: int) =
-  var p = cast[Plugin](n.plugin)
-  p.res_manager.resources[id].resetRequest(n.id)
+  var p = n.plugin
+  p.res_manager.resources[n.id].resetRequest(n.id)
 
 proc releaseResources*(n: PluginNode) =
-  var p = cast[Plugin](n.plugin)
-  for i in p.res_manager.sysToRes[n.id]:
-    p.res_manager.resources[id].resetRequest(n.id)
+  var p = n.plugin
+  if n.id in p.res_manager.sysToRes: 
+    for i in p.res_manager.sysToRes[n.id]:
+      p.res_manager.resources[n.id].resetRequest(n.id)
 
 proc mergePlugin*(p1:var Plugin, p2:var Plugin) =
   var
@@ -186,17 +188,21 @@ proc mergePlugin*(p1:var Plugin, p2:var Plugin) =
 template exec_node(f, n) =
   if not n.isReady:
     n.setStatus(PLUGIN_WAITING)
-    return
-  try:
-    for i in 0..<n.execAmount:
-      f(n)
+  else:
+    try:
+      let am = PluginNode(n).getExecAmount
+      for i in 0..<am:
+        f(n)
 
-    n.setExecAmout()
-  except CatchableError as e:
-    n.setLastErr(e[])
-    n.setStatus(PLUGIN_ERR)
-  finally:
-    n.releaseResources()
+      n.lastTick = getMonoTime().ticks
+      
+      f.increaseExecCount(am)
+      n.setExecAmount()
+    except CatchableError as e:
+      n.setLastErr(e[])
+      n.setStatus(PLUGIN_ERR)
+    finally:
+      n.releaseResources()
 
 proc computeParallelLevel*(p:var Plugin) =
   var graph = p.graph
