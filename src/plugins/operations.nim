@@ -45,6 +45,22 @@ template hasAllDepsInitialized*(s:typed):untyped =
       break
   res
 
+proc isBorrowingResources*(n: PluginNode): bool =
+  var p = cast[Plugin](n.plugin)
+  for i in p.res_manager.sysToRes[n.id]:
+    if sys in p.res_manager.resources[id].isReadRequested or sys in p.res_manager.resources[id].isWriteRequested:
+      return false
+
+  return true
+
+proc isResourcesAvailable*(n: PluginNode): bool =
+  var p = cast[Plugin](n.plugin)
+  for i in p.res_manager.sysToRes[n.id]:
+    if p.res_manager.resources[id].isWriteRequested.len > 0
+      return false
+
+  return true
+
 template getDependency*[T](n:typed):untyped = 
   let d = $T
   if not n.deps.hasKey(d): 
@@ -131,6 +147,15 @@ proc getWriteResource*[T](node: PluginNode): var T =
 
   return resul
 
+proc releaseResource*(n: PluginNode, id: int) =
+  var p = cast[Plugin](n.plugin)
+  p.res_manager.resources[id].resetRequest(n.id)
+
+proc releaseResources*(n: PluginNode) =
+  var p = cast[Plugin](n.plugin)
+  for i in p.res_manager.sysToRes[n.id]:
+    p.res_manager.resources[id].resetRequest(n.id)
+
 proc mergePlugin*(p1:var Plugin, p2:var Plugin) =
   var
     obj_to_id:Table[string, int]
@@ -163,14 +188,15 @@ template exec_node(f, n) =
     n.setStatus(PLUGIN_WAITING)
     return
   try:
-    f(n)
+    for i in 0..<n.execAmount:
+      f(n)
+
+    n.setExecAmout()
   except CatchableError as e:
     n.setLastErr(e[])
     n.setStatus(PLUGIN_ERR)
   finally:
-    var p = cast[Plugin](n.plugin)
-    for i in p.res_manager.sysToRes[n.id]:
-      p.res_manager.resources[id].resetRequest(n.id)
+    n.releaseResources()
 
 proc computeParallelLevel*(p:var Plugin) =
   var graph = p.graph

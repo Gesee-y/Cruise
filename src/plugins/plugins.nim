@@ -20,6 +20,8 @@ type
     lasterr:CatchableError
     deps:Table[string, PluginNode]
     res:Bitset
+    execAmout: int
+    lStep: int
     plugin:pointer
 
   EffectivePluginNode = concept node
@@ -55,6 +57,8 @@ method getObject(p:PluginNode):RootRef {.base.} = nil
 method getCapability(p:PluginNode):RootRef {.base.} = nil
 template asKey*(t:typedesc): string = $t
 method asKey*(p:PluginNode):string {.base.} = asKey(p.typeof)
+method setExecAmount*(p: var PluginNode, n:int=1) {.base.} =
+  p.execAmout = n
 
 macro makeAsKey*(name) =
   return quote do:
