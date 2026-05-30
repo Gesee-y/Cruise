@@ -130,23 +130,22 @@ proc remDependency*(p:var Plugin, start:int, to:int) =
     p.idtonode[to].deps.del(p.idtonode[start].asKey)
     p.dirty = true
 
-proc getReadResource*[T](node: PluginNode): T =
+proc getReadResource*[T](node: PluginNode): Option[T] =
   let id = node.plugin.res_manager.getId(T)[0]
   let res = node.plugin.res_manager.resources[id]
   if not res.readRequests.contains(node.id):
     raise newException(ValueError, "Can't access resources as read.")
 
-  return cast[T](res.rawPointer)
+  result = node.plugin.res_manager.getResource[:T](sys=node.id)
 
-proc getWriteResource*[T](node: PluginNode): var T =
-  let id = node.plugin.res_manager.getId(T)
-  let res = node.plugin.res_manager.resources[id]
+proc getWriteResource*[T](node: PluginNode): Option[T] =
+  var plugin = node.plugin
+  let id = plugin.res_manager.getId(T)
+  let res = plugin.res_manager.resources[id]
   if not res.writeRequests.contains(node.id):
     raise newException(ValueError, "Can't access resources as write.")
 
-  var resul = cast[T](res.rawPointer)
-
-  return resul
+  result = plugin.res_manager.getResource[:T](sys=node.id)
 
 proc releaseResource*(n: PluginNode, id: int) =
   var p = n.plugin

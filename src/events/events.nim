@@ -204,7 +204,7 @@ proc newStateData[T,L](): StateData[T,L] =
   
   return StateData[T,L](emission: SyncState(), 
     mode: EmitState[T](), 
-    exec: ExecAll(), delay: NoDelay, stream: chan, check:false)
+    exec: ExecAll(), delay: NoDelay(), stream: chan, check:false)
 
 proc newNotifier*[T,L](): Notifier[T,L] =
   ## Build a new notifier

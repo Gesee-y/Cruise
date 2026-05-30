@@ -1,9 +1,10 @@
 import ../src/plugins/plugins
 import ../src/events/events
+import options, std/monotimes
 
 type
   CTimer = object
-    dur: float
+    duration: float
     signal: Notifier[(), proc()]
 
   CTimerPool = ref object
@@ -15,44 +16,45 @@ var TM = CTimerPool()
 proc addTimer(tp: var CTimerPool, timer: CTimer) =
   tp.timers.add(timer)
 proc addTimer(tp: var CTimerPool, dur: float): CTimer =
-  let timer = CTimer(dur: dur, signal: newNotifier[(), proc()]())
+  let timer = CTimer(duration: dur, signal: newNotifier[(), proc()]())
   tp.addTimer(timer)
   timer
 proc addTimer(dur: float): CTimer = addTimer(TM, dur)
-template onTimeout(t::CRTimer, f: untyped) = t.signal.connect(f)
+template onTimeout(t:CTimer, f: untyped) = t.signal.connect(f)
 
 let tmID = TMPlugin.res_manager.addResource(TM)
 
-newSystem TMPlugin, TimerSystem[var CTimerPool]:
-  paused*: bool
+let id = 
+  newSystem(TMPlugin, TimerSystem[var CTimerPool]):
+    paused: bool
 
 method isReady(p: TimerSystem): bool = not p.paused
 method update(p: TimerSystem) =
-  var tm = p.getWriteResource(CTimerPool)
-  if tm.isNone:
+  var res = p.getWriteResource[:CTimerPool]
+  if not res.isSome:
     p.setStatus(PLUGIN_WAITING)
     return
+
+  var tm = res.get()
   
   p.setStatus(PLUGIN_OK)
   
   var (start, stop) = (0, tm.timers.len-1)
-  let dt = (getMonoTime().ticks - p.lastTick)*1e-9 # We move per sec
+  let dt = (getMonoTime().ticks - p.lastTick).float * 1e-9 # We move per sec
 
-  while start <= stop
-     tm.timers[start]duration -= dt
+  while start <= stop:
+    tm.timers[start].duration -= dt
 
-      if tm.timers[start].duration <= 0
-          tm.timers[start].signal.emit
-          (tm.timers[start], tm.timers[stop]) = (tm.timers[stop], tm.timers[start])
-          stop -= 1
-      else
-          start += 1
-      end
-  end
+    if tm.timers[start].duration <= 0:
+      tm.timers[start].signal.emit(())
+      (tm.timers[start], tm.timers[stop]) = (tm.timers[stop], tm.timers[start])
+      stop -= 1
+    else:
+      start += 1
 
   tm.timers.setLen(stop)
 
 method shutdown(p: TimerSystem) =
   p.setStatus(PLUGIN_OFF)
-  var tm = p.getWriteResource(CTimerPool)
-  tm.timers.setLen(0)
+  var tm = p.getWriteResource[:CTimerPool]
+  tm.get().timers.setLen(0)

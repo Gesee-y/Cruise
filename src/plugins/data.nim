@@ -42,19 +42,19 @@ proc getId[T](m:PResourceManager, t:typedesc[T], i: int = 0): int =
 proc getResourceFromId*[T](manager: PResourceManager, id: int): T =
   return cast[T](manager.resources[id].data)
 
-proc getResource*[T](manager: PResourceManager, i:int=0, sys:int = -1): Option[T] =
-  var res = addr manager.resources[manager.toId[$T][i]]
+proc getResource*[T](manager: var PResourceManager, i:int=0, sys:int = -1): Option[T] =
+  let id = manager.toId[$T][i]
   if sys >= 0: 
-    if sys in res.readRequests:
-      if res.isWriteRequested.len > 0:
+    if sys in manager.resources[id].readRequests:
+      if manager.resources[id].isWriteRequested.len > 0:
         return none(T)
-      res.isReadRequested.incl(sys)
-    elif sys in res.writeRequests:
-      if res.isReadRequested.len > 0 or res.isWriteRequested.len > 0:
+      manager.resources[id].isReadRequested.incl(sys)
+    elif sys in manager.resources[id].writeRequests:
+      if manager.resources[id].isReadRequested.len > 0 or manager.resources[id].isWriteRequested.len > 0:
         return none(T)
-      res.isWriteRequested.incl(sys)
+      manager.resources[id].isWriteRequested.incl(sys)
 
-  return some(cast[T](res.data))
+  return some(cast[T](manager.resources[id].data))
 
 proc resetRequest(res: var PluginResource, sys: int) =
   res.isWriteRequested.excl(sys)

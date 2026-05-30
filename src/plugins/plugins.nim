@@ -22,7 +22,7 @@ type
     res:Bitset
     execAmount: int
     execCount: int
-    lastTick: int
+    lastTick*: int
     plugin: Plugin
 
   EffectivePluginNode = concept node
