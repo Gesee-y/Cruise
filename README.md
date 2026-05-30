@@ -35,8 +35,6 @@ This architecture offers several advantages:
 
 - **[Secure and flexible plugin system](https://github.com/Gesee-y/Cruise/tree/main/src/plugins)**: Built around a Dual DAG, it allows you to extend Cruise, share your own plugin and collaborate without too much hassle. Each system of the plugin have his own inteface to safely interact with his dependencies.
 
-- **Optimal system scheduling**: Through topological sort, Cruise ensure your systems are executed in the most efficient way.
-
 - **Game logics as first class citizens**: Your customs systems have as much power as the core ones. They are easy to define and scheduled.
 
 - **[CLI tool](https://github.com/Gesee-y/Cruise/tree/main/src/cli)**: To manage plugins, get them, solve dependencies, etc. ![Cruise CLI overview](https://github.com/Gesee-y/Cruise/blob/main/assets%2Fcruise_cli.PNG)

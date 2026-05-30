@@ -21,7 +21,7 @@ type
     deps:Table[string, PluginNode]
     res:Bitset
     execAmout: int
-    lStep: int
+    execCount: int
     plugin:pointer
 
   EffectivePluginNode = concept node
@@ -57,6 +57,8 @@ method getObject(p:PluginNode):RootRef {.base.} = nil
 method getCapability(p:PluginNode):RootRef {.base.} = nil
 template asKey*(t:typedesc): string = $t
 method asKey*(p:PluginNode):string {.base.} = asKey(p.typeof)
+method increaseExecCount(p: var PluginNode, n: int) = p.execCount += n
+method getExecCount(p: var PluginNode): int = p.execCount
 method setExecAmount*(p: var PluginNode, n:int=1) {.base.} =
   p.execAmout = n
 
