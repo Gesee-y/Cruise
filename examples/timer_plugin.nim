@@ -1,6 +1,5 @@
 import ../src/plugins/plugins
 import ../src/events/events
-import locks
 
 type
   CTimer = object
@@ -13,7 +12,7 @@ type
 var TMPlugin* = Plugin()
 var TM = CTimerPool()
 
-proc addTimer(tp: var CTimerPool, timer: CTimer)
+proc addTimer(tp: var CTimerPool, timer: CTimer) =
   tp.timers.add(timer)
 proc addTimer(tp: var CTimerPool, dur: float): CTimer =
   let timer = CTimer(dur: dur, signal: newNotifier[(), proc()]())
@@ -26,8 +25,8 @@ let tmID = TMPlugin.res_manager.addResource(TM)
 
 newSystem TMPlugin, TimerSystem[var CTimerPool]:
   paused*: bool
-  dt*: float32
 
+method isReady(p: TimerSystem): bool = not p.paused
 method update(p: TimerSystem) =
   var tm = p.getWriteResource(CTimerPool)
   if tm.isNone:
@@ -35,10 +34,9 @@ method update(p: TimerSystem) =
     return
   
   p.setStatus(PLUGIN_OK)
-  p.paused && return
   
   var (start, stop) = (0, tm.timers.len-1)
-  let dt = p.dt
+  let dt = (getMonoTime().ticks - p.lastTick)*1e-9 # We move per sec
 
   while start <= stop
      tm.timers[start]duration -= dt
