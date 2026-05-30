@@ -70,3 +70,4 @@ method update(p: InputSystem) =
 
 let pcID = UTPlugin.addSystem(PlayerControllerSystem())
 UTPlugin.addDependencies(inpID, pcID)
+
