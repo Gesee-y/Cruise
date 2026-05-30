@@ -41,6 +41,8 @@ type
 
   NullPluginNode* = ref object of PluginNode
 
+proc newPlugin(): Plugin =
+  new(result)
 template isDirty*(p: Plugin): bool = p.dirty
 template getParallelCache*(p: Plugin): seq[array[2, seq[int]]] = p.parallel_cache
 template getGraph*(p: Plugin): DiGraph = p.graph

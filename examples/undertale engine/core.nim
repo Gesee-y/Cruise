@@ -2,4 +2,71 @@
 ###################################################### UNDETALE ENGINE CORE ################################################
 ############################################################################################################################
 
+import ../../src/windows/windows
+import ../../src/pga/pga
+import ../../src/ecs/tables
+import ../../stdplugin/sdlwin/sdlwin
+import options
 
+type
+  UVec2 = object
+    x, y: float32
+
+  UMove = object
+    direction: Point2D
+
+  UPlayer = object
+    name: string
+    position: UVec2
+    colorScheme: CRGBAi
+
+var ecs = newECSWorld()
+var UTPlugin = newPlugin()
+var app = initSDL3App()
+var win = SDL3Window()
+app.initWindow(win, "UT Engine", width=640, height=480)
+discard ecs.registerComponent(UPlayer)
+discard ecs.registerComponent(UMove)
+discard ecs.registerComponent(Motor2D)
+
+var playerPool = ecs.get(UPlayer)
+
+discard UTPlugin.addResource(app)
+discard UTPlugin.addResource(win)
+discard UTPlugin.addResource(playerPool)
+discard UTPlugin.addResource(ecs)
+discard UTPlugin.addResource(UPlayer())
+discard UTPlugin.addResource(UMove())
+discard UTPlugin.addResource(Motor2D())
+
+newSystem(UTPlugin, InputSystem[var CApp])
+method update(p: InputSystem) =
+  let appopt = p.getWriteResource[:CApp]()
+  if appopt.isNone:
+    p.setStatus(PLUGIN_WAITING)
+    return
+
+  let app = winopt.get
+  app.eventLoop(SDLEventRouter)
+let inpID = UTPlugin.addSystem(InputSystem())
+
+newSystem(UTPlugin, PlayerControllerSystem[ECSWorld, SDL3Window, var Motor2D, var UPlayer])
+method update(p: InputSystem) =
+  let winopt = p.getReadResource[:SDL3Window]()
+  var wopt = p.getReadResource[:ECSWorld]()
+  if winopt.isNone or wopt.isNone:
+    p.setStatus(PLUGIN_WAITING)
+    return
+
+  let win = winopt.get()
+  var world = wopt.get()
+  var moves = world.get(UMove)
+
+  for (bid, r) in world.denseQuery(world.query(UPlayer and UMove)):
+    var directions = moves.getdenseField(bid, position)
+
+    for i in r:
+      directions[i] = point2d(win.isKeyPressed(CKey_RIGHT) - win.isKeyPressed(CKey_LEFT), win.isKeyPressed(CKey_DOWN) - win.isKeyPressed(CKey_UP))
+
+let pcID = UTPlugin.addSystem(PlayerControllerSystem())
+UTPlugin.addDependencies(inpID, pcID)

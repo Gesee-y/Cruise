@@ -193,10 +193,10 @@ template exec_node(f, n) =
       for i in 0..<am:
         f(n)
 
-      n.lastTick = getMonoTime().ticks
-      
-      f.increaseExecCount(am)
-      n.setExecAmount()
+      if !n.getStatus != PLUGIN_WAITING:
+        n.lastTick = getMonoTime().ticks
+        f.increaseExecCount(am)
+        n.setExecAmount()
     except CatchableError as e:
       n.setLastErr(e[])
       n.setStatus(PLUGIN_ERR)
