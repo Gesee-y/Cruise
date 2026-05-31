@@ -130,8 +130,10 @@ proc remDependency*(p:var Plugin, start:int, to:int) =
     p.idtonode[to].deps.del(p.idtonode[start].asKey)
     p.dirty = true
 
+proc addResource*[T](p: var Plugin, obj: T): int = p.res_manager.addResource(obj)
+
 proc getReadResource*[T](node: PluginNode): Option[T] =
-  let id = node.plugin.res_manager.getId(T)[0]
+  let id = node.plugin.res_manager.getId(T)
   let res = node.plugin.res_manager.resources[id]
   if not res.readRequests.contains(node.id):
     raise newException(ValueError, "Can't access resources as read.")
@@ -193,9 +195,9 @@ template exec_node(f, n) =
       for i in 0..<am:
         f(n)
 
-      if !n.getStatus != PLUGIN_WAITING:
+      if n.getStatus != PLUGIN_WAITING:
         n.lastTick = getMonoTime().ticks
-        f.increaseExecCount(am)
+        n.increaseExecCount(am)
         n.setExecAmount()
     except CatchableError as e:
       n.setLastErr(e[])
@@ -254,4 +256,8 @@ template pmap*(f:untyped,p:Plugin) =
     for i in level[1]:
       var n = p.idtonode[i]
       exec_node(f, n)
-             
+
+template awake*(p: Plugin) = pmap(awake, p)             
+template update*(p: Plugin) = pmap(update, p)
+template shutdown*(p: Plugin) = pmap(shutdown, p)
+

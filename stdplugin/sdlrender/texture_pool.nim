@@ -1,20 +1,3 @@
-## sdl3/texture_pool.nim
-##
-## [FIX-8] allocPersistent / allocTransient: removed dead `pool.keyFor()` call.
-##
-## Original code:
-##   result = pool.keyFor()       -- allocated a key, incremented nextKey
-##   result = TextureKey(slot+1)  -- immediately overwrote result, so keyFor
-##                                   was called only for the nextKey side-effect
-##                                   but the generated key was discarded.
-##
-## This caused nextKey to drift: after N allocations nextKey was 2N+1 instead
-## of N+1, so any code using keyFor directly for other purposes would assign
-## non-contiguous keys. In practice allocPersistent and allocTransient are the
-## only callers, so the only symptom was wasted key space; but it's still wrong.
-##
-## Fix: assign the key directly from slot+1 and update nextKey in one place.
-
 import std/[tables, hashes]
 
 type
@@ -63,7 +46,6 @@ proc allocSlot(pool: var TexturePool): uint32 =
     result = uint32(pool.entries.len)
     pool.entries.add(PoolEntry())
 
-## [FIX-8] Single helper that assigns key = slot+1 and keeps nextKey in sync.
 proc assignKey(pool: var TexturePool; slot: uint32): TextureKey {.inline.} =
   let k = TextureKey(slot + 1)
   if uint32(k) >= pool.nextKey:
@@ -73,7 +55,6 @@ proc assignKey(pool: var TexturePool; slot: uint32): TextureKey {.inline.} =
 proc allocPersistent*(pool:  var TexturePool;
                       desc:  SDLTextureDesc;
                       label: string = ""): TextureKey =
-  ## [FIX-8] No longer calls the now-removed keyFor().
   let raw  = pool.allocFn(desc)
   let slot = pool.allocSlot()
   pool.entries[slot] = PoolEntry(kind: entryPersistent, rawPtr: raw,
@@ -83,7 +64,6 @@ proc allocPersistent*(pool:  var TexturePool;
 proc allocTransient*(pool:  var TexturePool;
                      desc:  SDLTextureDesc;
                      label: string = ""): TextureKey =
-  ## [FIX-8] Same fix: single assignKey call.
   let rk  = recycleKey(desc)
   var raw: pointer
   if rk in pool.recycleBin and pool.recycleBin[rk].len > 0:

@@ -43,7 +43,7 @@ Notice how we request a `WriteResource` for the `ECSWorld` because we are going 
 newSystem(UTPlugin, PlayerControllerSystem[ECSWorld, SDL3Window, var UPlayer])
 method update(p: PlayerControllerSystem) =
   let winopt = p.getReadResource[:SDL3Window]()
-  var wopt = p.getReadResource[:ECSWorld]() # Write because we mutate positions
+  var wopt = p.getReadResource[:ECSWorld]() # ECS world itself is not mutated, we just use it to access components
   
   if winopt.isNone or wopt.isNone:
     p.setStatus(PLUGIN_WAITING)

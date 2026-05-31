@@ -3,9 +3,13 @@
 ############################################################################################################################
 
 import ../../src/windows/windows
+import ../../src/render/render
 import ../../src/pga/pga
-import ../../src/ecs/tables
+import ../../src/vspace/vspace
+import ../../src/plugins/plugins
+import ../../src/ecs/table
 import ../../stdplugin/sdlwin/sdlwin
+import ../../stdplugin/sdlrender/sdlrender
 import options
 
 type
@@ -20,6 +24,13 @@ type
     position: UVec2
     colorScheme: CRGBAi
 
+  USprite = object
+    handle: CResource[Texture]
+
+  CPlayer = ref UPlayer
+  CMove = ref UMove
+  CMotor = ref Motor2D
+
 var ecs = newECSWorld()
 var UTPlugin = newPlugin()
 var app = initSDL3App()
@@ -30,28 +41,33 @@ discard ecs.registerComponent(UMove)
 discard ecs.registerComponent(Motor2D)
 
 var playerPool = ecs.get(UPlayer)
+var upl: CPlayer
+new(upl)
+var umv: CMove
+new(umv)
+var mt: CMotor
+new(mt)
 
 discard UTPlugin.addResource(app)
 discard UTPlugin.addResource(win)
 discard UTPlugin.addResource(playerPool)
 discard UTPlugin.addResource(ecs)
-discard UTPlugin.addResource(UPlayer())
-discard UTPlugin.addResource(UMove())
-discard UTPlugin.addResource(Motor2D())
+discard UTPlugin.addResource(upl)
+discard UTPlugin.addResource(umv)
+discard UTPlugin.addResource(mt)
 
-newSystem(UTPlugin, InputSystem[var CApp])
+let inpID = newSystem(UTPlugin, InputSystem[var CApp])
 method update(p: InputSystem) =
   let appopt = p.getWriteResource[:CApp]()
   if appopt.isNone:
     p.setStatus(PLUGIN_WAITING)
     return
 
-  let app = winopt.get
+  let app = appopt.get
   app.eventLoop(SDLEventRouter)
-let inpID = UTPlugin.addSystem(InputSystem())
 
-newSystem(UTPlugin, PlayerControllerSystem[ECSWorld, SDL3Window, var Motor2D, var UPlayer])
-method update(p: InputSystem) =
+let pcID = newSystem(UTPlugin, PlayerControllerSystem[ECSWorld, SDL3Window, var CMotor, var CPlayer])
+method update(p: PlayerControllerSystem) =
   let winopt = p.getReadResource[:SDL3Window]()
   var wopt = p.getReadResource[:ECSWorld]()
   if winopt.isNone or wopt.isNone:
@@ -63,11 +79,19 @@ method update(p: InputSystem) =
   var moves = world.get(UMove)
 
   for (bid, r) in world.denseQuery(world.query(UPlayer and UMove)):
-    var directions = moves.getdenseField(bid, position)
+    var directions = moves.getdenseField(bid, direction)
 
     for i in r:
-      directions[i] = point2d(win.isKeyPressed(CKey_RIGHT) - win.isKeyPressed(CKey_LEFT), win.isKeyPressed(CKey_DOWN) - win.isKeyPressed(CKey_UP))
+      directions[i] = point2(win.isKeyPressed(CKey_RIGHT).float32 - win.isKeyPressed(CKey_LEFT).float32, win.isKeyPressed(CKey_DOWN).float32 - win.isKeyPressed(CKey_UP).float32)
 
-let pcID = UTPlugin.addSystem(PlayerControllerSystem())
-UTPlugin.addDependencies(inpID, pcID)
+discard UTPlugin.addDependency(inpID, pcID)
 
+var shouldRun = true
+NOTIF_WINDOW_EVENT.connect do(win: CWindow, ev: WindowEvent):
+  if ev.kind == WINDOW_CLOSE:
+    shouldRun = false
+
+awake(UTPlugin)
+while shouldRun:
+  update(UTPlugin)
+shutdown(UTPlugin)
