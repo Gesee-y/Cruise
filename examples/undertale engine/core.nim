@@ -17,7 +17,7 @@ type
     x, y: float32
 
   UMove = object
-    direction: Point2D
+    direction: Point2Df
 
   UPlayer = object
     name: string
@@ -25,7 +25,8 @@ type
     colorScheme: CRGBAi
 
   USprite = object
-    handle: CResource[Texture]
+    handle: TextureKey
+    scale: Point2Df
 
   CPlayer = ref UPlayer
   CMove = ref UMove
@@ -82,9 +83,12 @@ method update(p: PlayerControllerSystem) =
     var directions = moves.getdenseField(bid, direction)
 
     for i in r:
-      directions[i] = point2(win.isKeyPressed(CKey_RIGHT).float32 - win.isKeyPressed(CKey_LEFT).float32, win.isKeyPressed(CKey_DOWN).float32 - win.isKeyPressed(CKey_UP).float32)
+      directions[i] = point2f(win.isKeyPressed(CKey_RIGHT).float32 - win.isKeyPressed(CKey_LEFT).float32, win.isKeyPressed(CKey_DOWN).float32 - win.isKeyPressed(CKey_UP).float32)
 
 discard UTPlugin.addDependency(inpID, pcID)
+
+var ren = initSDLRenderer(win.handle)
+discard UTPlugin.addResource(ren)
 
 var shouldRun = true
 NOTIF_WINDOW_EVENT.connect do(win: CWindow, ev: WindowEvent):

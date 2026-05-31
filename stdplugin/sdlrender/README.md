@@ -181,8 +181,6 @@ let (hiRes, loRes) = ren.createSSAATarget(1280, 720, scale = 2)
 ## Quick start
 
 ```nim
-import sdl3_renderer
-
 var ren = initSDLRenderer("My Game", 1280, 720)
 
 while running:

@@ -275,16 +275,16 @@ proc loadTexture*(ren:   var CSDLRenderer,
                   path:  string,
                   sampler = defaultSampler()): TextureKey =
   ## Load an image file and register it as a persistent texture.
-  ## Requires SDL3_image (sdl3_image_nim) — add it to your nimble deps.
   var raw: ptr SDL_Surface = nil
   when defined(sdl3Image):
     raw = IMG_Load(path.cstring)
-    if raw == nil:
+    if raw.isNil:
       echo "WARN loadTexture IMG_Load failed, fallback BMP: ", SDL_GetError()
   
-  raw = SDL_LoadBMP(path.cstring)   # fallback: BMP without SDL_image
-  if raw == nil:
-    raise newException(IOError, "loadTexture: " & path & " — " & $SDL_GetError())
+  if raw.isNil: 
+    raw = SDL_LoadBMP(path.cstring)   # fallback: BMP without SDL_image
+    if raw.isNil:
+      raise newException(IOError, "loadTexture: " & path & " — " & $SDL_GetError())
   let tex = SDL_CreateTextureFromSurface(ren.data.renderer, raw)
   SDL_DestroySurface(raw)
   if tex == nil:

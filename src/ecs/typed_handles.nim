@@ -71,16 +71,11 @@ template widx(d:TDHandle): uint32 = DenseHandle(d).widx
 template wid*(d:TDHandle): uint32 = DenseHandle(d).wid
 template id*(d:TDHandle): uint32 = DenseHandle(d).id
 
-template gen*(s: TSHandle): uint16 = (s.meta and MASK16).uint16
+template gen*(s: TSHandle): uint16 = SparseHandle(s).gen
 template `gen=`*(s: TSHandle, v: untyped) = 
-  SparseHandle(s).meta = (SparseHandle(s).meta and not MASK16) or v
-
-template archID*(s: TSHandle): uint16 = (SparseHandle(s).meta shr SHIFT16).uint16
-template `archID=`(s: TSHandle, v: untyped) = 
-  SparseHandle(s).meta = (SparseHandle(s).meta and MASK16) or (v.uint32 shl SHIFT16)
+  SparseHandle(s).gen = v
 
 template id*(d:TSHandle): uint32 = SparseHandle(d).id
-template meta*(d:TSHandle): uint32 = SparseHandle(d).meta
 
 template `[]`*[N,P,T,S,B](f: FragmentArray[N,P,T,S,B], d: TDHandle):untyped = 
   ## Retrieves component data from a `FragmentArray` using a raw `Entity`.

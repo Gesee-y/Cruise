@@ -320,15 +320,15 @@ func motorIdentity3*(): Motor3D {.inline.} =
 ## POINT 2D
 #############################################################################################################################
 
-template `.x`*[T: MPoint2D](a: T): untyped = a.e20
-template `.y`*[T: MPoint2D](a: T): untyped = a.e01
-template `.w`*[T: MPoint2D](a: T): untyped = a.e12
+template x*[T: MPoint2D](a: T): untyped = a.e20
+template y*[T: MPoint2D](a: T): untyped = a.e01
+template w*[T: MPoint2D](a: T): untyped = a.e12
 
-template `.x=`*[T: MPoint2D](a: T, v: untyped) = 
+template `x=`*[T: MPoint2D](a: T, v: untyped) = 
   a.e20 = v
-template `.y=`*[T: MPoint2D](a: T, v: untyped) = 
+template `y=`*[T: MPoint2D](a: T, v: untyped) = 
   a.e01 = v
-template `.w=`*[T: MPoint2D](a: T, v: untyped) = 
+template `w=`*[T: MPoint2D](a: T, v: untyped) = 
   a.e12 = v
 
 
@@ -336,18 +336,18 @@ template `.w=`*[T: MPoint2D](a: T, v: untyped) =
 ## POINT 3D
 #############################################################################################################################
 
-template `.x`*[T: MPoint3D](a: T): untyped = a.e032
-template `.y`*[T: MPoint3D](a: T): untyped = a.e013
-template `.z`*[T: MPoint3D](a: T): untyped = a.e021
-template `.w`*[T: MPoint3D](a: T): untyped = a.e123
+template x*[T: MPoint3D](a: T): untyped = a.e032
+template y*[T: MPoint3D](a: T): untyped = a.e013
+template z*[T: MPoint3D](a: T): untyped = a.e021
+template w*[T: MPoint3D](a: T): untyped = a.e123
 
-template `.x=`*[T: MPoint3D](a: T, v: untyped) = 
+template `x=`*[T: MPoint3D](a: T, v: untyped) = 
   a.e032 = v
-template `.y=`*[T: MPoint3D](a: T, v: untyped) = 
+template `y=`*[T: MPoint3D](a: T, v: untyped) = 
   a.e013 = v
-template `.z=`*[T: MPoint3D](a: T, v: untyped) = 
+template `z=`*[T: MPoint3D](a: T, v: untyped) = 
   a.e021 = v
-template `.w=`*[T: MPoint3D](a: T, v: untyped) = 
+template `w=`*[T: MPoint3D](a: T, v: untyped) = 
   a.e123 = v
 
 
@@ -355,42 +355,42 @@ template `.w=`*[T: MPoint3D](a: T, v: untyped) =
 ## LINE 2D  —  ax + by + c = 0
 #############################################################################################################################
 
-template `.a`*[T: MLine2D](l: T): untyped = l.e1   ## x coefficient
-template `.b`*[T: MLine2D](l: T): untyped = l.e2   ## y coefficient
-template `.c`*[T: MLine2D](l: T): untyped = l.e0   ## constant term
+template a*[T: MLine2D](l: T): untyped = l.e1   ## x coefficient
+template b*[T: MLine2D](l: T): untyped = l.e2   ## y coefficient
+template c*[T: MLine2D](l: T): untyped = l.e0   ## constant term
 
-template `.a=`*[T: MLine2D](l: T, v: untyped) = 
+template `a=`*[T: MLine2D](l: T, v: untyped) = 
   l.e1 = v
-template `.b=`*[T: MLine2D](l: T, v: untyped) = 
+template `b=`*[T: MLine2D](l: T, v: untyped) = 
   l.e2 = v
-template `.c=`*[T: MLine2D](l: T, v: untyped) = 
+template `c=`*[T: MLine2D](l: T, v: untyped) = 
   l.e0 = v
 
-template `.nx`*[T: MLine2D](l: T): untyped = l.e1  ## normal x (alias for a)
-template `.ny`*[T: MLine2D](l: T): untyped = l.e2  ## normal y (alias for b)
+template nx*[T: MLine2D](l: T): untyped = l.e1  ## normal x (alias for a)
+template ny*[T: MLine2D](l: T): untyped = l.e2  ## normal y (alias for b)
 
 
 #############################################################################################################################
 ## PLANE 3D  —  ax + by + cz + d = 0
 #############################################################################################################################
 
-template `.a`*[T: MPlane3D](p: T): untyped = p.e1   ## x coefficient / normal x
-template `.b`*[T: MPlane3D](p: T): untyped = p.e2   ## y coefficient / normal y
-template `.c`*[T: MPlane3D](p: T): untyped = p.e3   ## z coefficient / normal z
-template `.d`*[T: MPlane3D](p: T): untyped = p.e0   ## constant / offset
+template a*[T: MPlane3D](p: T): untyped = p.e1   ## x coefficient / normal x
+template b*[T: MPlane3D](p: T): untyped = p.e2   ## y coefficient / normal y
+template c*[T: MPlane3D](p: T): untyped = p.e3   ## z coefficient / normal z
+template d*[T: MPlane3D](p: T): untyped = p.e0   ## constant / offset
 
-template `.a=`*[T: MPlane3D](p: T, v: untyped) = 
+template `a=`*[T: MPlane3D](p: T, v: untyped) = 
   p.e1 = v
-template `.b=`*[T: MPlane3D](p: T, v: untyped) = 
+template `b=`*[T: MPlane3D](p: T, v: untyped) = 
   p.e2 = v
-template `.c=`*[T: MPlane3D](p: T, v: untyped) = 
+template `c=`*[T: MPlane3D](p: T, v: untyped) = 
   p.e3 = v
-template `.d=`*[T: MPlane3D](p: T, v: untyped) = 
+template `d=`*[T: MPlane3D](p: T, v: untyped) = 
   p.e0 = v
 
-template `.nx`*[T: MPlane3D](p: T): untyped = p.e1  ## normal x
-template `.ny`*[T: MPlane3D](p: T): untyped = p.e2  ## normal y
-template `.nz`*[T: MPlane3D](p: T): untyped = p.e3  ## normal z
+template nx*[T: MPlane3D](p: T): untyped = p.e1  ## normal x
+template ny*[T: MPlane3D](p: T): untyped = p.e2  ## normal y
+template nz*[T: MPlane3D](p: T): untyped = p.e3  ## normal z
 
 
 #############################################################################################################################
@@ -399,24 +399,24 @@ template `.nz`*[T: MPlane3D](p: T): untyped = p.e3  ## normal z
 ##   moment    bivector  (e01, e02, e03)  ←→  (mx, my, mz)
 #############################################################################################################################
 
-template `.dx`*[T: MLine3D](l: T): untyped = l.e12  ## direction x component
-template `.dy`*[T: MLine3D](l: T): untyped = l.e13  ## direction y component
-template `.dz`*[T: MLine3D](l: T): untyped = l.e23  ## direction z component
-template `.mx`*[T: MLine3D](l: T): untyped = l.e01  ## moment x component
-template `.my`*[T: MLine3D](l: T): untyped = l.e02  ## moment y component
-template `.mz`*[T: MLine3D](l: T): untyped = l.e03  ## moment z component
+template dx*[T: MLine3D](l: T): untyped = l.e12  ## direction x component
+template dy*[T: MLine3D](l: T): untyped = l.e13  ## direction y component
+template dz*[T: MLine3D](l: T): untyped = l.e23  ## direction z component
+template mx*[T: MLine3D](l: T): untyped = l.e01  ## moment x component
+template my*[T: MLine3D](l: T): untyped = l.e02  ## moment y component
+template mz*[T: MLine3D](l: T): untyped = l.e03  ## moment z component
 
-template `.dx=`*[T: MLine3D](l: T, v: untyped) = 
+template `dx=`*[T: MLine3D](l: T, v: untyped) = 
   l.e12 = v
-template `.dy=`*[T: MLine3D](l: T, v: untyped) = 
+template `dy=`*[T: MLine3D](l: T, v: untyped) = 
   l.e13 = v
-template `.dz=`*[T: MLine3D](l: T, v: untyped) = 
+template `dz=`*[T: MLine3D](l: T, v: untyped) = 
   l.e23 = v
-template `.mx=`*[T: MLine3D](l: T, v: untyped) = 
+template `mx=`*[T: MLine3D](l: T, v: untyped) = 
   l.e01 = v
-template `.my=`*[T: MLine3D](l: T, v: untyped) = 
+template `my=`*[T: MLine3D](l: T, v: untyped) = 
   l.e02 = v
-template `.mz=`*[T: MLine3D](l: T, v: untyped) = 
+template `mz=`*[T: MLine3D](l: T, v: untyped) = 
   l.e03 = v
 
 
@@ -424,23 +424,23 @@ template `.mz=`*[T: MLine3D](l: T, v: untyped) =
 ## ROTOR 2D
 #############################################################################################################################
 
-template `.xy`*[T: MRotor2D](r: T): untyped    = r.e12  ## rotation plane component
-template `.xy=`*[T: MRotor2D](r: T, v: untyped)     = r.e12  = v
+template xy*[T: MRotor2D](r: T): untyped    = r.e12  ## rotation plane component
+template `xy=`*[T: MRotor2D](r: T, v: untyped)     = r.e12  = v
 
 
 #############################################################################################################################
 ## MOTOR 2D
 #############################################################################################################################
 
-template `.xy`*[T: MMotor2D](m: T): untyped = m.e12   ## rotation component
-template `.tx`*[T: MMotor2D](m: T): untyped = m.e20   ## translation x (×2 for actual offset)
-template `.ty`*[T: MMotor2D](m: T): untyped = m.e01   ## translation y (×2 for actual offset)
+template xy*[T: MMotor2D](m: T): untyped = m.e12   ## rotation component
+template tx*[T: MMotor2D](m: T): untyped = m.e20   ## translation x (×2 for actual offset)
+template ty*[T: MMotor2D](m: T): untyped = m.e01   ## translation y (×2 for actual offset)
 
-template `.xy=`*[T: MMotor2D](m: T, v: untyped) = 
+template `xy=`*[T: MMotor2D](m: T, v: untyped) = 
   m.e12  = v
-template `.tx=`*[T: MMotor2D](m: T, v: untyped) = 
+template `tx=`*[T: MMotor2D](m: T, v: untyped) = 
   m.e20  = v
-template `.ty=`*[T: MMotor2D](m: T, v: untyped) = 
+template `ty=`*[T: MMotor2D](m: T, v: untyped) = 
   m.e01  = v
 
 
@@ -448,15 +448,15 @@ template `.ty=`*[T: MMotor2D](m: T, v: untyped) =
 ## ROTOR 3D
 #############################################################################################################################
 
-template `.xy`*[T: MRotor3D](r: T): untyped     = r.e12   ## e12 plane — rotation around Z
-template `.xz`*[T: MRotor3D](r: T): untyped     = r.e13   ## e13 plane — rotation around Y (negated)
-template `.yz`*[T: MRotor3D](r: T): untyped     = r.e23   ## e23 plane — rotation around X
+template xy*[T: MRotor3D](r: T): untyped     = r.e12   ## e12 plane — rotation around Z
+template xz*[T: MRotor3D](r: T): untyped     = r.e13   ## e13 plane — rotation around Y (negated)
+template yz*[T: MRotor3D](r: T): untyped     = r.e23   ## e23 plane — rotation around X
 
-template `.xy=`*[T: MRotor3D](r: T, v: untyped) = 
+template `xy=`*[T: MRotor3D](r: T, v: untyped) = 
   r.e12  = v
-template `.xz=`*[T: MRotor3D](r: T, v: untyped) = 
+template `xz=`*[T: MRotor3D](r: T, v: untyped) = 
   r.e13  = v
-template `.yz=`*[T: MRotor3D](r: T, v: untyped) = 
+template `yz=`*[T: MRotor3D](r: T, v: untyped) = 
   r.e23  = v
 
 
@@ -465,31 +465,31 @@ template `.yz=`*[T: MRotor3D](r: T, v: untyped) =
 #############################################################################################################################
 
 ## Rotor part (grade-2 Euclidean):
-template `.xy`*[T: MMotor3D](m: T): untyped     = m.e12
-template `.xz`*[T: MMotor3D](m: T): untyped     = m.e13
-template `.yz`*[T: MMotor3D](m: T): untyped     = m.e23
+template xy*[T: MMotor3D](m: T): untyped     = m.e12
+template xz*[T: MMotor3D](m: T): untyped     = m.e13
+template yz*[T: MMotor3D](m: T): untyped     = m.e23
 ## Translator part (grade-2 ideal):
-template `.tx`*[T: MMotor3D](m: T): untyped     = m.e01
-template `.ty`*[T: MMotor3D](m: T): untyped     = m.e02
-template `.tz`*[T: MMotor3D](m: T): untyped     = m.e03
+template tx*[T: MMotor3D](m: T): untyped     = m.e01
+template ty*[T: MMotor3D](m: T): untyped     = m.e02
+template tz*[T: MMotor3D](m: T): untyped     = m.e03
 ## Pseudoscalar part (grade-4):
-template `.pseudo`*[T: MMotor3D](m: T): untyped = m.e0123
+template pseudo*[T: MMotor3D](m: T): untyped = m.e0123
 
-template `.scalar=`*[T: MMotor3D](m: T, v: untyped) = 
+template `scalar=`*[T: MMotor3D](m: T, v: untyped) = 
   m.s     = v
-template `.xy=`*[T: MMotor3D](m: T, v: untyped)     = 
+template `xy=`*[T: MMotor3D](m: T, v: untyped)     = 
   m.e12   = v
-template `.xz=`*[T: MMotor3D](m: T, v: untyped)     = 
+template `xz=`*[T: MMotor3D](m: T, v: untyped)     = 
   m.e13   = v
-template `.yz=`*[T: MMotor3D](m: T, v: untyped)     = 
+template `yz=`*[T: MMotor3D](m: T, v: untyped)     = 
   m.e23   = v
-template `.tx=`*[T: MMotor3D](m: T, v: untyped)     = 
+template `tx=`*[T: MMotor3D](m: T, v: untyped)     = 
   m.e01   = v
-template `.ty=`*[T: MMotor3D](m: T, v: untyped)     = 
+template `ty=`*[T: MMotor3D](m: T, v: untyped)     = 
   m.e02   = v
-template `.tz=`*[T: MMotor3D](m: T, v: untyped)     = 
+template `tz=`*[T: MMotor3D](m: T, v: untyped)     = 
   m.e03   = v
-template `.pseudo=`*[T: MMotor3D](m: T, v: untyped) = 
+template `pseudo=`*[T: MMotor3D](m: T, v: untyped) = 
   m.e0123 = v
 
 #############################################################################################################################
