@@ -90,6 +90,8 @@ discard UTPlugin.addDependency(inpID, pcID)
 var ren = initSDLRenderer(win.handle)
 discard UTPlugin.addResource(ren)
 
+let srID = newSystem(UTPlugin, SpriteRendererSystem[ECSWorld, CSDLRenderer, var CMotor, var CSprite])
+
 var shouldRun = true
 NOTIF_WINDOW_EVENT.connect do(win: CWindow, ev: WindowEvent):
   if ev.kind == WINDOW_CLOSE:

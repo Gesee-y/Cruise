@@ -114,3 +114,39 @@ Except that you're not limited to components, you can for example use it for saf
 
 Then the dependency DAG and resource DAG are used to compute the final execution order of the systems.
 Both graphs are dynamic. You can change dependencies between systems at runtime and the data they access but it's recommended to do it in one phase then at the next call to `update` the graph will detect the changes and recompute the correct order.
+
+## Race security
+
+Let's assume you have some system waiting for a callback, so it's was interrupted.
+Our current model (unable to know when it will resume), can't ensure that when the systeme will continue it's execution, it won't cause data race, that's why Cruise plugin introduce a **runtime borrow checker** similar to rust. 
+It ensure that multiple reader can have a resources but there should be only one writer.
+This ensure that when the systeme resume, either it access the resources because it's safe, or he can't.
+
+```nim
+var res = sys.getWriteResource[:MyResource] # Or getReadResource for read access
+if not res.isSome:
+  sys.setStatus(PLUGIN_WAITING)
+```
+
+The status is to notify depedent systems about what happened
+
+## Temporal coherency
+
+In order to make a simulation coherent, events should happen in a given order, that's temporal coherency. 
+Given a point in real time, the simulation should be at a given state.
+That state is the logical time.
+The point where the simulation should **logically** be given the real time.
+
+That's the principle of **discrete event simulation**
+And Cruise plugin allows you to do that through **execution amounts** (how many time a system should execute to be in sync with the logical time) and **execution condition** that allows you to define when your system should execute
+
+```nim
+method isReady(sys: PhysiscSystem): bool =
+  let ticks = getMonoTime().ticks
+  let elapsed = (ticks - sys.lastTicks).float * 1e-9
+  if elapsed > 0.005:
+    sys.setExecAmount((elapsed div 0.005))
+    return true
+
+  return false
+``` 
