@@ -36,6 +36,7 @@ type
   Plugin* = ref object
     idtonode*:seq[PluginNode]
     res_manager*: PResourceManager
+    bus: CEventBus
     graph:DiGraph
     parallel_cache:seq[array[2, seq[int]]]
     dirty:bool

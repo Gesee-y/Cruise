@@ -43,6 +43,9 @@ proc getMessage*[T](bus: var CEventBus, obj: T): Option[ref seq[T]] =
   var msg = bus.messages[$T]
   msg.lock.acquire()
   var d = cast[ref seq[T]](msg.data)
+  if d.len <= 0:
+    return none(ref seq[T])
+    
   msg.lock.release()
   some(d)
 

@@ -10,6 +10,9 @@ type
   CTimerPool = ref object
     timers: seq[CTimer]
 
+  PauseTimer = object
+  ResumeTimer = object
+
 var TMPlugin* = Plugin()
 var TM = CTimerPool()
 
@@ -28,15 +31,25 @@ let id =
   newSystem(TMPlugin, TimerSystem[var CTimerPool]):
     paused: bool
 
-method isReady(p: TimerSystem): bool = not p.paused
-method update(p: TimerSystem) =
+method update(p: var TimerSystem) =
+  if p.paused:
+    let resume = p.bus.getMessage[ResumeTimer]()
+    if resume.isNone: 
+      return
+
+    p.paused = false
+
   var res = p.getWriteResource[:CTimerPool]
   if not res.isSome:
     p.setStatus(PLUGIN_WAITING)
     return
 
+  let paused = p.bus.getMessage[PauseTimer]()
+  if paused.isSome:
+    p.paused = true
+    return
+
   var tm = res.get()
-  
   p.setStatus(PLUGIN_OK)
   
   var (start, stop) = (0, tm.timers.len-1)
