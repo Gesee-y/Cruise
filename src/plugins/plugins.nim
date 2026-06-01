@@ -2,7 +2,7 @@
 ######################################################### PLUGIN SYSTEM ############################################################################
 ####################################################################################################################################################
 
-import tables, typetraits, macros, options, std/monotimes
+import tables, typetraits, macros, options, std/monotimes, atomics
 import ../graph/graph
 import ../events/events
 include "bitset.nim"

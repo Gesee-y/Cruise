@@ -7,8 +7,8 @@ type
     data: pointer
     readRequests: BitSet   # sys ids who read this resource
     writeRequests: BitSet  # sys ids who write this resource
-    isWriteRequested: BitSet
-    isReadRequested: BitSet
+    isWriteRequested: seq[Atomic[bool]]
+    isReadRequested: seq[bool]
     dirty: bool
     cachedGraph: DiGraph
 
@@ -23,6 +23,26 @@ type
 
 proc newPluginResource[T](obj: T): PluginResource =
   result.data = cast[pointer](obj)
+
+template contains(s: seq[bool], sys:int): bool =
+  s[sys]
+
+template contains(s: var seq[Atomic[bool]], sys:int): bool =
+  s[sys].load()
+
+proc anySet(s: seq[bool]): bool =
+  for b in s:
+    if b:
+      return true
+
+  return false
+
+proc anySet(s: var seq[Atomic[bool]]): bool =
+  for b in s.mitems():
+    if b.load():
+      return true
+
+  return false
 
 proc addResource*[T](manager: var PResourceManager, obj: T): int =
   let id = manager.resources.len
@@ -46,19 +66,20 @@ proc getResource*[T](manager: var PResourceManager, i:int=0, sys:int = -1): Opti
   let id = manager.toId[$T][i]
   if sys >= 0: 
     if sys in manager.resources[id].readRequests:
-      if manager.resources[id].isWriteRequested.len > 0:
+      if manager.resources[id].isWriteRequested.anySet:
         return none(T)
-      manager.resources[id].isReadRequested.incl(sys)
+      manager.resources[id].isReadRequested[sys] = true
     elif sys in manager.resources[id].writeRequests:
-      if manager.resources[id].isReadRequested.len > 0 or manager.resources[id].isWriteRequested.len > 0:
+      if manager.resources[id].isReadRequested.anySet or manager.resources[id].isWriteRequested.anySet:
         return none(T)
-      manager.resources[id].isWriteRequested.incl(sys)
+
+      manager.resources[id].isWriteRequested[sys].store(true)
 
   return some(cast[T](manager.resources[id].data))
 
 proc resetRequest(res: var PluginResource, sys: int) =
-  res.isWriteRequested.excl(sys)
-  res.isReadRequested.excl(sys)
+  res.isWriteRequested[sys].store(false)
+  res.isReadRequested[sys] = false
 
 proc addReadRequest*(manager: var PResourceManager, sys, id: int) =
   # A sys cannot read and write the same resource
