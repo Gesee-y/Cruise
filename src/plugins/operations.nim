@@ -45,18 +45,10 @@ template hasAllDepsInitialized*(s:typed):untyped =
       break
   res
 
-proc isBorrowingResources*(n: PluginNode): bool =
-  var p = n.plugin
-  for i in p.res_manager.sysToRes[n.id]:
-    if n.id in p.res_manager.resources[n.id].isReadRequested or n.id in p.res_manager.resources[n.id].isWriteRequested:
-      return false
-
-  return true
-
 proc isResourcesAvailable*(n: PluginNode): bool =
   var p = n.plugin
   for i in p.res_manager.sysToRes[n.id]:
-    if p.res_manager.resources[n.id].isWriteRequested.len > 0:
+    if p.res_manager.resources[n.id].isWriteRequested.load > 0:
       return false
 
   return true

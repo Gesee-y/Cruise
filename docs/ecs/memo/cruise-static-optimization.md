@@ -2,7 +2,6 @@
 
 When dealing with ECS, it's often necessary to have some way to have a dynamic storage that stores the differents components pool
 
-
 You may need to have a `ComponentRegistry` along with `ComponentEntry`s. Each `ComponentEntry` should store the component pool.
 We run on a problem. Since a sequences can only contains elements of the same type, you can't do `ComponentEntry[Position]` or `ComponentEntry[Velocity]`.
 We may think about making some static structure, like a tuple `(ComponentEntry[A], ComponentEntry[B])`, but this would require every components to be registered before hands and dealing with some static shenaningans. We want to have **dynamism**

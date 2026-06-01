@@ -7,8 +7,8 @@ type
     data: pointer
     readRequests: BitSet   # sys ids who read this resource
     writeRequests: BitSet  # sys ids who write this resource
-    isWriteRequested: seq[Atomic[bool]]
-    isReadRequested: seq[bool]
+    isWriteRequested: Atomic[int]
+    isReadRequested: Atomic[int]
     dirty: bool
     cachedGraph: DiGraph
 
@@ -66,20 +66,20 @@ proc getResource*[T](manager: var PResourceManager, i:int=0, sys:int = -1): Opti
   let id = manager.toId[$T][i]
   if sys >= 0: 
     if sys in manager.resources[id].readRequests:
-      if manager.resources[id].isWriteRequested.anySet:
+      if manager.resources[id].isWriteRequested.load > 0:
         return none(T)
-      manager.resources[id].isReadRequested[sys] = true
+      discard manager.resources[id].isReadRequested.fetchAdd(1)
     elif sys in manager.resources[id].writeRequests:
-      if manager.resources[id].isReadRequested.anySet or manager.resources[id].isWriteRequested.anySet:
+      if manager.resources[id].isReadRequested.load > 0 or manager.resources[id].isWriteRequested.load > 0:
         return none(T)
 
-      manager.resources[id].isWriteRequested[sys].store(true)
+      discard manager.resources[id].isWriteRequested.fetchAdd(1)
 
   return some(cast[T](manager.resources[id].data))
 
 proc resetRequest(res: var PluginResource, sys: int) =
-  res.isWriteRequested[sys].store(false)
-  res.isReadRequested[sys] = false
+  if sys in res.writeRequests: discard res.isWriteRequested.fetchSub(1)
+  if sys in res.readRequests: discard res.isReadRequested.fetchSub(1)
 
 proc addReadRequest*(manager: var PResourceManager, sys, id: int) =
   # A sys cannot read and write the same resource

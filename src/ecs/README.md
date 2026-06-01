@@ -150,7 +150,7 @@ for (bid, r) in world.denseQuery(sig):
 newSystem myPlugin, mySys[Pos, var Vel]:
   # Some fields
 
-method update(sys::mySys) =
+method update(sys: mySys) =
   # my update
 ```
 
