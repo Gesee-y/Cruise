@@ -10,7 +10,6 @@ include "data.nim"
 include "message.nim"
 
 type
-
   PluginStatus* = enum
     PLUGIN_OK, PLUGIN_ERR, PLUGIN_DEPRECATED, PLUGIN_WAITING, PLUGIN_NOT_READY, PLUGIN_OFF
   
@@ -41,10 +40,31 @@ type
     parallel_cache:seq[array[2, seq[int]]]
     dirty:bool
 
+  ParallelScheduler = object
+    graph: DiGraph
+    execStream: Channel[Int]
+    cachedSorted: seq[int]
+
   NullPluginNode* = ref object of PluginNode
+
+const MAX_CHANNEL_SIZE = 128
 
 proc newPlugin*(): Plugin =
   new(result)
+
+proc rebuildScheduler(p: Plugin, scheduler: var ParallelScheduler) =
+  scheduler.graph = p.graph
+
+  p.res_manager.buildGlobalAccessGraph()
+  scheduler.graph.mergeEdgeInto(p.res_manager.cachedGraph)
+  scheduler.cachedGraph = scheduler.graph.topo_sort
+
+proc buildScheduler(p: Plugin): ParallelScheduler =
+  var scheduler = ParallelScheduler()
+  p.rebuildScheduler(scheduler)
+  scheduler.execStream = newChannel[int](MAX_CHANNEL_SIZE)
+  scheduler
+
 template isDirty*(p: Plugin): bool = p.dirty
 template getParallelCache*(p: Plugin): seq[array[2, seq[int]]] = p.parallel_cache
 template getGraph*(p: Plugin): DiGraph = p.graph

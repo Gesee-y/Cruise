@@ -197,6 +197,24 @@ template exec_node(f, n) =
     finally:
       n.releaseResources()
 
+iterator systems_to_execute(p: var Plugin): tuple[sys: PluginNode, mainthread: bool] =
+  var graph = p.graph
+
+  p.res_manager.buildGlobalAccessGraph
+  graph.mergeEdgeInto(p.res_manager.cachedGraph)
+
+  let sorted = graph.topo_sort()
+  var executed = 0
+  execStream: Channel[Int]
+
+  if sorted.len > 0: p.execStream.send(sorted[0])
+  while executed < sorted.len:
+    let id = p.exec
+    var t: Thread[void]
+    createThread(t, mutate)
+    w.poll(timeout = ms)   # OS delivers the event here, while thread mutates
+    joinThread(t)
+
 proc computeParallelLevel*(p:var Plugin) =
   var graph = p.graph
 
