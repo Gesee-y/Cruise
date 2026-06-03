@@ -2,7 +2,7 @@
 ######################################################### PLUGIN SYSTEM ############################################################################
 ####################################################################################################################################################
 
-import tables, typetraits, macros, options, std/monotimes, atomics, locks
+import tables, typetraits, macros, options, std/monotimes, atomics, locks, channels
 import ../graph/graph
 import ../events/events
 include "bitset.nim"
@@ -11,28 +11,31 @@ include "message.nim"
 
 type
   PluginStatus* = enum
-    PLUGIN_OK, PLUGIN_ERR, PLUGIN_DEPRECATED, PLUGIN_WAITING, PLUGIN_NOT_READY, PLUGIN_OFF
+    ## Define plugins status each representing a given state of a system, allowing his dependencies to know what is happening
+    PLUGIN_OK # The plugin is working fine
+    PLUGIN_ERR # The plugin encountered an error
+    PLUGIN_DEPRECATED # The plugin data or state is stale
+    PLUGIN_WAITING # The plugin is waiting for something 
+    PLUGIN_NOT_READY # The plugin is not ready to execute
+    PLUGIN_OFF # The plugin is uninitialized
   
   PluginNode* = ref object of RootObj
+    ## Represents a system in our DAG, indexed by his ID
+    ## `enabled` allows you make it run or not
+    ## `localthread` forces the system to execute in the current thread.
     id*:int
-    enabled*,mainthread*:bool
+    enabled*,localthread*:bool
     status:PluginStatus
     lasterr:CatchableError
     deps:Table[string, PluginNode]
-    res:Bitset
+    res:Bitset # Resources accessed by the system
     execAmount: int
     execCount: int
     lastTick*: int
     plugin: Plugin
 
-  EffectivePluginNode = concept node
-    awake(node)
-    update(node)
-    shutdown(node)
-    getCapability(node)
-    getObject(node)
-
   Plugin* = ref object
+    ## Main object representing a set of system
     idtonode*:seq[PluginNode]
     res_manager*: PResourceManager
     bus: CEventBus
@@ -44,6 +47,8 @@ type
     graph: DiGraph
     execStream: Channel[Int]
     cachedSorted: seq[int]
+    cachedIndegree: seq[int]
+    lock: Lock
 
   NullPluginNode* = ref object of PluginNode
 
@@ -57,7 +62,7 @@ proc rebuildScheduler(p: Plugin, scheduler: var ParallelScheduler) =
 
   p.res_manager.buildGlobalAccessGraph()
   scheduler.graph.mergeEdgeInto(p.res_manager.cachedGraph)
-  scheduler.cachedGraph = scheduler.graph.topo_sort
+  scheduler.cachedSorted = scheduler.graph.topo_sort
 
 proc buildScheduler(p: Plugin): ParallelScheduler =
   var scheduler = ParallelScheduler()

@@ -197,23 +197,31 @@ template exec_node(f, n) =
     finally:
       n.releaseResources()
 
-iterator systems_to_execute(p: var Plugin): tuple[sys: PluginNode, mainthread: bool] =
-  var graph = p.graph
-
-  p.res_manager.buildGlobalAccessGraph
-  graph.mergeEdgeInto(p.res_manager.cachedGraph)
-
-  let sorted = graph.topo_sort()
+template executeSystems(plugin: var Plugin, scheduler: var ParallelScheduler, fn: untyped) =
   var executed = 0
-  execStream: Channel[Int]
 
-  if sorted.len > 0: p.execStream.send(sorted[0])
-  while executed < sorted.len:
-    let id = p.exec
+  if scheduler.cachedSorted.len > 0: 
+    scheduler.cachedIndegree = scheduler.graph.indegrees
+    scheduler.execStream.send(scheduler.cachedSorted[0])
+
+  let threadProc = 
+    proc(scheduler: var ParallelScheduler, node: var PluginNode) = 
+      exec_node(fn, node)
+      scheduler.lock.acquire()
+      let ins = scheduler.graph.outedges[node.id]
+      for info in ins:
+        scheduler.cachedIndegree[info.idx] -= 1
+        if scheduler.cachedIndegree[info.idx] == 0:
+          scheduler.execStream.send(info.idx)
+      scheduler.lock.release()
+
+  while executed < scheduler.cachedSorted.len:
+    let id = scheduler.execStream.recv
+    var node = plugin.idtonode[id]
+
     var t: Thread[void]
-    createThread(t, mutate)
-    w.poll(timeout = ms)   # OS delivers the event here, while thread mutates
-    joinThread(t)
+    createThread(t, threadProc, scheduler, node)
+    executed += 1
 
 proc computeParallelLevel*(p:var Plugin) =
   var graph = p.graph
