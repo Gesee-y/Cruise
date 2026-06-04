@@ -202,7 +202,12 @@ template executeSystems(plugin: var Plugin, scheduler: var ParallelScheduler, fn
 
   if scheduler.cachedSorted.len > 0: 
     scheduler.cachedIndegree = scheduler.graph.indegrees
-    scheduler.execStream.send(scheduler.cachedSorted[0])
+    var current = 0
+
+    # We start by sending every node without dependencies
+    while scheduler.cachedIndegree[scheduler.cachedSorted[current]] == 0:
+      scheduler.execStream.send(scheduler.cachedSorted[current])
+      inc current
 
   let threadProc = 
     proc(scheduler: var ParallelScheduler, node: var PluginNode) = 
