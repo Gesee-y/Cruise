@@ -199,6 +199,7 @@ template exec_node(f, n) =
 
 template executeSystems(plugin: var Plugin, scheduler: var ParallelScheduler, fn: untyped) =
   var executed = 0
+  if plugin.dirty: plugin.rebuildScheduler(scheduler)
 
   if scheduler.cachedSorted.len > 0: 
     scheduler.cachedIndegree = scheduler.graph.indegrees
@@ -210,7 +211,7 @@ template executeSystems(plugin: var Plugin, scheduler: var ParallelScheduler, fn
       inc current
 
   let threadProc = 
-    proc(scheduler: var ParallelScheduler, node: var PluginNode) = 
+    proc() {.thread.} = 
       exec_node(fn, node)
       scheduler.lock.acquire()
       let ins = scheduler.graph.outedges[node.id]
@@ -224,8 +225,9 @@ template executeSystems(plugin: var Plugin, scheduler: var ParallelScheduler, fn
     let id = scheduler.execStream.recv
     var node = plugin.idtonode[id]
 
+    # TODO: Add threadpool. This is highly inefficient
     var t: Thread[void]
-    createThread(t, threadProc, scheduler, node)
+    createThread(t, threadProc, (scheduler, node))
     executed += 1
 
 proc computeParallelLevel*(p:var Plugin) =

@@ -43,13 +43,17 @@ type
     parallel_cache:seq[array[2, seq[int]]]
     dirty:bool
 
-  ParallelScheduler = object
+  ParallelScheduler* = object
     graph: DiGraph
     execStream: Channel[Int]
     cachedSorted: seq[int]
     cachedIndegree: seq[int]
     lock: Lock
 
+  SynchronousScheduler* = object
+    graph: DiGraph
+    cachedSorted: seq[int]
+    
   NullPluginNode* = ref object of PluginNode
 
 const MAX_CHANNEL_SIZE = 128
@@ -57,17 +61,23 @@ const MAX_CHANNEL_SIZE = 128
 proc newPlugin*(): Plugin =
   new(result)
 
-proc rebuildScheduler(p: Plugin, scheduler: var ParallelScheduler) =
+template rebuildScheduler(p: Plugin, scheduler: untyped) =
   scheduler.graph = p.graph
 
   p.res_manager.buildGlobalAccessGraph()
   scheduler.graph.mergeEdgeInto(p.res_manager.cachedGraph)
   scheduler.cachedSorted = scheduler.graph.topo_sort
 
-proc buildScheduler(p: Plugin): ParallelScheduler =
+proc buildParallelScheduler(p: Plugin): ParallelScheduler =
   var scheduler = ParallelScheduler()
   p.rebuildScheduler(scheduler)
   scheduler.execStream = newChannel[int](MAX_CHANNEL_SIZE)
+  scheduler.lock.initLock()
+  scheduler
+
+proc buildSynchronousScheduler(p: Plugin): SynchronousScheduler =
+  var scheduler = SynchronousScheduler()
+  p.rebuildScheduler(scheduler)
   scheduler
 
 template isDirty*(p: Plugin): bool = p.dirty
