@@ -32,14 +32,9 @@ jobs:
           nim doc --outdir: docs/ecs src/ecs/table.nim
     
       - name: Deploying
-      uses: actions/upload-pages-artifact@v3
-      with:
-        path: docs
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+     
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
