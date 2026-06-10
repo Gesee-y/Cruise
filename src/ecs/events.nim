@@ -1,36 +1,35 @@
 import tables
 
-###################################################################################################
-############################################ EVENTS ##############################################
-###################################################################################################
+# ################################################################################################# #
+# ########################################### EVENTS ############################################## #
+# ################################################################################################# #
 
-## Event emitted when a dense entity is created.
-## Fired after the entity has been allocated and registered.
 type
   DenseEntityCreatedEvent* = object
-    ## Handle of the newly created dense entity.
+    ## Event emitted when a dense entity is created.
+    ## Fired after the entity has been allocated and registered.
     entity*: DenseHandle
 
-  ## Event emitted when a dense entity is destroyed.
-  ## `last` represents the last valid dense index before destruction.
   DenseEntityDestroyedEvent* = object
+    ## Event emitted when a dense entity is destroyed.
+    ## `last` represents the last valid dense index before destruction.
     entity*: DenseHandle
     last*: uint
     w*: pointer
 
-  ## Event emitted when one or more components are added to a dense entity.
   DenseComponentAddedEvent* = object
+    ## Event emitted when one or more components are added to a dense entity.
     entity*: DenseHandle
     componentIds*: seq[int]
 
-  ## Event emitted when one or more components are removed from a dense entity.
   DenseComponentRemovedEvent* = object
+    ## Event emitted when one or more components are removed from a dense entity.
     entity*: DenseHandle
     componentIds*: seq[int]
 
-  ## Event emitted when a dense entity migrates between archetypes.
-  ## This usually happens after a structural change.
   DenseEntityMigratedEvent* = object
+    ## Event emitted when a dense entity migrates between archetypes.
+    ## This usually happens after a structural change.
     entity*: DenseHandle
     oldId*: uint
     lastId*: uint
@@ -44,26 +43,26 @@ type
     oldArchetype*: uint16
     newArchetype*: uint16
 
-  ## Event emitted when a sparse entity is created.
   SparseEntityCreatedEvent* = object
+    ## Event emitted when a sparse entity is created.
     entity*: SparseHandle
 
-  ## Event emitted when a sparse entity is destroyed.
   SparseEntityDestroyedEvent* = object
+    ## Event emitted when a sparse entity is destroyed.
     entity*: SparseHandle
 
-  ## Event emitted when one or more components are added to a sparse entity.
   SparseComponentAddedEvent* = object
+    ## Event emitted when one or more components are added to a sparse entity.
     entity*: SparseHandle
     componentIds*: seq[int]
 
-  ## Event emitted when one or more components are removed from a sparse entity.
   SparseComponentRemovedEvent* = object
+    ## Event emitted when one or more components are removed from a sparse entity.
     entity*: SparseHandle
     componentIds*: seq[int]
 
-  ## Event emitted when a sparse entity is converted into a dense entity.
   DensifiedEvent* = object
+    ## Event emitted when a sparse entity is converted into a dense entity.
     oldSparse*: SparseHandle
     newDense*: DenseHandle
 
@@ -72,35 +71,34 @@ type
     oldDense*: DenseHandle
     newSparse*: SparseHandle
 
-  ## Event emitted when a command buffer has been flushed.
-  ## Useful for synchronization, profiling or debugging.
   CommandBufferFlushedEvent* = object
+    ## Event emitted when a command buffer has been flushed.
+    ## Useful for synchronization, profiling or debugging.
     bufferId*: int
     entitiesProcessed*: int
     operationCount*: int
 
-  ## Event emitted when a new archetype is created.
   ArchetypeCreatedEvent* = object
+    ## Event emitted when a new archetype is created.
     archetypeId*: int
     mask*: ArchetypeMask
     componentIds*: seq[int]
 
-###################################################################################################
-######################################## EVENT SYSTEM ############################################
-###################################################################################################
+# ################################################################################################# #
+# ######################################## EVENT SYSTEM ########################################### #
+# ################################################################################################# #
 
-## Generic callback signature for events of type `T`.
 type
   EventCallback*[T] = proc(event: T) {.closure.}
 
-  ## Pool storing callbacks for a given event type.
-  ## Uses a free-list to avoid reallocations.
   EventPool*[T] = object
+    ## Pool storing callbacks for a given event type.
+    ## Uses a free-list to avoid reallocations.
     callbacks: seq[EventCallback[T]]
     freeSlots: seq[int]
 
-  ## Central event manager holding all ECS events.
   EventManager* = ref object
+    ## Central event manager holding all ECS events.
     denseEntityCreated: EventPool[DenseEntityCreatedEvent]
     denseEntityDestroyed: EventPool[DenseEntityDestroyedEvent]
     denseComponentAdded: EventPool[DenseComponentAddedEvent]
@@ -119,18 +117,18 @@ type
     commandBufferFlushed: EventPool[CommandBufferFlushedEvent]
     archetypeCreated: EventPool[ArchetypeCreatedEvent]
 
-###################################################################################################
-###################################### EVENT POOL API ############################################
-###################################################################################################
+# ################################################################################################# #
+# ##################################### EVENT POOL API ############################################ #
+# ################################################################################################# #
 
-## Initialize an empty event pool.
 proc initEventPool*[T](): EventPool[T] =
+  ## Initialize an empty event pool.
   result.callbacks = @[]
   result.freeSlots = @[]
 
-## Subscribe a callback to an event pool.
-## Returns an integer subscription ID that can be used to unsubscribe.
 proc subscribe*[T](pool: var EventPool[T], callback: EventCallback[T]): int =
+  ## Subscribe a callback to an event pool.
+  ## Returns an integer subscription ID that can be used to unsubscribe.
   if pool.freeSlots.len > 0:
     result = pool.freeSlots.pop()
     pool.callbacks[result] = callback
@@ -138,29 +136,29 @@ proc subscribe*[T](pool: var EventPool[T], callback: EventCallback[T]): int =
     result = pool.callbacks.len
     pool.callbacks.add(callback)
 
-## Unsubscribe a callback using its subscription ID.
 proc unsubscribe*[T](pool: var EventPool[T], id: int) =
+  ## Unsubscribe a callback using its subscription ID.
   if id >= 0 and id < pool.callbacks.len:
     pool.callbacks[id] = nil
     pool.freeSlots.add(id)
 
-## Trigger an event and notify all subscribed callbacks.
 proc trigger*[T](pool: var EventPool[T], event: T) =
+  ## Trigger an event and notify all subscribed callbacks.
   for callback in pool.callbacks:
     if callback != nil:
       callback(event)
 
-## Clear all callbacks from the pool.
 proc clear*[T](pool: var EventPool[T]) =
+  ## Clear all callbacks from the pool.
   pool.callbacks.setLen(0)
   pool.freeSlots.setLen(0)
 
-###################################################################################################
-#################################### EVENT MANAGER API ############################################
-###################################################################################################
+# ################################################################################################# #
+# ################################### EVENT MANAGER API ########################################### #
+# ################################################################################################# #
 
-## Initialize a fully populated event manager.
 proc initEventManager*(): EventManager =
+  ## Initialize a fully populated event manager.
   new(result)
   result.denseEntityCreated = initEventPool[DenseEntityCreatedEvent]()
   result.denseEntityDestroyed = initEventPool[DenseEntityDestroyedEvent]()
