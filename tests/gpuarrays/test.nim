@@ -423,20 +423,20 @@ suite "String representation":
   test "$ on CPUSeq contains element values":
     let s = makeIntSeq(3)
     let str = $s
-    check "GPUSeq" in str
+    check "CPUSeq" in str
     check "0"      in str
     check "1"      in str
     check "2"      in str
 
   test "$ on empty CPUSeq":
     let s = newCPUSeq[float32]()
-    check "GPUSeq" in $s
+    check "CPUSeq" in $s
 
   test "$ on CPUArray contains element values":
     var a = newCPUArray[3, int32]()
     a.copyTo([1'i32, 2'i32, 3'i32], 0)
     let str = $a
-    check "GPUArray" in str
+    check "CPUArray" in str
     check "1" in str
 
 ##########################################################################################################################################################
