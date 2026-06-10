@@ -1,0 +1,30 @@
+name: test
+
+on:
+  push:
+    paths-ignore:
+      - 'LICENSE'
+      - '*.md'
+      - 'docs/*'
+  pull_request:
+    paths-ignore:
+      - 'LICENSE'
+      - '*.md'
+      - 'docs/*'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        nim-version: ['stable', 'devel']
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Setup nim environment
+        uses: jiro4989/setup-nim-action@v1
+        with:
+          nim-version: ${{ matrix.nim-version }}
+
+      - name: Running tests
+        run: testament cat /
