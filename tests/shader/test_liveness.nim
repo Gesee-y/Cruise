@@ -7,11 +7,11 @@ include "../../src/shadert/ir.nim"
 
 ## Helpers to query the scope tree without index arithmetic in every test.
 
-proc findVar(node: CIRControlNode, name: string): CLiveness =
+proc tfindVar(node: CIRControlNode, name: string): CLiveness =
   ## Search `node` and all descendants for `name`. Raises if not found.
   if name in node.variables: return node.variables[name]
   for child in node.children:
-    try: return findVar(child, name)
+    try: return tfindVar(child, name)
     except KeyError: discard
   raise newException(KeyError, "variable '" & name & "' not found in scope tree")
 
@@ -102,21 +102,21 @@ suite "getLiveness — birth and death positions":
 
   test "birth is before death for a simple variable":
     const ir = compileToIR(simpleAssign)
-    let live = findVar(getLiveness(ir), "a")
+    let live = tfindVar(getLiveness(ir), "a")
     check not live.birth.invalid
     check not live.death.invalid
     check live.birth < live.death
 
   test "death of outer variable is after the if block":
     const ir = compileToIR(unusedAfterIf)
-    let liveA = findVar(getLiveness(ir), "a")
-    let liveB = findVar(getLiveness(ir), "b")
+    let liveA = tfindVar(getLiveness(ir), "a")
+    let liveB = tfindVar(getLiveness(ir), "b")
     check liveA.death > liveB.birth
 
   test "for loop variable birth is at the for statement":
     const ir = compileToIR(varInFor)
     let root = getLiveness(ir)
-    let liveI = findVar(root, "i")
+    let liveI = tfindVar(root, "i")
     echo liveI
     check not liveI.birth.invalid
     check liveI.birth < liveI.death
@@ -159,6 +159,6 @@ suite "getLiveness — nested scopes":
   test "variable from outer scope has death after inner scopes close":
     const ir  = compileToIR(nestedScopes)
     var root = getLiveness(ir)
-    let liveA = findVar(root, "a")
-    let liveC = findVar(root, "c")
+    let liveA = tfindVar(root, "a")
+    let liveC = tfindVar(root, "c")
     check liveA.death > liveC.birth
