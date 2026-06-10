@@ -65,7 +65,7 @@ macro toTyped*(s: SparseHandle, comps: varargs[typed]): untyped =
 
 template obj*(d: TDHandle): ptr Entity = addr DenseHandle(d).world.entities[DenseHandle(d).widx]
 
-template world*(d:TDHandle): uint32 = DenseHandle(d).world
+template world(d:TDHandle): uint32 = DenseHandle(d).world
 template gen(d:TDHandle): uint16 = DenseHandle(d).gen
 template widx(d:TDHandle): uint32 = DenseHandle(d).widx
 template wid*(d:TDHandle): uint32 = DenseHandle(d).wid

@@ -298,7 +298,7 @@ macro deleteEntity*[S: static ArchetypeMask](
     let cNode = ID_TO_COMPONENT[cid]
     deactivateCode.add quote("@") do:
       block:
-        var fr = castTo(`@world`.registry.entries[`@cid`].rawPointer, `@cNode`, DEFAULT_BLK_SIZE)
+        var fr = castTo(`@world`.registry.entries[`@cid`].rawPointer, typedesc[`@cNode`], DEFAULT_BLK_SIZE)
         fr.deactivateSparseBit(`@s`.id)
 
   return quote("@") do:

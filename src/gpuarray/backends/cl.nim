@@ -71,7 +71,7 @@ var gCL* {.threadvar.}: CLContext ## Process-wide default context.
 proc isOpenCLAvailable*(): bool =
   let lib = loadLib(clDll)
   if lib == nil: return false
-  freeLib(lib)
+  unloadLib(lib)
   return true
 
 proc initOpenCL*(deviceType: TDeviceType = DEVICE_TYPE_GPU) =
@@ -445,6 +445,8 @@ proc dispatchBinOpInto[T](a, b: CLSeq[T], op, kernName: string, dst: var CLSeq[T
   let src = binOpKernelSrc(clTy, op, kn)
   let k = getKernel(src, kn)
 
+  doAssert a.length == b.length, "Length mismatch"
+
   dst.length = a.length
   dst.ensureLen()
 
@@ -541,6 +543,7 @@ proc dispatchBinOpArr*[N: static int, T](a, b: CLArray[N, T], op,
   let kn = kernName & "_" & clTy
   let src = binOpKernelSrc(clTy, op, kn)
   let k = getKernel(src, kn)
+
   result = newCLArray[N, T]()
   var aOff = 0.cint
   var bOff = 0.cint

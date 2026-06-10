@@ -16,7 +16,7 @@ macro deleteRow(
     let cNode = ID_TO_COMPONENT[cid]
     swapCode.add quote("@") do:
       block:
-        var fr = castTo(`@table`.registry.entries[`@cid`].rawPointer, `@cNode`, DEFAULT_BLK_SIZE)
+        var fr = castTo(`@table`.registry.entries[`@cid`].rawPointer, typedesc[`@cNode`], DEFAULT_BLK_SIZE)
         fr.overrideVals(`@i`, `@lid`)   # `lid` bound in the outer quote below
 
   return quote("@") do:
@@ -72,7 +72,7 @@ macro changePartition(
     let cNode = ID_TO_COMPONENT[cid]
     copyCode.add quote("@") do:
       block:
-        var fr = castTo(`@table`.registry.entries[`@cid`].rawPointer, `@cNode`, DEFAULT_BLK_SIZE)
+        var fr = castTo(`@table`.registry.entries[`@cid`].rawPointer, typedesc[`@cNode`], DEFAULT_BLK_SIZE)
         fr.overrideVals(`@destBase`, `@i`)
 
   var swapCode = newNimNode(nnkStmtList)
@@ -80,7 +80,7 @@ macro changePartition(
     let cNode = ID_TO_COMPONENT[cid]
     swapCode.add quote("@") do:
       block:
-        var fr = castTo(`@table`.registry.entries[`@cid`].rawPointer, `@cNode`, DEFAULT_BLK_SIZE)
+        var fr = castTo(`@table`.registry.entries[`@cid`].rawPointer, typedesc[`@cNode`], DEFAULT_BLK_SIZE)
         fr.overrideVals(`@i`, makeId(`@blast`, `@last`))
 
   var newBlockCode = newNimNode(nnkStmtList)
@@ -88,7 +88,7 @@ macro changePartition(
     let cNode = ID_TO_COMPONENT[cid]
     newBlockCode.add quote("@") do:
       block:
-        var fr = castTo(`@table`.registry.entries[`@cid`].rawPointer, `@cNode`, DEFAULT_BLK_SIZE)
+        var fr = castTo(`@table`.registry.entries[`@cid`].rawPointer, typedesc[`@cNode`], DEFAULT_BLK_SIZE)
         fr.newBlockAt(`@table`.blockCount)
 
   return quote("@") do:

@@ -16,31 +16,31 @@ proc setComponent[T](blk: ptr T, i:uint, v:Position) =
   blk.data.y[i] = v.y/2
 
 proc initTestWorld(): ECSWorld =
-  var world = newECSWorld()
-  discard world.registerComponent(Position, true)
-  discard world.registerComponent(Velocity)
-  discard world.registerComponent(Health)
-  discard world.registerComponent(Dead)
+  var w = newECSWorld()
+  discard w.registerComponent(Position, true)
+  discard w.registerComponent(Velocity)
+  discard w.registerComponent(Health)
+  discard w.registerComponent(Dead)
   
-  #discard world.createEntity(Position)
-  #discard world.createEntity(Position,1)
-  #discard world.createEntity(Position,2)
-  #discard world.createEntity(1,2)
-  #discard world.createEntity(Position,1)
-  #discard world.createEntity(1,2,3)
-  #discard world.createEntity(Position,3)
+  #discard w.createEntity(Position)
+  #discard w.createEntity(Position,1)
+  #discard w.createEntity(Position,2)
+  #discard w.createEntity(1,2)
+  #discard w.createEntity(Position,1)
+  #discard w.createEntity(1,2,3)
+  #discard w.createEntity(Position,3)
 
-  #discard world.createSparseEntity(Position)
-  #discard world.createSparseEntity(Position,1)
-  #discard world.createSparseEntity(Position,2)
-  #discard world.createSparseEntity(Velocity,2)
-  #discard world.createSparseEntity(Position,1)
-  #discard world.createSparseEntity(Velocity,2,3)
-  #discard world.createSparseEntity(Position,3)
+  #discard w.createSparseEntity(Position)
+  #discard w.createSparseEntity(Position,1)
+  #discard w.createSparseEntity(Position,2)
+  #discard w.createSparseEntity(Velocity,2)
+  #discard w.createSparseEntity(Position,1)
+  #discard w.createSparseEntity(Velocity,2,3)
+  #discard w.createSparseEntity(Position,3)
   
-  return world
+  return w
 
-var world = initTestWorld()
+var w = initTestWorld()
 
 suite "QueryFilter":
 
@@ -70,7 +70,7 @@ suite "QueryFilter":
 suite "QuerySignature building":
 
   test "include only":
-    let sig = buildQuerySignature(world, @[
+    let sig = buildQuerySignature(w, @[
       includeComp(Position.toComponentID),
       includeComp(Velocity.toComponentID)
     ])
@@ -81,7 +81,7 @@ suite "QuerySignature building":
     check sig.excludeMask[0] == 0
 
   test "exclude only":
-    let sig = buildQuerySignature(world, @[
+    let sig = buildQuerySignature(w, @[
       excludeComp(toComponentID(Dead))
     ])
 
@@ -89,7 +89,7 @@ suite "QuerySignature building":
 
   test "modified implies include":
     let pid = toComponentID(Position)
-    let sig = buildQuerySignature(world, @[
+    let sig = buildQuerySignature(w, @[
       modifiedComp(pid)
     ])
 
@@ -100,61 +100,61 @@ suite "matchesArchetype":
 
   test "matches include":
     let arch = maskOf(0, 1)
-    let sig = buildQuerySignature(world, @[ includeComp(toComponentID(Position)) ])
+    let sig = buildQuerySignature(w, @[ includeComp(toComponentID(Position)) ])
     check matchesArchetype(sig, arch)
 
   test "fails exclude":
     let arch = maskOf(0, 3)
-    let sig = buildQuerySignature(world, @[ excludeComp(toComponentID(Dead)) ])
+    let sig = buildQuerySignature(w, @[ excludeComp(toComponentID(Dead)) ])
     check not matchesArchetype(sig, arch)
 
 suite "Dense query basic":
 
   test "dense include":
-    let e1 = world.createEntity(Position, Velocity)
-    let e2 = world.createEntity(Position)
-    let e3 = world.createEntity(Velocity)
+    let e1 = w.createEntity(Position, Velocity)
+    let e2 = w.createEntity(Position)
+    let e3 = w.createEntity(Velocity)
 
-    let sig = query(world, Position)
-    check denseQueryCount(world, sig) == 2
+    let sig = query(w, Position)
+    check denseQueryCount(w, sig) == 2
 
   test "dense filter":
     var q = newQueryFilter()
-    let e = world.createEntity(Position)
+    let e = w.createEntity(Position)
     q.set(e)
 
-    var sig = query(world, Position)
+    var sig = query(w, Position)
     sig.addFilter(q)
-    check denseQueryCount(world, sig) == 1
+    check denseQueryCount(w, sig) == 1
 
   test "dense include + exclude":
-    let sig = query(world, Position and not Velocity)
-    check denseQueryCount(world, sig) == 2
+    let sig = query(w, Position and not Velocity)
+    check denseQueryCount(w, sig) == 2
 
 suite "Dense query change tracking":
 
   test "modified component only":
-    let e1 = world.createEntity(Position)
-    let e2 = world.createEntity(Position)
-    var pos = world.get(Position, true)
+    let e1 = w.createEntity(Position)
+    let e2 = w.createEntity(Position)
+    var pos = w.get(Position, true)
     var c = 0
 
     pos[e1] = Position(x:1, y:2)
-    #world.clearChanges()
+    #w.clearChanges()
 
     pos[e2] = Position(x:3, y:4)
 
-    let sig = query(world, Modified[Position])
-    for (bid, r) in denseQuery(world, sig):
+    let sig = query(w, Modified[Position])
+    for (bid, r) in denseQuery(w, sig):
       for _ in r:
         c += 1
 
     check c == 2
 
   test "not modified":
-    let sig = query(world, Position and not Modified[Position])
+    let sig = query(w, Position and not Modified[Position])
     var c = 0
-    for (bid, r) in denseQuery(world, sig):
+    for (bid, r) in denseQuery(w, sig):
       for _ in r:
         c += 1
 
@@ -163,43 +163,43 @@ suite "Dense query change tracking":
 suite "Sparse query basic":
 
   test "sparse include":
-    let s1 = world.createSparseEntity(Position)
-    let s2 = world.createSparseEntity(Position, Velocity)
-    let s3 = world.createSparseEntity(Velocity)
+    let s1 = w.createSparseEntity(Position)
+    let s2 = w.createSparseEntity(Position, Velocity)
+    let s3 = w.createSparseEntity(Velocity)
 
-    let sig = query(world, Position)
-    check sparseQueryCount(world, sig) == 2
+    let sig = query(w, Position)
+    check sparseQueryCount(w, sig) == 2
 
   test "sparse exclude":
-    let sig = query(world, Position and not Velocity)
-    check sparseQueryCount(world, sig) == 1
+    let sig = query(w, Position and not Velocity)
+    check sparseQueryCount(w, sig) == 1
 
 suite "Sparse query change tracking":
 
   test "modified sparse":
-    let s1 = world.createSparseEntity(Position)
-    let s2 = world.createSparseEntity(Position)
-    var pos = world.get(Position, true)
+    let s1 = w.createSparseEntity(Position)
+    let s2 = w.createSparseEntity(Position)
+    var pos = w.get(Position, true)
     var c = 0
 
-    #world.clearChanges()
+    #w.clearChanges()
     pos[s2] = Position(x:5, y:6)
 
-    let sig = query(world, Modified[Position])
-    check sparseQueryCount(world, sig) == 1
+    let sig = query(w, Modified[Position])
+    check sparseQueryCount(w, sig) == 1
 
 suite "Dense / Sparse equivalence":
 
   test "same semantic result":
-    var d = world.createEntity(Position, Velocity)
-    var s = world.makeSparse(d)
+    var d = w.createEntity(Position, Velocity)
+    var s = w.makeSparse(d)
     var c = 0
 
-    let sig = query(world, Modified[Position])
-    check sparseQueryCount(world, sig) == 1
+    let sig = query(w, Modified[Position])
+    check sparseQueryCount(w, sig) == 1
 
-    let d2 = world.makeDense(s)
-    for (bid, r) in denseQuery(world, sig):
+    let d2 = w.makeDense(s)
+    for (bid, r) in denseQuery(w, sig):
       for _ in r:
         c += 1
 
@@ -208,7 +208,7 @@ suite "Dense / Sparse equivalence":
 suite "Query DSL":
 
   test "complex expression":
-    let sig = query(world,
+    let sig = query(w,
       Position and Modified[Velocity] and not Dead
     )
 

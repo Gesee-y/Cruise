@@ -572,6 +572,10 @@ proc diffTree*(tree: var FileTree): TreeDiff =
     if node.gen < gen or not dirExists(node.name):
       result.deletedDirs.add(node.name)
 
+proc refresh*(tree: var FileTree) =
+  let diff = tree.diffTree
+  tree.updateTree(diff)
+  
 # ---------------------------------------------------------------------------
 # Event queue — surgical tree update
 # ---------------------------------------------------------------------------

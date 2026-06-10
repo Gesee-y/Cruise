@@ -1,2 +1,5 @@
+/testresults/
+/tests/megatest.nim
+/nimcache/
 *.exe
 *.txt
