@@ -1,6 +1,6 @@
 # Cruise : Game engine kernel in Nim
 
-![Tests paassing](https://github.com/Gesee-y/Cruise/actions/workflows/test.yml/badge.svg)
+![Tests passsing](https://github.com/Gesee-y/Cruise/actions/workflows/tests.yml/badge.svg)
 
 Once upon a time, making a game was long, tremendous and insane task. People would often need to build their own game engine before being able to make their game logics. But nowadays, the rise of game engines has allowed peoples to focus on creativity rather than fighting with low level details.
 While being an extreme time saver, regular game engines often have their limitations which may be **cost**, **technical debt**, **performances**, etc.
