@@ -1,22 +1,23 @@
-######################################################################################################################################
-################################################### ECS ARCHETYPE GRAPH ##############################################################
-######################################################################################################################################
+# #################################################################################################################################### #
+# ################################################## ECS ARCHETYPE GRAPH ############################################################# #
+# #################################################################################################################################### #
 
 type
-  ArchetypeNode* = object
+  ArchetypeNode = object
     id: uint16
     mask*: ArchetypeMask
     partition: TablePartition
-    edges: array[MAX_COMPONENTS, int]
-    removeEdges: array[MAX_COMPONENTS, int]
+    edges: array[MAX_COMPONENTS, int] # edges[i] == 0 if no edge when adding the component of id i
+    removeEdges: array[MAX_COMPONENTS, int] # removeEdges[i] == 0 if no edge when removing the component of id i
     edgeMask: ArchetypeMask
     componentIds: seq[int]
     lastEdge:int
     lastRemEdge:int
   
   ArchetypeGraph* = ref object
+    ## Structure representing transitions between archetypes adding or removing components
     root: uint16
-    nodes*: seq[ArchetypeNode]
+    nodes: seq[ArchetypeNode]
     maskToId: Table[ArchetypeMask, uint16]
     requiredComps: array[MAX_COMPONENTS, seq[int]]
     lru_active: bool

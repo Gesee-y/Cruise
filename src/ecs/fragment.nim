@@ -1,6 +1,6 @@
-####################################################################################################################################################
-############################################################## FRAGMENT ARRAYS #####################################################################
-####################################################################################################################################################
+# ################################################################################################################################################## #
+# ############################################################# FRAGMENT ARRAYS #################################################################### #
+# ################################################################################################################################################## #
 
 import macros, math
 
@@ -172,9 +172,8 @@ proc initFragArr*[N,P,T,S,B](fr: var FragmentArray[N,P,T,S,P]) =
 ####################################################################################################################################################
 
 macro toObject(Ty: typedesc, c: untyped, idx: untyped): untyped =
-  ## Materialize an AoS object from SoA storage at a given index.
-  ##
-  ## This version builds an object literal directly.
+  # Materialize an AoS object from SoA storage at a given index.
+  # This version builds an object literal directly.
   let T = Ty.getTypeInst()[1]
   var res = newNimNode(nnkObjConstr)
   let ty = Ty.getType()[1].getType()[2]
@@ -197,9 +196,8 @@ macro toObject(Ty: typedesc, c: untyped, idx: untyped): untyped =
     `@res`
 
 macro toObjectParam(T: typedesc, c: untyped, idx: untyped): untyped =
-  ## Materialize an AoS object using a constructor call.
-  ##
-  ## This version respects Nim hygiene and avoids redeclarations in C backends.
+  # Materialize an AoS object using a constructor call.
+  # This version respects Nim hygiene and avoids redeclarations in C backends.
   let typeNode = T.getType()
 
   let typeName = typeNode[1].strVal
@@ -218,7 +216,7 @@ macro toObjectParam(T: typedesc, c: untyped, idx: untyped): untyped =
   return res
 
 macro toObjectMod(T: typedesc, c: untyped, idx: untyped, v: untyped) =
-  ## Assign all fields of an AoS value into SoA storage at a given index.
+  # Assign all fields of an AoS value into SoA storage at a given index.
   var res = newNimNode(nnkStmtList)
   let ty = T.getType()[1].getType()[2]
 
@@ -351,17 +349,28 @@ template setChangedSparse[N, P, T, S, B](f: var FragmentArray[N, P, T, S, B], id
   f.sparse[physIdx].ticks[si] = f.tick
   f.changeFilter.sSet(id.int)
 
-template getDenseBlock*(f: FragmentArray, i: int|uint): untyped = f.blocks[i]
-template getSparseBlock*(f: FragmentArray, i: int|uint): untyped = f.sparse[
-    f.toSparse[i]]
-template getDenseField*(f: FragmentArray, i: int|uint,
-    f0: untyped): untyped = addr f.getDenseBlock(i).data.f0
-template getSparseField*(f: FragmentArray, i: int|uint,
-    f0: untyped): untyped = addr f.getSparseBlock(i).data.f0
+template getDenseBlock*(f: FragmentArray, block_id: int|uint): untyped = f.blocks[block_id]
+template getSparseBlock*(f: FragmentArray, block_id: int|uint): untyped = f.sparse[f.toSparse[block_id]]
+template getDenseField*(f: FragmentArray, block_id: int|uint,
+    f0: untyped): untyped = 
+  ## Return a pointer to the column of data in dense storage of the field for a given block id
+  ## Example
+  ## ```nim
+  ## var data = f.getDenseField(bid, x) # Get the columns of x data
+  ## ```
+  addr f.getDenseBlock(block_id).data.f0
+template getSparseField*(f: FragmentArray, block_id: int|uint,
+    f0: untyped): untyped = 
+  ## Return a pointer to the column of data in sparse storage of the field for a given block id
+  ## Example
+  ## ```nim
+  ## var data = f.getSparseField(bid, x) # Get the columns of x data
+  ## ```
+  addr f.getSparseBlock(block_id).data.f0
 template getBlockTick*(f: var FragmentArray,
-    i: int|uint): untyped = f.blkTicks[i]
+    block_id: int|uint): uint64 = f.blkTicks[block_id]
 template getSparseTick*(f: var FragmentArray,
-    i: int|uint): untyped = f.sparseTicks[i]
+    block_id: int|uint): uint64 = f.sparseTicks[block_id]
 
 proc getDataType[N, P, T, S, B](f: FragmentArray[N, P, T, S, B]): typedesc[B] =
   ## Return the AoS component type stored in this array.

@@ -1,9 +1,9 @@
-#######################################################################################################################################
-###################################################### DENSE ECS LOGICS ###############################################################
-#######################################################################################################################################
+# ##################################################################################################################################### #
+# ##################################################### DENSE ECS LOGICS ############################################################## #
+# ##################################################################################################################################### #
 
-## Ensures that an archetype has an associated table partition.
-## If none exists, a new partition is created and attached to the archetype node.
+# Ensures that an archetype has an associated table partition.
+# If none exists, a new partition is created and attached to the archetype node.
 proc createPartition(table: var ECSWorld, arch: uint16): TablePartition =
   if table.archGraph.nodes[arch].partition.isNil:
     var partition: TablePartition
@@ -12,11 +12,9 @@ proc createPartition(table: var ECSWorld, arch: uint16): TablePartition =
     table.archGraph.nodes[arch].partition = partition
   return table.archGraph.nodes[arch].partition
 
-## Allocates new dense blocks for a partition.
-## Each block corresponds to DEFAULT_BLK_SIZE contiguous entity slots.
-##
-## The resulting ranges describe which block indices and offsets were allocated.
-
+# Allocates new dense blocks for a partition.
+# Each block corresponds to DEFAULT_BLK_SIZE contiguous entity slots.
+# The resulting ranges describe which block indices and offsets were allocated.
 macro allocateNewBlocks(
   table,
   count,
@@ -49,14 +47,14 @@ macro allocateNewBlocks(
       var trange: TableRange
       let e = min(n, DEFAULT_BLK_SIZE)
       
-      ## Register allocated range
+      # Register allocated range
       `@res`[c] = ((bc.uint, Range(s: 0, e: e)))
       trange.r.s = 0
       trange.r.e = e
       trange.block_idx = bc
       `@partition`.zones[pl + i] = trange
       
-      ## Advance fill index if the block is fully occupied
+      # Advance fill index if the block is fully occupied
       if n >= DEFAULT_BLK_SIZE:
         `@partition`.fill_index += 1
 
@@ -69,8 +67,8 @@ macro allocateNewBlocks(
 
     `@table`.handles.setLen((`@table`.blockCount + 1) * DEFAULT_BLK_SIZE)
 
-## Allocates `n` entities for a given archetype node.
-## Reuses partially-filled blocks before allocating new ones.
+# Allocates `n` entities for a given archetype node.
+# Reuses partially-filled blocks before allocating new ones.
 macro allocateEntities(
   table,
   n: untyped,
@@ -81,7 +79,7 @@ macro allocateEntities(
   return quote("@") do:
     var res = newSeq[(uint, Range)](`@n` div DEFAULT_BLK_SIZE + 1)
 
-    ## First allocation for this archetype
+    # First allocation for this archetype
     if `@table`.archGraph.nodes[`@archNode`].partition.isNil:
       var partition = createPartition(`@table`, `@archNode`)
       allocateNewBlocks(`@table`, `@n`, res, 0, partition, `@comps`)
@@ -91,7 +89,7 @@ macro allocateEntities(
       var partition = `@table`.archGraph.nodes[`@archNode`].partition
       var current = 0
 
-      ## Fill existing blocks
+      # Fill existing blocks
       while m > 0 and partition.fill_index < partition.zones.len:
         let id = partition.zones[partition.fill_index].block_idx
         let e = partition.zones[partition.fill_index].r.e
@@ -106,14 +104,14 @@ macro allocateEntities(
         m -= r - e
         current += 1
 
-      ## Allocate new blocks if necessary
+      # Allocate new blocks if necessary
       if m > 0:
         allocateNewBlocks(`@table`, m, res, current, partition, `@comps`)
 
       res
 
-## Allocates a single dense entity and returns:
-## (block index, offset inside block, archetype id)
+# Allocates a single dense entity and returns:
+# (block index, offset inside block, archetype id)
 macro allocateEntity(
   table: untyped,
   archNode: uint16,
@@ -130,7 +128,7 @@ macro allocateEntity(
     var partition = createPartition(`@table`, `@archNode`)
     var fill_index = partition.fill_index
 
-    ## Allocate a new block if required
+    # Allocate a new block if required
     if fill_index >= partition.zones.len:
       partition.zones.setLen(fill_index + 1)
 
@@ -151,8 +149,8 @@ macro allocateEntity(
 
     (id.uint, e)
 
-## Deletes a dense entity row.
-## Performs swap-remove within the archetype partition.
+# Deletes a dense entity row.
+# Performs swap-remove within the archetype partition.
 template deleteRow(table: var ECSWorld, i: uint, arch: uint16): uint =
   check(arch.int < table.archGraph.nodes.len,
     "deleteRow: archetypeId=" & $arch & " is out of bounds (nodes.len=" &
@@ -178,7 +176,7 @@ template deleteRow(table: var ECSWorld, i: uint, arch: uint16): uint =
   let bid = zone.block_idx.uint
   let lid = makeId(bid,last)
 
-  ## Move last entity into the deleted slot
+  # Move last entity into the deleted slot
   if lid != i:
     for id in partition.components:
       let entry = table.registry.entries[id]
@@ -187,9 +185,9 @@ template deleteRow(table: var ECSWorld, i: uint, arch: uint16): uint =
   zone.r.e -= 1
   last.uint + bid * DEFAULT_BLK_SIZE
 
-## Moves a single entity from one archetype partition to another.
-## Returns:
-## (old swapped entity id, new offset, new block id)
+# Moves a single entity from one archetype partition to another.
+# Returns:
+# (old swapped entity id, new offset, new block id)
 template changePartition(
   table: var ECSWorld,
   i: uint,
@@ -207,7 +205,7 @@ template changePartition(
   let newPartition = createPartition(table, newArch)
   let oldComponents = addr oldPartition.components
 
-  ## Remove entity from old partition
+  # Remove entity from old partition
   if oldPartition.zones.len <= oldPartition.fill_index or
      isEmpty(oldPartition.zones[oldPartition.fill_index]):
     check(oldPartition.fill_index > 0,
@@ -224,7 +222,7 @@ template changePartition(
 
   oldZone.r.e -= 1
 
-  ## Ensure destination has space
+  # Ensure destination has space
   if newPartition.zones.len <= newPartition.fill_index:
     let fi = newPartition.fill_index
     newPartition.zones.setLen(fi + 1)
@@ -245,7 +243,7 @@ template changePartition(
   let new_id = newZone.r.e.uint
   let bid = newZone.block_idx.uint
 
-  ## Copy only components common to both old and new archetypes
+  # Copy only components common to both old and new archetypes
   let oldNode = addr table.archGraph.nodes[oldArch]
   let oldMask = addr oldNode.mask
   let newMask = addr table.archGraph.nodes[newArch].mask
@@ -269,7 +267,7 @@ template changePartition(
         let entry = table.registry.entries[id]
         entry.overrideValsOp(entry.rawPointer, destBase, i.uint32)
 
-  ## Fix swap-remove in source partition
+  # Fix swap-remove in source partition
   if (i and ID_MASK).int != last:
     for id in oldNode.componentIds:
       let entry = table.registry.entries[id]
@@ -285,8 +283,8 @@ template changePartition(
 
   (last + blast * DEFAULT_BLK_SIZE, new_id, bid)
 
-## Batch archetype migration for dense entities.
-## Moves multiple entities while minimizing component copies.
+# Batch archetype migration for dense entities.
+# Moves multiple entities while minimizing component copies.
 template changePartition(
   table: var ECSWorld,
   ids: openArray[DenseHandle],
@@ -310,7 +308,7 @@ template changePartition(
   var toSwap = newSeq[uint32](m)
   var toAdd  = newSeq[uint32](m)
   
-  ## Collect entities to remove from old partition
+  # Collect entities to remove from old partition
   while toSwap.len < ids.len:
     check(ofil >= 0,
       "changePartition batch: source partition underflow during batch move. " &
@@ -330,7 +328,7 @@ template changePartition(
 
   oldPartition.fill_index = ofil
 
-  ## Allocate destination slots
+  # Allocate destination slots
   var nfil = newPartition.fill_index
   m = ids.len
   c = 0
@@ -362,12 +360,12 @@ template changePartition(
 
   newPartition.fill_index = nfil
 
-  ## Safety checks before raw pointer operations
+  # Safety checks before raw pointer operations
   for h in ids:
     check(not h.obj.isNil, "DenseHandle contains nil entity pointer.")
     check(h.gen == table.generations[h.widx], "DenseHandle contains stale handle.")
 
-  ## Perform batched component migration (only common components)
+  # Perform batched component migration (only common components)
   let oldMask = addr table.archGraph.nodes[oldArch].mask
   let commonMask = oldMask and (addr table.archGraph.nodes[newArch].mask)
   let commonComponents = commonMask.getComponents()
