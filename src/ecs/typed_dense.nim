@@ -39,7 +39,7 @@ macro deleteRow(
 
       let last = zone.r.e - 1
       let bid  = zone.block_idx.uint
-      let `@lid`  = makeId(bid, last)   ## packed ID of the last live slot
+      let `@lid`  = makeId(bid, last)   # packed ID of the last live slot
 
       if `@lid` != `@i`:
         `@swapCode`

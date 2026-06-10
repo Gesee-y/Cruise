@@ -57,30 +57,24 @@ proc `$`*(dw:DWEntity):string =
   ## String representation operator for `DWEntity`.
   "dw:" & $dw.handle.obj.id & " g:" & $dw.handle.gen
 
-## String representation operator for `SWEntity`.
 proc `$`*(sw:SWEntity):string = "sw:" & $sw.handle.id & " g:" & $sw.handle.gen
 
 # ################################################################################################################################################## #
 # ################################################################ UTILITIES ####################################################################### #
 # ################################################################################################################################################## #
 
-## Checks if a `DWEntity` has a specific component by ID.
 proc hasComponent*(dw: DWEntity, comp: ComponentId | int): bool =
   return dw.w.archGraph.nodes[dw.handle.obj.archetypeId].mask.hasComponent(comp)
 
-## Checks if a `SWEntity` has a specific component by ID.
 proc hasComponent*(sw: SWEntity, comp: ComponentId | int): bool =
   return sw.w.archGraph.nodes[sw.handle.archID].mask.hasComponent(comp)
 
-## Checks if a `DWEntity` has a specific component type.
 proc hasComponent*[T](dw: DWEntity): bool =
   return dw.hasComponent(dw.w.getComponentId(T))
 
-## Checks if a `SWEntity` has a specific component type.
 proc hasComponent*[T](sw: SWEntity): bool =
   return sw.hasComponent(sw.w.getComponentId(T))
 
-## Checks if a `DWEntity` has a specific component type.
 proc hasComponent*[T](hw: DWEntity | SWEntity, t:typedesc[T]): bool =
   return hw.hasComponent(hw.w.getComponentId(T))
 

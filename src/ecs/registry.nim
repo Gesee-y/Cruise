@@ -2,13 +2,6 @@
 # ############################################################ COMPONENT REGISTRY ################################################################## #
 # ################################################################################################################################################## #
 
-## The component registry provides a type-erased interface over SoA-backed
-## component storage.
-##
-## Each registered component is stored as a `SoAFragmentArray`, but is exposed
-## through a table of function pointers so higher-level systems (ECS, archetypes,
-## schedulers) can manipulate components without knowing their concrete type.
-
 var NEXT_COMPONENT_ID {.compileTime.} = 0
 var NEXT_ARCHETYPE_ID {.compileTime.} = 0
 var COMPONENT_ID_REGISTRY {.compileTime.} = initTable[int, int]()
@@ -186,10 +179,17 @@ type
     clearEntityOp: proc (p:pointer) {.noSideEffect, nimcall, inline.}
     freeEntry: proc (p:pointer) {.raises: [].}
 
-  ## Global registry holding all component types.
-  ##
-  ## Components are indexed by an integer ID and also mapped by name.
+  
   ComponentRegistry = object
+    ## Global registry holding all component types.
+    ##
+    ## Components are indexed by an integer ID and also mapped by name.
+    ## The component registry provides a type-erased interface over SoA-backed
+    ## component storage.
+    ##
+    ## Each registered component is stored as a `FragmentArray`, but is exposed
+    ## through a table of function pointers so higher-level systems (ECS, archetypes,
+    ## schedulers) can manipulate components without knowing their concrete type.
     entries:seq[ComponentEntry]
     cmap:Table[string, int]
 

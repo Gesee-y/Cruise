@@ -140,7 +140,6 @@ template deleteEntity*(world: var ECSWorld, d: DenseHandle) =
   # Recycle the stable ID (widx) back to the free list.
   world.free_entities.add(d.widx)
 
-## Immediately deletes an entity from the dense storage using a DWEntity.
 template deleteEntity*(dw: var DWEntity) =
   deleteEntity(dw.w, dw.handle)
 
@@ -157,7 +156,6 @@ template deleteEntityDefer*(buffer: var ECommandBuffer, d: DenseHandle) =
   ## - buffer_id: The ID of the command buffer to use.
   buffer.addCommand(eckRemEntity, d)
 
-## Defers the deletion of an entity using a DWEntity.
 template deleteEntityDefer*(dw: var DWEntity, buffer_id: int) =
   deleteEntityDefer(dw.w, dw.handle, buffer_id)
 
@@ -242,7 +240,6 @@ template migrateEntity*(world: var ECSWorld, ents: openArray[DenseHandle],
       var ev = world.events
       ev.emitDenseEntityMigratedBatch(ids, toSwap, toAdd, oldArchId, archNode)
 
-## Immediately migrates an entity to a new archetype using a DWEntity.
 proc migrateEntity*(dw: var DWEntity, archNode: uint16) =
   migrateEntity(dw.w, dw.handle, archNode)
 
@@ -335,7 +332,6 @@ macro addComponent*(
     migrateEntity(`@world`, `@d`, archNode)
     var ev = `@world`.events
 
-## Adds components to an existing entity using a DWEntity.
 proc addComponent*(dw: var DWEntity, components: varargs[int]) =
   addComponent(dw.w, dw.handle, components)
 

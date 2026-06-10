@@ -33,6 +33,7 @@ macro maskOf*(ids: static openArray[int]): ArchetypeMask =
 
 macro maskOf*(comps: varargs[untyped]): ArchetypeMask =
   ## Return the archetype mask made of a bunch of components
+  ##
   ## Example:
   ## ```nim
   ## discard TSHandle[maskOf(Position, Velocity)]

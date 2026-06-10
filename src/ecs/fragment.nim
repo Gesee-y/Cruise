@@ -4,20 +4,19 @@
 
 import macros, math
 
-## A single Structure-of-Arrays (SoA) fragment.
-##
-## A fragment represents a fixed-size block (`N`) of component data stored
-## in SoA form. Each field of the original component type is stored as a
-## separate array inside `data`.
-##
-## Type parameters:
-## - N: Static size of the fragment (number of elements).
-## - P: Enable/disable change tracking.
-## - T: Tuple type holding the SoA arrays.
-## - B: Original component (AoS) type.
 type
   SoAFragment*[N: static int, P: static bool, T, B] = object
-    ## SoA storage for all fields.
+    ## A single Structure-of-Arrays (SoA) fragment.
+    ##
+    ## A fragment represents a fixed-size block (`N`) of component data stored
+    ## in SoA form. Each field of the original component type is stored as a
+    ## separate array inside `data`.
+    ##
+    ## Type parameters:
+    ## - N: Static size of the fragment (number of elements).
+    ## - P: Enable/disable change tracking.
+    ## - T: Tuple type holding the SoA arrays.
+    ## - B: Original component (AoS) type.
     data*: T
     ticks*: array[N, uint64]
 
@@ -26,20 +25,19 @@ type
     data*: array[N, B]
     ticks*: array[N, uint64]
 
-  ## A dynamically-sized array of data fragments.
-  ##
-  ## This is the main container used to store a component in SoA layout.
-  ## It supports dense blocks and optional sparse blocks for partial
-  ## materialization.
-  ##
-  ## Type parameters:
-  ## - N: Block size.
-  ## - P: Enable/disable change tracking.
-  ## - T: Tuple type for dense SoA storage.
-  ## - S: Tuple type for sparse SoA storage.
-  ## - B: Original component (AoS) type.
   FragmentArray*[N: static int, P: static bool, T, S, B] = ref object
-    ## Dense blocks.
+    ## A dynamically-sized array of data fragments.
+    ##
+    ## This is the main container used to store a component in SoA layout.
+    ## It supports dense blocks and optional sparse blocks for partial
+    ## materialization.
+    ##
+    ## Type parameters:
+    ## - N: Block size.
+    ## - P: Enable/disable change tracking.
+    ## - T: Type for dense storage.
+    ## - S: Type for sparse storage.
+    ## - B: Original component type.
     blocks*: seq[ref T]
     blkTicks*: seq[uint64]
     ## Sparse blocks (one block represents sizeof(uint)*8 entities).
@@ -167,9 +165,9 @@ proc initFragArr*[N,P,T,S,B](fr: var FragmentArray[N,P,T,S,P]) =
   fr.freeBlocks = newSeq[int]()
   fr.sparseMask = newHiBitSet(INITIAL_SPARSE_SIZE)
 
-####################################################################################################################################################
-############################################################### OPERATIONS #########################################################################
-####################################################################################################################################################
+# ################################################################################################################################################## #
+# ############################################################## OPERATIONS ######################################################################## #
+# ################################################################################################################################################## #
 
 macro toObject(Ty: typedesc, c: untyped, idx: untyped): untyped =
   # Materialize an AoS object from SoA storage at a given index.
