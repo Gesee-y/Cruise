@@ -1,60 +1,61 @@
-####################################################################################################################################################
-############################################################### QUERIES ##########################################################################
-####################################################################################################################################################
+# ################################################################################################################################################## #
+# ################################################################ QUERIES ######################################################################### #
+# ################################################################################################################################################## #
 
-## Defines the operation type for a query component filter.
 type
   QueryOp = enum
-    qInclude     ## Specifies that the component must be present in the archetype.
-    qExclude     ## Specifies that the component must be absent from the archetype.
-    qModified    ## Specifies that the component must be present and modified (State tracking).
-    qNotModified ## Specifies that the component must be present and NOT modified (State tracking).
+    qInclude     
+    qExclude     
+    qModified    
+    qNotModified 
 
-  ## Represents a single component constraint within a query.
-  ## It binds a Component ID to an operation (Include, Exclude, Modified, etc.).
   QueryComponent = object
-    id: int   ## The ID of the component to filter by.
-    op: QueryOp ## The operation.
+    ## Represents a single component constraint within a query.
+    ## It binds a Component ID to an operation (Include, Exclude, Modified, etc.).
+    id: int
+    op: QueryOp
   
-  ## The compiled representation of a query.
-  ## It translates a list of component constraints into efficient bitmasks
-  ## that can be rapidly compared against archetype masks.
   QuerySignature* = object
-    components: seq[QueryComponent] ## The raw list of components in the query (stores Modified info here).
-    includeMask: ArchetypeMask      ## Bitmask representing all required components (OR'ed together).
-    excludeMask: ArchetypeMask      ## Bitmask representing all forbidden components (OR'ed together).
+    ## The compiled representation of a query.
+    ## It translates a list of component constraints into efficient bitmasks
+    ## that can be rapidly compared against archetype masks.
+    ## It's agnostic to the iteration strategy
+    components: seq[QueryComponent]
+    includeMask: ArchetypeMask
+    excludeMask: ArchetypeMask
     modified: seq[int]
     notModified: seq[int]
     filters:seq[QueryFilter]
 
-  ## A cached result object for Dense queries.
-  ## Stores the partitions (memory blocks) that matched the query signature,
-  ## allowing for efficient re-iteration without re-checking archetype masks.
   DenseQueryResult* = object
-    part*: seq[TablePartition] ## Sequence of matching table partitions.
+    ## A cached result object for Dense queries.
+    ## Stores the partitions (memory blocks) that matched the query signature,
+    ## allowing for efficient re-iteration without re-checking archetype masks.
+    part*: seq[TablePartition]
 
-  ## Iterator for dense queries.
   DenseIterator* = object
+    ## Iterator for dense queries.
     r*:HSlice[int, int]
     case masked: bool
     of true: m:seq[BitBlock]
     else: discard
 
-  ## A cached result object for Sparse queries.
-  ## Stores the calculated bitmasks representing the matching entities.
   sparseQueryResult* = object
-    rmask*: seq[uint]  ## High-level mask indicating which chunks contain at least one matching entity.
-    chunks*: seq[uint] ## Low-level masks for each chunk, indicating specific entities within that chunk.
+    ## A cached result object for Sparse queries.
+    ## Stores the calculated bitmasks representing the matching entities.
+    rmask*: seq[uint]
+    chunks*: seq[uint]
 
-  ## Iterator obtained from sparse queries.
   SparseIterator* = object
+    ## Iterator obtained from sparse queries.
     m:uint
 
-####################################################################################################################################################
-################################################################### MASK ITERATOR ##################################################################
-####################################################################################################################################################
+# ################################################################################################################################################## #
+# ################################################################## MASK ITERATOR ################################################################# #
+# ################################################################################################################################################## #
 
 proc newQueryFilter*(size=4096): QueryFilter =
+  ## Build a new query filter, useful to add constraints to a query
   var q: QueryFilter
   new(q)
   when HibitsetType is HiBitSet:
@@ -165,9 +166,9 @@ iterator items*(it: SparseIterator): int =
   for i in it.m.maskIter:
     yield i
 
-####################################################################################################################################################
-################################################################### QUERY BUILDER ##################################################################
-####################################################################################################################################################
+# ################################################################################################################################################## #
+# ################################################################## QUERY BUILDER ################################################################# #
+# ################################################################################################################################################## #
 
 proc buildQuerySignature(world: ECSWorld, components: seq[QueryComponent]): QuerySignature =
   ## Constructs a `QuerySignature` from a list of component constraints.
@@ -217,9 +218,9 @@ template clear*(qf: QueryFilter) =
 proc matchesArchetype(sig: QuerySignature, arch: ArchetypeMask): bool {.inline.} =
   arch.matches(sig.includeMask, sig.excludeMask)
 
-####################################################################################################################################################
-################################################################### DENSE QUERIES ##################################################################
-####################################################################################################################################################
+# ################################################################################################################################################## #
+# ################################################################## DENSE QUERIES ################################################################# #
+# ################################################################################################################################################## #
 
 iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator) =
   ## Iterate through all partitions that match the query signature
@@ -308,7 +309,7 @@ iterator items*(qr:DenseQueryResult):(int, HSlice[int, int]) =
   ## Iterator for the cached `DenseQueryResult`.
   ##
   ## param: qr: The `DenseQueryResult` to iterate over.
-  ## @yield: A tuple containing:
+  ## yield: A tuple containing:
   ##         - `int`: The Block Index.
   ##         - `HSlice[int, int]`: The range of entity indices.
 
@@ -340,9 +341,9 @@ template fastExecute*(world: ECSWorld, sig: QuerySignature, bid, startIdx, endId
         let endIdx = i + 1
         body
 
-####################################################################################################################################################
-################################################################### SPARSE QUERIES #################################################################
-####################################################################################################################################################
+# ################################################################################################################################################## #
+# ################################################################## SPARSE QUERIES ################################################################ #
+# ################################################################################################################################################## #
 
 iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, SparseIterator) =
   ## Iterate through sparse entities matching the query
@@ -388,7 +389,7 @@ iterator items*(sr:sparseQueryResult):(int, uint) =
   ## Iterator for the cached `sparseQueryResult`.
   ##
   ## param: sr: The `sparseQueryResult` to iterate over.
-  ## @yield: A tuple containing:
+  ## yield: A tuple containing:
   ##         - `int`: The Chunk Index.
   ##         - `uint`: The bitmask of valid entities within the chunk.
 
@@ -413,9 +414,9 @@ proc sparseQueryCount*(world: ECSWorld, sig: QuerySignature): int =
     for _ in mask:
       result += 1
 
-####################################################################################################################################################
-################################################################### QUERY SYNTAX ###################################################################
-####################################################################################################################################################
+# ################################################################################################################################################## #
+# ################################################################## QUERY SYNTAX ################################################################## #
+# ################################################################################################################################################## #
 
 # Helper procs for building queries
 
@@ -447,6 +448,10 @@ macro query*(world: untyped, expr: untyped): untyped =
   ## param: world: The `ECSWorld` instance.
   ## param: expr: The query expression (e.g., `Pos and Modified[Vel]`).
   ## return: A `QuerySignature` ready for use in query functions.
+  ## 
+  ## Example:
+  ## ```nim
+  ## let sig = world.query(Position and Velocity and not Tag)
 
   var components = newSeq[NimNode]()
   
@@ -528,9 +533,9 @@ macro query*(world: untyped, expr: untyped): untyped =
   result = quote do:
     buildQuerySignature(`world`, @`componentsSeq`)
 
-#####################################################################################################################################
-####################################################### Query and Entity ############################################################
-#####################################################################################################################################
+# ################################################################################################################################### #
+# ###################################################### Query and Entity ########################################################### #
+# ################################################################################################################################### #
 
 proc get*(qf: QueryFilter, d: DenseHandle): bool =
   ## Dense handle membership check
