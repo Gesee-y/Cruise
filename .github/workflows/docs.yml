@@ -30,6 +30,11 @@ jobs:
         run: |
           nim doc --outdir: docs/plugins src/plugins/plugins.nim
           nim doc --outdir: docs/ecs src/ecs/table.nim
+    
+      - name: Deploying
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: docs
 
   deploy:
     needs: build
