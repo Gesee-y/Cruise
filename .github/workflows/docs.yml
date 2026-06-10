@@ -13,7 +13,7 @@ on:
       - 'docs/*'
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -30,3 +30,11 @@ jobs:
         run: |
           nim doc --outdir: docs/plugins src/plugins/plugins.nim
           nim doc --outdir: docs/ecs src/ecs/table.nim
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
