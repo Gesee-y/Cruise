@@ -38,9 +38,6 @@ jobs:
           mkdir -p docs/plugins docs/ecs
           nim doc --index:on --outdir:docs/plugins src/plugins/plugins.nim
           nim doc --index:on --outdir:docs/ecs src/ecs/table.nim
-          
-          # Fusionne les index de recherche pour vos différents modules
-          buildindex docs
 
       - name: Upload Artifacts
         if: matrix.nim-version == 'stable' && github.event_name == 'push'
