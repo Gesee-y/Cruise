@@ -1,4 +1,4 @@
-name: Tests
+name: Docs
 
 on:
   push:
@@ -26,5 +26,7 @@ jobs:
         with:
           nim-version: ${{ matrix.nim-version }}
 
-      - name: Running tests
-        run: testament cat /
+      - name: Generate docs
+        run: |
+          nim doc --outdir: docs/plugins src/plugins/plugins.nim
+          nim doc --outdir: docs/ecs src/ecs/table.nim
