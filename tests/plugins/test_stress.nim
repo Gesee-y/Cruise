@@ -21,7 +21,7 @@ proc newStressNode(failChance=0.1): StressNode =
   c += 1
   StressNode(
     enabled:true,
-    mainthread:false,
+    localthread:false,
     status:PLUGIN_OFF,
     failChance:failChance,
     deps:initTable[string, PluginNode](),
@@ -82,7 +82,7 @@ proc newExtremeNode(failChance=0.2): ExtremeNode =
   c += 1
   ExtremeNode(
     enabled:true,
-    mainthread:rand(0..1) == 1,
+    localthread:rand(0..1) == 1,
     status:PLUGIN_OFF,
     deps:initTable[string, PluginNode](),
     failChance:failChance,
