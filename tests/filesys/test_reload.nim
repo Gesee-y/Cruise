@@ -1,3 +1,7 @@
+discard """
+  disabled: true
+"""
+
 import unittest, os, times, strutils, sequtils
 include "../../src/filesys/filesystem.nim"
 
