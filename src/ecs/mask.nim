@@ -1,6 +1,6 @@
-####################################################################################################################################################
-################################################################ ARCHETYPES MASK ###################################################################
-####################################################################################################################################################
+# ################################################################################################################################################## #
+# ############################################################### ARCHETYPES MASK ################################################################## #
+# ################################################################################################################################################## #
 
 const 
   MAX_COMPONENTS = MAX_COMPONENT_LAYER * sizeof(uint) * 8
@@ -8,7 +8,7 @@ const
 type
   ComponentId* = range[0..MAX_COMPONENTS-1]
 
-template `and`(a,b:ArchetypeMask | ptr ArchetypeMask):untyped =
+template `and`*(a,b:ArchetypeMask | ptr ArchetypeMask):untyped =
   var res:ArchetypeMask
 
   for i in 0..<MAX_COMPONENT_LAYER:
@@ -16,7 +16,7 @@ template `and`(a,b:ArchetypeMask | ptr ArchetypeMask):untyped =
 
   res
 
-template `or`(a,b:ArchetypeMask | ptr ArchetypeMask):untyped =
+template `or`*(a,b:ArchetypeMask | ptr ArchetypeMask):untyped =
   var res:ArchetypeMask
 
   for i in 0..<MAX_COMPONENT_LAYER:
@@ -24,7 +24,7 @@ template `or`(a,b:ArchetypeMask | ptr ArchetypeMask):untyped =
 
   res
 
-template `xor`(a,b:ArchetypeMask | ptr ArchetypeMask):untyped =
+template `xor`*(a,b:ArchetypeMask | ptr ArchetypeMask):untyped =
   var res:ArchetypeMask
 
   for i in 0..<MAX_COMPONENT_LAYER:
@@ -32,7 +32,7 @@ template `xor`(a,b:ArchetypeMask | ptr ArchetypeMask):untyped =
 
   res
   
-template `not`(a: ArchetypeMask | ptr ArchetypeMask):untyped =
+template `not`*(a: ArchetypeMask | ptr ArchetypeMask):untyped =
   var res:ArchetypeMask
 
   for i in 0..<MAX_COMPONENT_LAYER:
@@ -40,42 +40,42 @@ template `not`(a: ArchetypeMask | ptr ArchetypeMask):untyped =
 
   res
 
-template setBit(a:var ArchetypeMask, i,j:int) =
+template setBit*(a:var ArchetypeMask, i,j:int) =
   a[i] = a[i] or 1.uint shl j
 
-template setBit(a:var ArchetypeMask, i:int) =
+template setBit*(a:var ArchetypeMask, i:int) =
   let s = sizeof(uint)*8
   a.setBit(i div s, i mod s)
 
-template setBit(a:var ArchetypeMask, ids:openArray) =
+template setBit*(a:var ArchetypeMask, ids:openArray) =
   let s = sizeof(uint)*8
 
   for i in ids:
     a.setBit(i div s, i mod s)
 
-template unSetBit(a:var ArchetypeMask, i,j:int) =
+template unSetBit*(a:var ArchetypeMask, i,j:int) =
   a[i] = a[i] and not (1.uint shl j)
 
-template unSetBit(a:var ArchetypeMask, ids:openArray) =
+template unSetBit*(a:var ArchetypeMask, ids:openArray) =
   let s = sizeof(uint)*8
 
   for i in ids:
     a.unSetBit(i div s, i mod s)
 
-template unSetBit(a:var ArchetypeMask, i:int) =
+template unSetBit*(a:var ArchetypeMask, i:int) =
   let s = sizeof(uint)*8
   a.unSetBit(i div s, i mod s)
 
-template getBit(a:var ArchetypeMask, i,j:int):uint =
+template getBit*(a:var ArchetypeMask, i,j:int):uint =
   (a[i] shr j) and 1
 
-template getBit(a:var ArchetypeMask, i:int):uint =
+template getBit*(a:var ArchetypeMask, i:int):uint =
   let s = sizeof(uint)*8
   a.getBit(i div s, i mod s)
 
 {.push inline.}
 
-proc maskOf(ids: varargs[int]): ArchetypeMask =
+proc maskOf*(ids: varargs[int]): ArchetypeMask =
   var m: ArchetypeMask
   let S = sizeof(uint)*8
   for id in ids:
