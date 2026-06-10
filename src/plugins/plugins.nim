@@ -2,7 +2,7 @@
 ######################################################### PLUGIN SYSTEM ############################################################################
 ####################################################################################################################################################
 
-import tables, typetraits, macros, options, std/monotimes, atomics, locks, channels
+import tables, typetraits, macros, options, std/monotimes, atomics, locks
 import ../graph/graph
 import ../events/events
 include "bitset.nim"
@@ -45,7 +45,7 @@ type
 
   ParallelScheduler* = object
     graph: DiGraph
-    execStream: Channel[Int]
+    execStream: Channel[int]
     cachedSorted: seq[int]
     cachedIndegree: seq[int]
     lock: Lock
@@ -71,7 +71,7 @@ template rebuildScheduler(p: Plugin, scheduler: untyped) =
 proc buildParallelScheduler(p: Plugin): ParallelScheduler =
   var scheduler = ParallelScheduler()
   p.rebuildScheduler(scheduler)
-  scheduler.execStream = newChannel[int](MAX_CHANNEL_SIZE)
+  scheduler.execStream.open(MAX_CHANNEL_SIZE)
   scheduler.lock.initLock()
   scheduler
 

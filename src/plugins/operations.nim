@@ -254,7 +254,7 @@ proc computeParallelLevel*(p:var Plugin) =
     result.add([newSeq[int](0), newSeq[int](0)])
 
   for i in sorted:
-    let mainthread_id = p.idtonode[i].mainthread.int
+    let mainthread_id = p.idtonode[i].localthread.int
     let level = levels[i]
 
     result[level][mainthread_id].add(i)

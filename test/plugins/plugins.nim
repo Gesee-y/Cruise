@@ -27,18 +27,18 @@ genSystem(T1)
 genSystem(T2)
 genSystem(T3)
 
-proc newTestNode(mainthread=false): TestNode =
+proc newTestNode(localthread=false): TestNode =
   TestNode(
     enabled: true,
-    mainthread: mainthread,
+    localthread: localthread,
     status: PLUGIN_OFF,
     deps: initTable[string, PluginNode]()
   )
 
-proc newOtherTestNode(mainthread=false): OtherTestNode =
+proc newOtherTestNode(localthread=false): OtherTestNode =
   OtherTestNode(
     enabled: true,
-    mainthread: mainthread,
+    localthread: localthread,
     status: PLUGIN_OFF,
     deps: initTable[string, PluginNode]()
   )
@@ -147,7 +147,7 @@ suite "Plugin system core":
     new(p)
     let a = TestNode()
     let b = T1()
-    let c = T2(mainthread:true)
+    let c = T2(localthread:true)
 
     let ia = addSystem(p, a)
     let ib = addSystem(p, b)
@@ -165,7 +165,7 @@ suite "Plugin system core":
     var p: Plugin
     new(p)
     let a = TestNode()
-    let b = T1(mainthread:true)
+    let b = T1(localthread:true)
 
     discard addSystem(p, a)
     discard addSystem(p, b)
@@ -282,11 +282,11 @@ suite "computeParallelLevel":
     computeParallelLevel(p)
     check p.parallel_cache.len >= 3
 
-  test "Mainthread nodes separated from other nodes":
+  test "localthread nodes separated from other nodes":
     var p = freshPlugin()
     let a = addSystem(p, SysA())
     let b = addSystem(p, SysB())
-    p.idtonode[b].mainthread = true
+    p.idtonode[b].localthread = true
 
     computeParallelLevel(p)
 
