@@ -2,6 +2,8 @@ name: Docs
 
 on:
   push:
+    # branches:
+    #   - main
     paths-ignore:
       - 'LICENSE'
       - '*.md'
@@ -24,23 +26,32 @@ jobs:
       matrix:
         nim-version: ['stable', 'devel']
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v4
 
       - name: Setup nim environment
-        uses: jiro4989/setup-nim-action@v1
+        uses: alaviss/setup-nim@v1
         with:
           nim-version: ${{ matrix.nim-version }}
 
       - name: Generate docs
         run: |
-          nim doc --outdir: docs/plugins src/plugins/plugins.nim
-          nim doc --outdir: docs/ecs src/ecs/table.nim
-    
-      - name: Deploying
+          mkdir -p docs/plugins docs/ecs
+          nim doc --index:on --outdir:docs/plugins src/plugins/plugins.nim
+          nim doc --index:on --outdir:docs/ecs src/ecs/table.nim
+          
+          # Fusionne les index de recherche pour vos différents modules
+          buildindex docs
+
+      - name: Upload Artifacts
+        if: matrix.nim-version == 'stable' && github.event_name == 'push'
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs
-     
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
-        
