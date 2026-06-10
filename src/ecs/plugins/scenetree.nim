@@ -41,7 +41,7 @@ proc getKind(s:SparseHandle): RootKind = rSparse
 proc getId(d:DenseHandle):uint = d.wid.uint
 proc getId(s:SparseHandle):uint = s.id
 
-proc reset*(tree: var SceneTree) =
+proc resetTree*(tree: var SceneTree) =
   tree.root = -1
   tree.toDFilter = @[]
   tree.toSFilter = @[]
@@ -179,19 +179,28 @@ proc makeNode(tree:var SceneTree, s:SparseHandle): SceneNode =
 proc setUpNode(tree:var SceneTree, id:int, d:DenseHandle)=
   tree.nodes[id].id = SceneID(kind:rDense, id:d.getId)
   tree.nodes[id].parent = -1
-  tree.nodes[id].children.clear()
+  if tree.nodes[id].children.isNil:
+    tree.nodes[id].children = newQueryFilter()
+  else:
+    tree.nodes[id].children.clear()
 
 proc setUpNode(tree:var SceneTree, id:int, s:SparseHandle)=
   tree.nodes[id].id = SceneID(kind:rSparse, id:s.getId)
   tree.nodes[id].parent = -1
   tree.nodes[id].children.clear()
+  if tree.nodes[id].children.isNil:
+    tree.nodes[id].children = newQueryFilter()
+  else:
+    tree.nodes[id].children.clear()
+
 
 #=###################################################################################################################################=#
 #=####################################################### EXPORTED API ##############################################################=#
 #=###################################################################################################################################=#
 
 proc setRoot*(tree: var SceneTree, h:DenseHandle|SparseHandle) =
-  tree.reset()
+  tree.resetTree()
+
   var id = tree.getFreeId()
   tree.setUpNode(id, h)
   
