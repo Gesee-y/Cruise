@@ -1,5 +1,5 @@
 import unittest
-import ../../src/events/events 
+include "../../src/events/events.nim"
 
 include "internals.nim"
 include "operations.nim"

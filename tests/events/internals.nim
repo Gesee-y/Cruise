@@ -1,10 +1,9 @@
 ############################################################ TESTING THE EVENT SYSTEM INTERNALS ###################################################
 
 # import unittest
-#include "../../src/events/events.nim"
 
 import unittest
-import ../../src/events/events 
+#import ../../src/events/events 
 import times
 import os
 
