@@ -6,24 +6,24 @@ import std/macros
 import std/sequtils
 import std/algorithm
 
-################################################################################
-#                           REENTRANT RW LOCK                                  #
-################################################################################
+# ############################################################################## #
+#                           REENTRANT RW LOCK                                    #
+# ############################################################################## #
 
 type
-  ## Lock acquisition mode
   LockMode = enum
+    ## Lock acquisition mode
     lmRead,
     lmWrite
 
   CondVar = Cond
 
-  ## Reentrant reader-writer lock with writer priority.
-  ##
-  ## - Supports recursive acquisition by the owning writer thread
-  ## - Writers are given priority over incoming readers
-  ## - Readers are blocked while writers are waiting
   TRWLock* = object
+    ## Reentrant reader-writer lock with writer priority.
+    ##
+    ## - Supports recursive acquisition by the owning writer thread
+    ## - Writers are given priority over incoming readers
+    ## - Readers are blocked while writers are waiting
     m: Lock            ## Mutex protecting internal state
     c: CondVar         ## Condition variable for signaling
     writer: int        ## Thread ID of current writer (0 if none)
@@ -31,8 +31,8 @@ type
     readers: int       ## Number of active readers
     waitingWriters: int ## Number of writers waiting (priority control)
 
-## Initializes the RW lock.
 proc init*(l: var TRWLock) =
+  ## Initializes the RW lock.
   initLock(l.m)
   initCond(l.c)
   l.writer = 0
@@ -40,25 +40,25 @@ proc init*(l: var TRWLock) =
   l.readers = 0
   l.waitingWriters = 0
 
-## Destroys the RW lock.
 proc deinit*(l: var TRWLock) =
+  ## Destroys the RW lock.
   deinitLock(l.m)
   deinitCond(l.c)
 
-## Acquires the lock in read mode.
-## Blocks if a writer is active or waiting.
-## The owning writer thread may reenter as a reader.
 proc acquireRead*(l: var TRWLock) =
+  ## Acquires the lock in read mode.
+  ## Blocks if a writer is active or waiting.
+  ## The owning writer thread may reenter as a reader.
   let tid = getThreadId()
   acquire(l.m)
   
   block outer:
-    ## Writer reentrancy: writer can acquire read lock
+    # Writer reentrancy: writer can acquire read lock
     if l.writer == tid:
       l.writerCount.inc()
       break outer
     
-    ## Wait while a writer exists or writers are queued
+    # Wait while a writer exists or writers are queued
     while l.writer != 0 or l.waitingWriters > 0:
       wait(l.c, l.m)
     
@@ -66,20 +66,20 @@ proc acquireRead*(l: var TRWLock) =
 
   release(l.m)
 
-## Acquires the lock in write mode.
-## Writer has priority over readers.
-## Supports recursive acquisition by the same thread.
 proc acquireWrite*(l: var TRWLock) =
+  ## Acquires the lock in write mode.
+  ## Writer has priority over readers.
+  ## Supports recursive acquisition by the same thread.
   let tid = getThreadId()
   acquire(l.m)
 
   if l.writer == tid:
-    ## Recursive write lock
+    # Recursive write lock
     l.writerCount.inc()
   else:
     l.waitingWriters.inc()
     
-    ## Wait until no readers or writer remain
+    # Wait until no readers or writer remain
     while l.readers > 0 or l.writer != 0:
       wait(l.c, l.m)
 
@@ -89,9 +89,9 @@ proc acquireWrite*(l: var TRWLock) =
 
   release(l.m)
 
-## Releases a read or write lock.
-## Automatically handles writer reentrancy.
 proc release*(l: var TRWLock, mode: LockMode) =
+  ## Releases a read or write lock.
+  ## Automatically handles writer reentrancy.
   let tid = getThreadId()
   acquire(l.m)
 
@@ -105,7 +105,7 @@ proc release*(l: var TRWLock, mode: LockMode) =
 
   of lmRead:
     if l.writer == tid:
-      ## Writer releasing a read-level reentrant lock
+      # Writer releasing a read-level reentrant lock
       dec l.writerCount
       if l.writerCount == 0:
         l.writer = 0
@@ -118,51 +118,51 @@ proc release*(l: var TRWLock, mode: LockMode) =
 
   release(l.m)
 
-## Executes a block under a read lock.
 template withReadLock*(l: var TRWLock, body: untyped) =
+  ## Executes a block under a read lock.
   acquireRead(l)
   try:
     body
   finally:
     release(l, lmRead)
 
-## Executes a block under a write lock.
 template withWriteLock*(l: var TRWLock, body: untyped) =
+  ## Executes a block under a write lock.
   acquireWrite(l)
   try:
     body
   finally:
     release(l, lmWrite)
 
-################################################################################
-#                           LOCK TREE IMPLEMENTATION                            #
-################################################################################
+# ############################################################################## #
+#                           LOCK TREE IMPLEMENTATION                             #
+# ############################################################################## #
 
 type
-  ## Node in the hierarchical lock tree.
   LockNode* = ref object
+    ## Node in the hierarchical lock tree.
     lck: TRWLock
     children: Table[string, LockNode]
     isLeaf*: bool
 
-  ## Typed hierarchical lock tree.
-  ## The structure mirrors the fields of type T.
   LockTree*[T] = object
-    root*: LockNode
+    ## Typed hierarchical lock tree.
+    ## The structure mirrors the fields of type T.
+      root*: LockNode
 
-  ## Guard object (currently unused, but useful for RAII extensions).
   LockGuard* = object
+    ## Guard object (currently unused, but useful for RAII extensions).
     node: LockNode
     mode: LockMode
 
-## Creates a leaf lock node.
 proc makeNode*[T](val: T): LockNode =
+  ## Creates a leaf lock node.
   result = new LockNode
   init(result.lck)
   result.isLeaf = true
 
-## Creates a lock node by recursively inspecting object or tuple fields.
 proc makeNode*[T: tuple | object](obj: T): LockNode =
+  ## Creates a lock node by recursively inspecting object or tuple fields.
   result = new LockNode
   init(result.lck)
   
@@ -173,15 +173,15 @@ proc makeNode*[T: tuple | object](obj: T): LockNode =
 
   result.isLeaf = not hasFields
 
-## Creates a new lock tree from a type description.
 proc newLockTree*[T](ty: typedesc[T]): LockTree[T] =
+  ## Creates a new lock tree from a type description.
   let dummy = default(T)
   let root = makeNode(dummy)
   LockTree[T](root: root)
 
-## Retrieves a node by path.
-## Raises if the path is invalid or goes beyond leaf nodes.
 proc getNode*(tree: LockTree, path: varargs[string]): LockNode =
+  ## Retrieves a node by path.
+  ## Raises if the path is invalid or goes beyond leaf nodes.
   result = tree.root
   for p in path:
     if result.isLeaf:
@@ -190,8 +190,8 @@ proc getNode*(tree: LockTree, path: varargs[string]): LockNode =
       raise newException(KeyError, &"Key '{p}' not found")
     result = result.children[p]
 
-## Recursively acquires locks on a node and all its descendants.
 proc lockImpl*(ln: var LockNode, mode: LockMode) =
+  ## Recursively acquires locks on a node and all its descendants.
   if mode == lmWrite:
     acquireWrite(ln.lck)
   else:
@@ -202,8 +202,8 @@ proc lockImpl*(ln: var LockNode, mode: LockMode) =
       var child = ln.children[key]
       lockImpl(child, mode)
 
-## Recursively releases locks on a node and its descendants.
 proc unlockImpl*(ln: var LockNode, mode: LockMode) =
+  ## Recursively releases locks on a node and its descendants.
   if not ln.isLeaf:
     for key in ln.children.keys():
       var child = ln.children[key]
@@ -211,8 +211,8 @@ proc unlockImpl*(ln: var LockNode, mode: LockMode) =
   
   release(ln.lck, mode)
 
-## Convenience APIs for tree-based locking
 proc readLock*(tree: var LockTree, path: varargs[string]) =
+  ## Convenience APIs for tree-based locking
   lockImpl(getNode(tree, path), lmRead)
 
 proc writeLock*(tree: var LockTree, path: varargs[string]) =
@@ -221,8 +221,8 @@ proc writeLock*(tree: var LockTree, path: varargs[string]) =
 proc unlock*(tree: var LockTree, path: varargs[string], mode: LockMode) =
   unlockImpl(getNode(tree, path), mode)
 
-## Executes a block under a read lock for a given tree path.
 template withReadLock*(tree: var LockTree, path: varargs[string], body: untyped) =
+  ## Executes a block under a read lock for a given tree path.
   let node = getNode(tree, path)
   lockImpl(node, lmRead)
   try:
@@ -230,8 +230,8 @@ template withReadLock*(tree: var LockTree, path: varargs[string], body: untyped)
   finally:
     unlockImpl(node, lmRead)
 
-## Executes a block under a write lock for a given tree path.
 template withWriteLock*(tree: var LockTree, path: varargs[string], body: untyped) =
+  ## Executes a block under a write lock for a given tree path.
   let node = getNode(tree, path)
   lockImpl(node, lmWrite)
   try:
@@ -239,8 +239,8 @@ template withWriteLock*(tree: var LockTree, path: varargs[string], body: untyped
   finally:
     unlockImpl(node, lmWrite)
 
-## Acquires multiple locks in a deterministic order to avoid deadlocks.
 proc lockBatchImpl*(nodes: varargs[LockNode], mode: LockMode) =
+  ## Acquires multiple locks in a deterministic order to avoid deadlocks.
   var sortedNodes = @nodes
   sortedNodes.sort(proc (x, y: LockNode): int =
     cmp(cast[int](x), cast[int](y))
@@ -249,17 +249,17 @@ proc lockBatchImpl*(nodes: varargs[LockNode], mode: LockMode) =
   for node in sortedNodes:
     lockImpl(node, mode)
 
-## Releases a batch of locks.
 proc unlockBatchImpl*(nodes: varargs[LockNode], mode: LockMode) =
+  ## Releases a batch of locks.
   for node in nodes:
     unlockImpl(node, mode)
 
-## Executes a block under multiple read locks.
 template withReadLockBatch*(
   tree: var LockTree,
   paths: varargs[seq[string]],
   body: untyped
 ) =
+  ## Executes a block under multiple read locks.
   var nodes: seq[LockNode]
   for p in paths:
     nodes.add(getNode(tree, p))
@@ -269,12 +269,12 @@ template withReadLockBatch*(
   finally:
     unlockBatchImpl(nodes, lmRead)
 
-## Executes a block under multiple write locks.
 template withWriteLockBatch*(
   tree: var LockTree,
   paths: varargs[seq[string]],
   body: untyped
 ) =
+  ## Executes a block under multiple write locks.
   var nodes: seq[LockNode]
   for p in paths:
     nodes.add(getNode(tree, p))
@@ -284,12 +284,12 @@ template withWriteLockBatch*(
   finally:
     unlockBatchImpl(nodes, lmWrite)
 
-################################################################################
+# ###############################################################################
 #                                   DEBUG                                      #
-################################################################################
+# ###############################################################################
 
-## Prints the lock tree structure for debugging.
 proc printTree*(ln: LockNode, indent: int = 0) =
+  ## Prints the lock tree structure for debugging.
   let prefix = "  ".repeat(indent)
   echo prefix & "[Node/Leaf]"
   if not ln.isLeaf:
