@@ -25,7 +25,7 @@
 
 import ../../src/plugins/plugins          # Plugin, PluginNode, attachSystem, addDependency …
 import ../../src/render/render
-import algorithm, tables
+import algorithm, tables, options
 
 # ---------------------------------------------------------------------------
 # RenderResourceState
@@ -401,8 +401,9 @@ proc compile*(rg: var RenderGraph) =
     var aliasOf: Table[int, int]                 ## resourceId → canonicalId
 
     for lt in sorted:
+      let h = getResource[ResourceHandle](rg.plugin.res_manager, lt.resourceId)
       let res = get[RenderResource](rg.registry,
-        getResource[ResourceHandle](rg.plugin.res_manager, lt.resourceId)
+        get(h)
       )
       if not res.transient: continue             ## non-transient = swap-chain etc.
 
@@ -457,7 +458,7 @@ proc compile*(rg: var RenderGraph) =
 
     # Determine write state from the texture format
     let res = get[RenderResource](rg.registry,
-      getResource[ResourceHandle](rg.plugin.res_manager, lt.resourceId)
+      getResource[ResourceHandle](rg.plugin.res_manager, lt.resourceId).get()
     )
     let writeState =
       if res.desc.format in {fmtDepth32, fmtDepth24Stencil8}: rsDepthWrite
@@ -502,7 +503,7 @@ proc executeFrame*[R](rg: var RenderGraph, renderer: var CRenderer[R]) =
 
   # Helper: get the mutable RenderResource by PResourceManager id
   template getMutRes(resId: int): ptr RenderResource =
-    let handle = getResource[ResourceHandle](rg.plugin.res_manager, resId)
+    let handle = getResource[ResourceHandle](rg.plugin.res_manager, resId).get
     let res = get[RenderResource](rg.registry, handle)
     res
 
