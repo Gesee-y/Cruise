@@ -7,7 +7,7 @@ var NEXT_ARCHETYPE_ID {.compileTime.} = 0
 var COMPONENT_ID_REGISTRY {.compileTime.} = initTable[int, int]()
 var ID_TO_COMPONENT {.compileTime.} = initTable[int, NimNode]()
 var COMPONENT_TO_LAYOUT {.compileTime.} = initTable[int, NimNode]()
-var ID_TO_LAYOUT {.compileTime.} = initTable[int, tuple[createProc:NimNode, castProc: NimNode]]()
+var ID_TO_LAYOUT {.compileTime.} = initTable[int, tuple[createProc:NimNode, castProc: NimNode, getTypeProc: NimNode]]()
 var ARCHETYPE_ID_REGISTRY {.compileTime.} = initTable[ArchetypeMask, int]()
 var ARCHETYPE_ID_TO_MASK {.compileTime.} = initTable[int, ArchetypeMask]()
 var REQUIRED_COMPS {.compileTime.} = initTable[int, seq[int]]()
@@ -84,7 +84,7 @@ macro typesToArchetypeID(comps:varargs[typed]): int =
   var compIds = newNimNode(nnkBracket)
   for c in comps:
     echo c
-    compIds.add quote("@") do: 
+    compIds.add quote("@") do:
       toComponentId(`@c`)
 
   return quote do: toArchetypeID(`compIds`)
@@ -100,7 +100,7 @@ proc getComponentsMetadata(comps:NimNode): tuple[ids: NimNode, components:seq[Ni
       components.add(c)
       compIds.add quote("@") do:
         toComponentId(`@c`)
-    
+
     compIds.add quote("@") do:
       toComponentId(`@comp`)
   if compIds.len == 0:
@@ -179,7 +179,7 @@ type
     clearEntityOp: proc (p:pointer) {.noSideEffect, nimcall, inline.}
     freeEntry: proc (p:pointer) {.raises: [].}
 
-  
+
   ComponentRegistry = object
     ## Global registry holding all component types.
     ##
@@ -193,15 +193,15 @@ type
     entries:seq[ComponentEntry]
     cmap:Table[string, int]
 
-macro registerLayout(ty, createProcName, castProcName: untyped) =
+macro registerLayout(ty, createProcName, castProcName: untyped, getTypeProcName: untyped) =
   let id = ty.repr.hash.int
-  ID_TO_LAYOUT[id] = (createProcName, castProcName)
+  ID_TO_LAYOUT[id] = (createProcName, castProcName, getTypeProcName)
 
 macro castTo*(obj: untyped, Ty: typedesc, N: static int,
     P: static bool = false): untyped =
   let cid = getComponentIdFromRegistry(Ty.getTypeInst()[1])
   let layout = COMPONENT_TO_LAYOUT[cid]
-  let (createProc, castProc) = ID_TO_LAYOUT[layout.repr.hash.int]
+  let (createProc, castProc, _) = ID_TO_LAYOUT[layout.repr.hash.int]
 
   return quote do:
     `castProc`(`obj`, `Ty`, `N`, `P`)
@@ -223,17 +223,17 @@ macro registerComponent(registry:ComponentRegistry, B:typed, P:static bool=false
   let key = layout.repr.hash.int
   if key notin ID_TO_LAYOUT:
     error("Layout '" & layout.repr & "' not registered. Call registerLayout first.", layout)
-  
-  let (createProc, castProc) = ID_TO_LAYOUT[key]
+
+  let (createProc, castProc, _) = ID_TO_LAYOUT[key]
   COMPONENT_TO_LAYOUT[cid] = layout
 
   return quote do:
     let id = toComponentId(`B`)
     if id >= `registry`.entries.len or `registry`.entries[id].isNil:
       `registry`.cmap[`str`] = id
-      if id >= `registry`.entries.len: 
+      if id >= `registry`.entries.len:
         `registry`.entries.setLen(id+1)
-      
+
       # Allocate SoA storage for the component
       var frag = `createProc`(`B`, DEFAULT_BLK_SIZE, `P`)
       if frag.changeFilter.isNil: new(frag.changeFilter)
@@ -366,7 +366,7 @@ template getvalue[B](entry:ComponentEntry, P:static bool=false):untyped =
   ## `SoAFragmentArray`.
   castTo(entry.rawPointer, B, DEFAULT_BLK_SIZE,P)
 
-proc `=destroy`*(rg:var ComponentRegistry) {.raises: [].} = 
+proc `=destroy`*(rg:var ComponentRegistry) {.raises: [].} =
   for entry in rg.entries:
     if not entry.isNil: entry.freeEntry(entry.rawPointer)
 

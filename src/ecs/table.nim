@@ -22,7 +22,7 @@ const
   # Initial capacity of the sparse storage.
   INITIAL_SPARSE_SIZE = 10000
 
-type 
+type
   Range = object
     s,e:int
 
@@ -81,8 +81,8 @@ include "entity.nim"
 include "mask.nim"
 include "registry.nim"
 
-registerLayout(SoAFragment, newSoAFragArr, soaCastTo)
-registerLayout(VecFragment, newVecFragArr, vecCastTo)
+registerLayout(SoAFragment, newSoAFragArr, soaCastTo, toSoAFragmentTy)
+registerLayout(VecFragment, newVecFragArr, vecCastTo, toVecTy)
 
 type
   TableRange* = object
@@ -103,7 +103,7 @@ proc clear(t: var TablePartition) =
   for z in t.zones.mitems:
     z.clear()
   t.fill_index = 0
-  
+
 include "archetypes.nim"
 
 type
@@ -147,7 +147,7 @@ template newECSWorld*(max_entities:int=1000000):ECSWorld =
   checkWarn(max_entities <= 1_000_000_000,
     "newECSWorld: max_entities=" & $max_entities &
     " exceeds 1 billion. Initial capacities may cause OOM at startup.")
-  
+
   w.archGraph = initArchetypeGraph()
   w.entities = newSeqofCap[Entity](max_entities)
   w.handles = newSeqofCap[uint32](max_entities)
@@ -156,7 +156,7 @@ template newECSWorld*(max_entities:int=1000000):ECSWorld =
   w.generations = newSeqofCap[uint16](max_entities)
   w.sparse_gens = newSeqofCap[uint16](max_entities)
   w.sparse_arch = newSeqofCap[uint16](max_entities)
-  
+
   var ev = initEventManager()
   GC_ref(ev)
   w.evmanager = cast[pointer](ev)
@@ -181,7 +181,7 @@ proc clearEntities*(w: var ECSWorld, max_entities:int=1000000) =
 # ###################################################################### OPERATIONS ################################################################ #
 # ################################################################################################################################################## #
 
-template events*(w: ECSWorld): EventManager = 
+template events*(w: ECSWorld): EventManager =
   ## Return the event manager of the ECS manager
   cast[EventManager](w.evmanager)
 
@@ -207,12 +207,12 @@ proc unsafeGetResource*[T](w: ECSWorld): T =
 proc isEmpty(t:TableRange | ptr TableRange):bool = t.r.s == t.r.e
 proc isFull(t:TableRange | ptr TableRange):bool = t.r.e - t.r.s == DEFAULT_BLK_SIZE
 
-template getDHandle*(w: ECSWorld, i:untyped): DenseHandle = 
+template getDHandle*(w: ECSWorld, i:untyped): DenseHandle =
   ## Return an handle for entity id `i`
   ## `i` is the global ID of the entity, not the id in the storage
   DenseHandle(widx: i.uint32, gen: w.generations[i], world: w)
 
-template getDHandleFromID*(w: ECSWorld, i:untyped): DenseHandle = 
+template getDHandleFromID*(w: ECSWorld, i:untyped): DenseHandle =
   ## Return a dense handle for the storage id `i` if it exist.
   ## Else it will error.
   var e = w.handles[i.toIdx]
@@ -272,7 +272,7 @@ proc getStableEntities(world:ECSWorld, n:int):seq[uint32] =
     let L = world.entities.len
     world.entities.setLen(L+(n-free_len))
     world.generations.setLen(L+(n-free_len))
-    
+
     var c = 0
     for i in L..<world.entities.len:
       result[free_len+c] = i.uint32
@@ -297,7 +297,7 @@ macro requireComponent*(w: var ECSWorld, base: typedesc, comps:typedesc, layout:
 
     REQUIRED_COMPS[bid].add(cid)
 
-  return quote("@") do:    
+  return quote("@") do:
     discard `@w`.registerComponent(`@comps`, layout=`@layout`)
     `@w`.archGraph.requiredComps[toComponentId(`@base`)].add(toComponentId(`@comps`))
 
@@ -347,9 +347,9 @@ proc process(world: var ECSWorld, cb: var ECommandBuffer) =
       of ecekSparse:
         for e in cmd.sEntities:
           world.deleteEntity(e)
-  
+
   for i, cmds in cb.denseEntityMigrate.pairs:
-    for j, cmd in cmds.pairs:    
+    for j, cmd in cmds.pairs:
       world.migrateEntity(cmd.dEntities, j.uint16)
 
 proc clearDenseChanges*(w: var ECSWorld) =

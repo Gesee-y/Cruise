@@ -4,18 +4,18 @@
 
 type
   QueryOp = enum
-    qInclude     
-    qExclude     
-    qModified    
-    qNotModified 
+    qInclude
+    qExclude
+    qModified
+    qNotModified
 
   QueryComponent = object
     ## Represents a single component constraint within a query.
     ## It binds a Component ID to an operation (Include, Exclude, Modified, etc.).
     id: int
     op: QueryOp
-  
-  QuerySignature* = object
+
+  QuerySignature*[T: tuple] = object
     ## The compiled representation of a query.
     ## It translates a list of component constraints into efficient bitmasks
     ## that can be rapidly compared against archetype masks.
@@ -82,7 +82,7 @@ proc `xor`*(a, b: var QueryFilter): QueryFilter =
   result.sLayer = a.sLayer xor b.sLayer
 
 proc `not`*(a: var QueryFilter): QueryFilter =
-  result.dLayer = not a.dLayer 
+  result.dLayer = not a.dLayer
   result.sLayer = not a.sLayer
 
 proc dGet*(qf: QueryFilter, id: uint|int): bool =
@@ -130,7 +130,7 @@ iterator maskIter(it: (HSlice[int,int],seq[uint|BitBlock])): int =
 
   while i < it[1].len and current <= it[0].b:
     var m = it[1][i]
-    
+
     while m != 0:
       current = i*S + countTrailingZeroBits(m)
       m = m and (m-1)
@@ -148,7 +148,7 @@ proc count*(it:DenseIterator|SparseIterator):int =
 
 iterator items*(it: DenseIterator): int =
   ## Iterate a `DenseIterator` obtained from a query
-  ## 
+  ##
   ## It return the index of the matching entity in a given block.
 
   if it.masked:
@@ -160,7 +160,7 @@ iterator items*(it: DenseIterator): int =
 
 iterator items*(it: SparseIterator): int =
   ## Iterate a `SparseIterator` obtained from a sparse query.
-  ## 
+  ##
   ## It return the index of the matching entities in a given block.
 
   for i in it.m.maskIter:
@@ -170,7 +170,7 @@ iterator items*(it: SparseIterator): int =
 # ################################################################## QUERY BUILDER ################################################################# #
 # ################################################################################################################################################## #
 
-proc buildQuerySignature(world: ECSWorld, components: seq[QueryComponent]): QuerySignature =
+proc buildQuerySignature[T: tuple](world: ECSWorld, components: seq[QueryComponent]): QuerySignature[T] =
   ## Constructs a `QuerySignature` from a list of component constraints.
   ##
   ## This function calculates the aggregate `includeMask` and `excludeMask` from the
@@ -183,12 +183,12 @@ proc buildQuerySignature(world: ECSWorld, components: seq[QueryComponent]): Quer
   ## return: A fully constructed `QuerySignature`.
 
   result.components = components
-  
+
   for comp in components:
     # Calculate which layer (word) in the mask array and which bit within that word.
     let layer = comp.id div (sizeof(uint) * 8)
     let bitPos = comp.id mod (sizeof(uint) * 8)
-    
+
     if layer < MAX_COMPONENT_LAYER:
       case comp.op
       of qInclude:
@@ -211,21 +211,21 @@ template addFilter*(qs: var QuerySignature, qf:QueryFilter) =
   ## Adds a new filter to the query
   qs.filters.add(qf)
 
-template clear*(qf: QueryFilter) = 
+template clear*(qf: QueryFilter) =
   qf.dLayer.clear()
   qf.sLayer.clear()
 
-proc matchesArchetype(sig: QuerySignature, arch: ArchetypeMask): bool {.inline.} =
+proc matchesArchetype[T](sig: QuerySignature[T], arch: ArchetypeMask): bool {.inline.} =
   arch.matches(sig.includeMask, sig.excludeMask)
 
 # ################################################################################################################################################## #
 # ################################################################## DENSE QUERIES ################################################################# #
 # ################################################################################################################################################## #
 
-iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator) =
+iterator denseQuery*[T](world: ECSWorld, sig: QuerySignature[T]): (int, DenseIterator) =
   ## Iterate through all partitions that match the query signature
   ## Returns block index and range for each matching zone
-  
+
   let mlen = sig.modified.len
   let nmlen = sig.notModified.len
   let maskCount = ((DEFAULT_BLK_SIZE-1) shr L0_SHIFT) + 1
@@ -234,9 +234,9 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator)
   let key: QueryKey = (sig.includeMask, sig.excludeMask)
   if not world.queryCache.hasKey(key):
     world.queryCache[key] = QueryCacheEntry(version: 0)
-  
+
   var cacheEntry = addr world.queryCache[key]
-  
+
   if cacheEntry.version < world.archGraph.version:
     for archNode in world.archGraph.archetypes:
       let i = archNode.id
@@ -255,13 +255,13 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator)
 
         for i in 0..<max(mlen, nmlen):
           masked = true
-          if i < mlen: 
+          if i < mlen:
             let entry = world.registry.entries[sig.modified[i]]
             let incl = entry.getChangeMaskOp(entry.rawPointer).dLayer
             for j in 0..<maskCount:
               res[j] = res[j] and incl.getL0(zone.block_idx*sizeof(uint)*8 + j)
 
-          if i < nmlen: 
+          if i < nmlen:
             let entry = world.registry.entries[sig.notModified[i]]
             let excl = entry.getChangeMaskOp(entry.rawPointer).dLayer
             for j in 0..<maskCount:
@@ -271,14 +271,14 @@ iterator denseQuery*(world: ECSWorld, sig: QuerySignature): (int, DenseIterator)
           masked = true
           for i in 0..<maskCount:
             res[i] = res[i] and qf.dLayer.getL0(zone.block_idx*sizeof(uint)*8 + i)
-        
+
         if masked:
           yield (zone.block_idx, DenseIterator(masked:true, r:zone.r.s..<zone.r.e, m: res))
         else:
           yield (zone.block_idx, DenseIterator(masked:false, r:zone.r.s..<zone.r.e))
 
 
-proc denseQueryCache*(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
+proc denseQueryCache*[T](world: ECSWorld, sig: QuerySignature[T]): DenseQueryResult =
   ## Computes and caches the result of a Dense query.
   ##
   ## Useful if you need to iterate over the results multiple times, as it avoids
@@ -291,9 +291,9 @@ proc denseQueryCache*(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
   let key: QueryKey = (sig.includeMask, sig.excludeMask)
   if not world.queryCache.hasKey(key):
     world.queryCache[key] = QueryCacheEntry(version: 0)
-  
+
   template cacheEntry: untyped = world.queryCache[key]
-  
+
   if cacheEntry.version < world.archGraph.version:
     for archNode in world.archGraph.archetypes:
       let i = archNode.id
@@ -302,7 +302,7 @@ proc denseQueryCache*(world: ECSWorld, sig: QuerySignature): DenseQueryResult =
     cacheEntry.version = world.archGraph.nodes.len
 
   for id in cacheEntry.archs:
-    if not world.archGraph.nodes[id].partition.isNil: 
+    if not world.archGraph.nodes[id].partition.isNil:
       result.part.add(world.archGraph.nodes[id].partition)
 
 iterator items*(qr:DenseQueryResult):(int, HSlice[int, int]) =
@@ -317,10 +317,10 @@ iterator items*(qr:DenseQueryResult):(int, HSlice[int, int]) =
     for zone in partition.zones:
       yield (zone.block_idx, zone.r.s..<zone.r.e)
 
-proc denseQueryCount*(world: ECSWorld, sig: QuerySignature): int =
+proc denseQueryCount*[T](world: ECSWorld, sig: QuerySignature[T]): int =
   ## Count total entities matching the dense query
   result = 0
-  
+
   for bid, r in world.denseQuery(sig):
     result += r.count
 
@@ -345,24 +345,24 @@ template fastExecute*(world: ECSWorld, sig: QuerySignature, bid, startIdx, endId
 # ################################################################## SPARSE QUERIES ################################################################ #
 # ################################################################################################################################################## #
 
-iterator sparseQuery*(world: ECSWorld, sig: QuerySignature): (int, SparseIterator) =
+iterator sparseQuery*[T](world: ECSWorld, sig: QuerySignature[T]): (int, SparseIterator) =
   ## Iterate through sparse entities matching the query
   ## Returns chunk index and mask iterator for each matching chunk
-  
+
   var includeIds: seq[int]
   var excludeIds: seq[int]
-  
+
   for comp in sig.components:
     case comp.op
     of qInclude, qModified, qNotModified: includeIds.add(comp.id)
     of qExclude: excludeIds.add(comp.id)
-    
-  if includeIds.len > 0:  
+
+  if includeIds.len > 0:
     # Iterate through chunks with entities
     let S = sizeof(uint)*8
     let entry = world.registry.entries[includeIds[0]]
     var res = entry.getSparseMaskOp(entry.rawPointer)
-        
+
     for compId in includeIds[1..^1]:
       let entry = world.registry.entries[compId]
       res.andi entry.getSparseMaskOp(entry.rawPointer)
@@ -397,7 +397,7 @@ iterator items*(sr:sparseQueryResult):(int, uint) =
   let S = sizeof(uint)*8
   for i in 0..<sr.rmask.len:
     var m = sr.rmask[i]
-      
+
     while m != 0:
       let chunkIdx = i*S + countTrailingZeroBits(m)
       var chunkMask = sr.chunks[c]
@@ -406,10 +406,10 @@ iterator items*(sr:sparseQueryResult):(int, uint) =
       yield (chunkIdx, chunkMask)
       c += 1
 
-proc sparseQueryCount*(world: ECSWorld, sig: QuerySignature): int =
+proc sparseQueryCount*[T](world: ECSWorld, sig: QuerySignature[T]): int =
   ## Count total entities matching the sparse query
   result = 0
-  
+
   for _,mask in sparseQuery(world, sig):
     for _ in mask:
       result += 1
@@ -448,13 +448,14 @@ macro query*(world: untyped, expr: untyped): untyped =
   ## param: world: The `ECSWorld` instance.
   ## param: expr: The query expression (e.g., `Pos and Modified[Vel]`).
   ## return: A `QuerySignature` ready for use in query functions.
-  ## 
+  ##
   ## Example:
   ## ```nim
   ## let sig = world.query(Position and Velocity and not Tag)
 
   var components = newSeq[NimNode]()
-  
+  var componentTypes = newNimNode(nnkTupleConstr)
+
   proc processExpr(world: NimNode, node: NimNode) =
     case node.kind
       of nnkInfix:
@@ -464,11 +465,11 @@ macro query*(world: untyped, expr: untyped): untyped =
           processExpr(world, node[2])
         else:
           error("Unsupported operator in query: " & node[0].strVal)
-      
+
       of nnkPrefix:
         if (node[0].kind == nnkOpenSymChoice and node[0][1].strVal == "and") or node[0].strVal == "not":
           let operand = node[1]
-          
+
           # Check if the operand is Modified[Type]
           if operand.kind == nnkBracketExpr and operand[0].eqIdent("Modified"):
             # not Modified[Type]
@@ -485,11 +486,12 @@ macro query*(world: untyped, expr: untyped): untyped =
             error("Unsupported operand for 'not': " & $operand.kind)
         else:
           error("Unsupported prefix operator in query: " & node[0].strVal)
-      
+
       of nnkCall:
         # Check for Modified[Type]
         if node[1].eqIdent("Modified"):
           let compNode = node[2].getTypeInst()
+          componentTypes.add(compNode)
           components.add(quote("@") do:
             modifiedComp(toComponentId(`@compNode`))
           )
@@ -497,6 +499,7 @@ macro query*(world: untyped, expr: untyped): untyped =
           var t = newNimNode(nnkBracketExpr)
           t.add(node[1])
           t.add(node[2])
+          componentTypes.add(t)
           components.add(quote("@") do:
             includeComp(toComponentId(`@t`))
           )
@@ -509,29 +512,176 @@ macro query*(world: untyped, expr: untyped): untyped =
             modifiedComp(toComponentId(`@compNode`))
           )
         else:
+          componentTypes.add(node)
           components.add(quote("@") do:
             includeComp(toComponentId(`@node`))
           )
-      
+
       of nnkIdent, nnkSym:
         # Process a raw type identifier (Implies 'include')
+        componentTypes.add(node)
         components.add(quote("@") do:
           includeComp(toComponentId(`@node`))
         )
-      
+
       else:
         error("Unsupported node kind in query: " & $node.kind)
-  
+
   processExpr(world, expr)
-  
+
   # Construct the sequence of QueryComponents
   let componentsSeq = newNimNode(nnkBracket)
   for comp in components:
     componentsSeq.add(comp)
-  
+
+  let tup = newNimNode(nnkTupleConstr)
+  for comp in componentTypes:
+    tup.add(comp)
+
   # Return the call to buildQuerySignature
   result = quote do:
-    buildQuerySignature(`world`, @`componentsSeq`)
+    buildQuerySignature[`componentTypes`](`world`, @`componentsSeq`)
+
+var ITERATOR_REGISTRY {.compileTime.} = initTable[int, NimNode]()
+var ITERATOR_SREGISTRY {.compileTime.} = initTable[int, NimNode]()
+
+macro executeDQuery(w: ECSWorld, q: QuerySignature): untyped =
+  let qtype = q.getTypeInst()
+  let Ty = qtype[1]
+  let id = Ty.repr.hash().int
+  var iter = newNimNode(nnkEmpty)
+
+  if id in ITERATOR_REGISTRY:
+    iter = ITERATOR_REGISTRY[id]
+    return quote do:
+      `w`.`iter`(`q`)
+  else:
+    let iterName = ident("queryIter_" & $id)
+    let bid = ident("bid")
+    let eid = ident("eid")
+    let r = ident("r")
+    let wsymb = ident("wsymb")
+    let qsymb = ident("qsymb")
+    var returnType = newNimNode(nnkTupleConstr)
+    var returnData = newNimNode(nnkTupleConstr)
+    var getComp = newStmtList()
+    var symbs: seq[NimNode]
+    var blks = newStmtList()
+    var sparses: seq[NimNode]
+
+    returnType.add(ident"int")
+    returnType.add(ident"DenseIterator")
+
+    returnData.add(bid)
+    returnData.add(r)
+
+    var cnt = 0
+    for c in Ty:
+      let comp = ident(c.strVal)
+      let sym = ident("f" & $cnt)
+      let bsym = ident("blk" & $cnt)
+      let cid = getComponentIdFromRegistry(comp)
+      let layId = COMPONENT_TO_LAYOUT[cid].repr.hash.int
+      let layoutProc = ID_TO_LAYOUT[layId].getTypeProc
+      symbs.add(sym)
+      returnType.add(quote do:
+        ref `layoutProc`(`comp`)
+      )
+
+      getComp.add(quote do:
+        var `sym` = `wsymb`.get(`comp`)
+      )
+      blks.add(quote do:
+        var `bsym` = `sym`.blocks[`bid`]
+      )
+      returnData.add(bsym)
+      cnt += 1
+
+    var iterBody = quote do:
+      iterator `iterName`(`wsymb`: ECSWorld, `qsymb`: `qtype`): `returnType` =
+        `getComp`
+
+        for (`bid`, `r`) in `wsymb`.denseQuery(`qsymb`):
+          `blks`
+          yield `returnData`
+
+    ITERATOR_REGISTRY[id] = iterName
+
+    return quote do:
+      `iterBody`
+      `w`.`iterName`(`q`)
+
+macro executeSQuery(w: ECSWorld, q: QuerySignature): untyped =
+  let qtype = q.getTypeInst()
+  let Ty = qtype[1]
+  let id = Ty.repr.hash().int
+  var iter = newNimNode(nnkEmpty)
+
+  if id in ITERATOR_SREGISTRY:
+    iter = ITERATOR_SREGISTRY[id]
+    return quote do:
+      `w`.`iter`(`q`)
+  else:
+    let iterName = ident("querySIter_" & $id)
+    let bid = ident("bid")
+    let eid = ident("eid")
+    let r = ident("r")
+    let wsymb = ident("wsymb")
+    let qsymb = ident("qsymb")
+    var returnType = newNimNode(nnkTupleConstr)
+    var returnData = newNimNode(nnkTupleConstr)
+    var getComp = newStmtList()
+    var symbs: seq[NimNode]
+    var sparses = newStmtList()
+
+    returnType.add(ident"int")
+    returnType.add(ident"SparseIterator")
+
+    returnData.add(bid)
+    returnData.add(r)
+
+    var cnt = 0
+    for c in Ty:
+      let comp = ident(c.strVal)
+      let sym = ident("f" & $cnt)
+      let bsym = ident("blk" & $cnt)
+      let sid = ident("sid" & $cnt)
+      let cid = getComponentIdFromRegistry(comp)
+      let layId = COMPONENT_TO_LAYOUT[cid].repr.hash.int
+      let layoutProc = ID_TO_LAYOUT[layId].getTypeProc
+      symbs.add(sym)
+      returnType.add(quote do:
+        ptr `layoutProc`(`comp`, sizeof(uint)*8)
+      )
+
+      getComp.add(quote do:
+        var `sym` = `wsymb`.get(`comp`)
+      )
+      sparses.add(quote do:
+          let `sid` = `sym`.toSparse[`bid`]-1
+          var `bsym` = `sym`.sparse[`sid`]
+        )
+
+      var addrSym = newNimNode(nnkCommand)
+      addrSym.add(ident"addr")
+      addrSym.add(bsym)
+      returnData.add(addrSym)
+
+      cnt += 1
+
+    var iterBody = quote do:
+      iterator `iterName`(`wsymb`: ECSWorld, `qsymb`: `qtype`): `returnType` =
+        `getComp`
+
+        for (`bid`, `r`) in `wsymb`.sparseQuery(`qsymb`):
+          `sparses`
+          yield `returnData`
+
+    ITERATOR_SREGISTRY[id] = iterName
+
+    return quote do:
+      `iterBody`
+      `w`.`iterName`(`q`)
 
 # ################################################################################################################################### #
 # ###################################################### Query and Entity ########################################################### #

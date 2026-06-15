@@ -83,14 +83,14 @@ proc toSoATuple(T: NimNode, N: int): NimNode =
         brack.add ident(v.getTypeInst.strVal)
       elif v[0].strVal == "array":
         v[0] = ident v[0].strVal
-        
+
         if v[1].kind == nnkBracketExpr:
           var temp = newNimNode(nnkInfix)
           temp.add(ident "..")
           temp.add(v[1][1])
           temp.add(v[1][2])
           v[1] = temp
-        
+
         v[2] = ident v[2].strVal
         brack.add(v)
       elif v[0].strVal == "set":
@@ -112,14 +112,16 @@ proc toSoATuple(T: NimNode, N: int): NimNode =
   return res
 
 macro toSoAFragmentTy*(Ty: typedesc, N: static int = DEFAULT_BLK_SIZE,
-    P: static bool = false): untyped = 
+    P: static bool = false): untyped =
   let T = Ty.getTypeInst()[1]
   let S = sizeof(uint)*8
   let ty = toSoATuple(Ty.getType[1], N)
   let sy = toSoATuple(Ty.getType[1], S)
   return quote("@") do:
-    FragmentArray[`@N`, `@P`, SoAFragment[`@N`, `@P`,`@ty`,`@T`], SoAFragment[`@S`, `@P`,`@sy`,`@T`], `@T`]
+    SoAFragment[`@N`, `@P`,`@ty`,`@T`]
 
+template toVecTy*[T](ty: typedesc[T], N: static int = DEFAULT_BLK_SIZE,
+    P: static bool = false): untyped = FragmentArray[N, P, VecFragment[N, P, T], VecFragment[sizeof(uint)*8, P, T], T]
 macro soaCastTo*(obj: untyped, Ty: typedesc, N: static int,
     P: static bool = false): untyped =
   ## Cast an existing value to a `FragmentArray` of the given type.
@@ -237,7 +239,7 @@ macro toObjectMod(T: typedesc, c: untyped, idx: untyped, v: untyped) =
 
   return quote("@") do:
     `@res`
-    
+
 macro toObjectCopy(T: typedesc, cDst: untyped, idxDst: untyped, cSrc: untyped,
     idxSrc: untyped) =
   ## Override SoA values using another SoA-backed value directly field-by-field.
@@ -300,7 +302,7 @@ template overrideVals[N, P, T, B](b: SoAFragment[N, P, T, B] | ref SoAFragment[
 
 macro overrideValsBatch[N, P, T, S, B](f: var FragmentArray[N, P, T, S, B],
     ids: untyped, sw: seq[uint32], ad: seq[uint32]) =
-  
+
   var res = newNimNode(nnkStmtList)
   let types = T.getTypeImpl() # T is the tuple-of-arrays type
 
@@ -350,7 +352,7 @@ template setChangedSparse[N, P, T, S, B](f: var FragmentArray[N, P, T, S, B], id
 template getDenseBlock*(f: FragmentArray, block_id: int|uint): untyped = f.blocks[block_id]
 template getSparseBlock*(f: FragmentArray, block_id: int|uint): untyped = f.sparse[f.toSparse[block_id]]
 template getDenseField*(f: FragmentArray, block_id: int|uint,
-    f0: untyped): untyped = 
+    f0: untyped): untyped =
   ## Return a pointer to the column of data in dense storage of the field for a given block id
   ## Example
   ## ```nim
@@ -358,7 +360,7 @@ template getDenseField*(f: FragmentArray, block_id: int|uint,
   ## ```
   addr f.getDenseBlock(block_id).data.f0
 template getSparseField*(f: FragmentArray, block_id: int|uint,
-    f0: untyped): untyped = 
+    f0: untyped): untyped =
   ## Return a pointer to the column of data in sparse storage of the field for a given block id
   ## Example
   ## ```nim

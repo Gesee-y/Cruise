@@ -10,7 +10,7 @@ type
     hp: int
   Dead = object
 
-proc newPosition(x,y:float32):Position = Position() 
+proc newPosition(x,y:float32):Position = Position()
 proc setComponent[T](blk: ptr T, i:uint, v:Position) =
   blk.data.x[i] = v.x*2
   blk.data.y[i] = v.y/2
@@ -21,7 +21,7 @@ proc initTestWorld(): ECSWorld =
   discard w.registerComponent(Velocity)
   discard w.registerComponent(Health)
   discard w.registerComponent(Dead)
-  
+
   #discard w.createEntity(Position)
   #discard w.createEntity(Position,1)
   #discard w.createEntity(Position,2)
@@ -37,7 +37,7 @@ proc initTestWorld(): ECSWorld =
   #discard w.createSparseEntity(Position,1)
   #discard w.createSparseEntity(Velocity,2,3)
   #discard w.createSparseEntity(Position,3)
-  
+
   return w
 
 var w = initTestWorld()
@@ -70,7 +70,7 @@ suite "QueryFilter":
 suite "QuerySignature building":
 
   test "include only":
-    let sig = buildQuerySignature(w, @[
+    let sig = buildQuerySignature[(Position, Velocity)](w, @[
       includeComp(Position.toComponentID),
       includeComp(Velocity.toComponentID)
     ])
@@ -81,7 +81,7 @@ suite "QuerySignature building":
     check sig.excludeMask[0] == 0
 
   test "exclude only":
-    let sig = buildQuerySignature(w, @[
+    let sig = buildQuerySignature[()](w, @[
       excludeComp(toComponentID(Dead))
     ])
 
@@ -89,7 +89,7 @@ suite "QuerySignature building":
 
   test "modified implies include":
     let pid = toComponentID(Position)
-    let sig = buildQuerySignature(w, @[
+    let sig = buildQuerySignature[(Position,)](w, @[
       modifiedComp(pid)
     ])
 
@@ -100,12 +100,12 @@ suite "matchesArchetype":
 
   test "matches include":
     let arch = maskOf(0, 1)
-    let sig = buildQuerySignature(w, @[ includeComp(toComponentID(Position)) ])
+    let sig = buildQuerySignature[(Position,)](w, @[ includeComp(toComponentID(Position)) ])
     check matchesArchetype(sig, arch)
 
   test "fails exclude":
     let arch = maskOf(0, 3)
-    let sig = buildQuerySignature(w, @[ excludeComp(toComponentID(Dead)) ])
+    let sig = buildQuerySignature[()](w, @[ excludeComp(toComponentID(Dead)) ])
     check not matchesArchetype(sig, arch)
 
 suite "Dense query basic":
@@ -130,6 +130,16 @@ suite "Dense query basic":
   test "dense include + exclude":
     let sig = query(w, Position and not Velocity)
     check denseQueryCount(w, sig) == 2
+
+  test "dense query sugar":
+    var sig = w.query(Position and not Velocity)
+    var cnt = 0
+
+    for (bid, r, pblk) in w.executeDQuery(sig):
+      for i in r:
+        cnt += 1
+
+    check cnt == 2
 
 suite "Dense query change tracking":
 
@@ -173,6 +183,16 @@ suite "Sparse query basic":
   test "sparse exclude":
     let sig = query(w, Position and not Velocity)
     check sparseQueryCount(w, sig) == 1
+
+  test "sparse query sugar":
+    var sig = w.query(Position and not Velocity)
+    var cnt = 0
+
+    for (bid, r, pblk) in w.executeSQuery(sig):
+      for i in r:
+        cnt += 1
+
+    check cnt == 1
 
 suite "Sparse query change tracking":
 
