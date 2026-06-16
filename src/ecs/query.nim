@@ -596,10 +596,9 @@ macro executeDQuery(w: ECSWorld, q: QuerySignature): untyped =
       iterator `iterName`(`wsymb`: ECSWorld, `qsymb`: `qtype`): `returnType` =
         `getComp`
 
-        for (`bid`, rn) in `wsymb`.denseQuery(`qsymb`):
+        for (`bid`, r) in `wsymb`.denseQuery(`qsymb`):
           `blks`
-          for `r` in rn:
-            yield `returnData`
+          yield `returnData`
 
     ITERATOR_REGISTRY[id] = iterName
 
