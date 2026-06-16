@@ -436,24 +436,8 @@ proc notModifiedComp*(componentId: int): QueryComponent =
   ## Creates a `QueryComponent` that requires a component to be not modified.
   QueryComponent(id: componentId, op: qNotModified)
 
-macro query*(world: untyped, expr: untyped): untyped =
-  ## Macro for Domain Specific Language (DSL) query syntax.
-  ##
-  ## Allows writing queries using `and`, `not`, and `Modified[]` operators, e.g.:
-  ## `query(world, Position and Modified[Velocity] and not Dead)`
-  ##
-  ## The macro parses the Abstract Syntax Tree (AST) of the expression and converts
-  ## the identifiers (types) into their Component IDs using the world's registry.
-  ##
-  ## param: world: The `ECSWorld` instance.
-  ## param: expr: The query expression (e.g., `Pos and Modified[Vel]`).
-  ## return: A `QuerySignature` ready for use in query functions.
-  ##
-  ## Example:
-  ## ```nim
-  ## let sig = world.query(Position and Velocity and not Tag)
-
-  var components = newSeq[NimNode]()
+proc processQueryExpr(world, expr: NimNode): (NimNode, NimNode) =
+  var components = newNimNode(nnkBracket)
   var componentTypes = newNimNode(nnkTupleConstr)
 
   proc processExpr(world: NimNode, node: NimNode) =
@@ -529,14 +513,25 @@ macro query*(world: untyped, expr: untyped): untyped =
 
   processExpr(world, expr)
 
-  # Construct the sequence of QueryComponents
-  let componentsSeq = newNimNode(nnkBracket)
-  for comp in components:
-    componentsSeq.add(comp)
+  (componentTypes, componentsSeq)
 
-  let tup = newNimNode(nnkTupleConstr)
-  for comp in componentTypes:
-    tup.add(comp)
+macro query*(world: untyped, expr: untyped): untyped =
+  ## Macro for Domain Specific Language (DSL) query syntax.
+  ##
+  ## Allows writing queries using `and`, `not`, and `Modified[]` operators, e.g.:
+  ## `query(world, Position and Modified[Velocity] and not Dead)`
+  ##
+  ## The macro parses the Abstract Syntax Tree (AST) of the expression and converts
+  ## the identifiers (types) into their Component IDs using the world's registry.
+  ##
+  ## param: world: The `ECSWorld` instance.
+  ## param: expr: The query expression (e.g., `Pos and Modified[Vel]`).
+  ## return: A `QuerySignature` ready for use in query functions.
+  ##
+  ## Example:
+  ## ```nim
+  ## let sig = world.query(Position and Velocity and not Tag)
+  let (componentTypes, componentsSeq) = processQueryExpr(world, expr)
 
   # Return the call to buildQuerySignature
   result = quote do:
@@ -601,9 +596,10 @@ macro executeDQuery(w: ECSWorld, q: QuerySignature): untyped =
       iterator `iterName`(`wsymb`: ECSWorld, `qsymb`: `qtype`): `returnType` =
         `getComp`
 
-        for (`bid`, `r`) in `wsymb`.denseQuery(`qsymb`):
+        for (`bid`, rn) in `wsymb`.denseQuery(`qsymb`):
           `blks`
-          yield `returnData`
+          for `r` in rn:
+            yield `returnData`
 
     ITERATOR_REGISTRY[id] = iterName
 
