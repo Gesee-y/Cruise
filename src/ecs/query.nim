@@ -513,7 +513,7 @@ proc processQueryExpr(world, expr: NimNode): (NimNode, NimNode) =
 
   processExpr(world, expr)
 
-  (componentTypes, componentsSeq)
+  (componentTypes, components)
 
 macro query*(world: untyped, expr: untyped): untyped =
   ## Macro for Domain Specific Language (DSL) query syntax.
@@ -596,7 +596,7 @@ macro executeDQuery(w: ECSWorld, q: QuerySignature): untyped =
       iterator `iterName`(`wsymb`: ECSWorld, `qsymb`: `qtype`): `returnType` =
         `getComp`
 
-        for (`bid`, r) in `wsymb`.denseQuery(`qsymb`):
+        for (`bid`, `r`) in `wsymb`.denseQuery(`qsymb`):
           `blks`
           yield `returnData`
 
