@@ -2,7 +2,7 @@
 # ############################################################### ARCHETYPES MASK ################################################################## #
 # ################################################################################################################################################## #
 
-const 
+const
   MAX_COMPONENTS = MAX_COMPONENT_LAYER * sizeof(uint) * 8
 
 type
@@ -31,7 +31,7 @@ template `xor`*(a,b:ArchetypeMask | ptr ArchetypeMask):untyped =
     res[i] = (a[i] xor b[i])
 
   res
-  
+
 template `not`*(a: ArchetypeMask | ptr ArchetypeMask):untyped =
   var res:ArchetypeMask
 
@@ -126,7 +126,7 @@ proc hasComponent*(mask: ArchetypeMask | ptr ArchetypeMask, comp: ComponentId | 
 proc componentCount*(mask: ArchetypeMask | ptr ArchetypeMask): int =
   result = 0
   for layer in mask:
-    result += popcount(layer)
+    result += popcount(layer.uint)
 
 {.pop.}
 
@@ -136,13 +136,13 @@ proc hash*(mask: ArchetypeMask | ptr ArchetypeMask): Hash =
 proc getComponents*(mask: ArchetypeMask | ptr ArchetypeMask): seq[int] =
   let count = mask.componentCount()
   result = newSeqOfCap[int](count)
-  
+
   for layer in 0..<MAX_COMPONENT_LAYER:
     var bits = mask[layer]
     if bits == 0: continue
-    
+
     let baseId = layer shl 6  # * 64
-    
+
     while bits != 0:
       let tz = countTrailingZeroBits(bits)
       result.add(baseId + tz)
