@@ -436,7 +436,7 @@ proc notModifiedComp*(componentId: int): QueryComponent =
   ## Creates a `QueryComponent` that requires a component to be not modified.
   QueryComponent(id: componentId, op: qNotModified)
 
-proc processQueryExpr(world, expr: NimNode): (NimNode, NimNode) =
+proc processQueryExpr*(world, expr: NimNode): (NimNode, NimNode) =
   var components = newNimNode(nnkBracket)
   var componentTypes = newNimNode(nnkTupleConstr)
 
