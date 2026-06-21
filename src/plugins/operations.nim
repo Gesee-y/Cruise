@@ -81,6 +81,8 @@ template addSystem*(p:var Plugin, obj):int =
 
     if id >= p.idtonode.len:
       p.idtonode.setLen(id+1)
+      p.nodeThreadsID.setLen(id+1)
+      p.nodeThreadsID[id] = -1
 
     p.idtonode[id] = sys
 
@@ -133,6 +135,7 @@ proc getReadResource*[T](node: PluginNode): Option[T] =
 
 proc getWriteResource*[T](node: PluginNode): Option[T] =
   var plugin = node.plugin
+  doAssert getThreadId() != plugin.nodeThreadsID[node.id], "Trying to access unauthorized resource."
   let id = plugin.res_manager.getId(T)
   let res = plugin.res_manager.resources[id]
   if not res.writeRequests.contains(node.id):
@@ -181,6 +184,7 @@ template exec_node(f, n) =
   if not n.isReady:
     n.setStatus(PLUGIN_WAITING)
   else:
+    n.plugin.nodeThreadsID[n.id] = getThreadId()
     try:
       let am = PluginNode(n).getExecAmount
       for i in 0..<am:
@@ -194,6 +198,7 @@ template exec_node(f, n) =
       n.setLastErr(e[])
       n.setStatus(PLUGIN_ERR)
     finally:
+      n.plugin.nodeThreadsID[n.id] = -1
       n.releaseResources()
 
 macro hashc(name: untyped): int =

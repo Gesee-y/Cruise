@@ -96,10 +96,10 @@ Both graphs are dynamic. You can change dependencies between systems at runtime 
 
 ## Race security
 
-Let's assume you have some system waiting for a callback, so it's was interrupted.
-Our current model (unable to know when it will resume), can't ensure that when the systeme will continue it's execution, it won't cause data race, that's why Cruise plugin introduce a **runtime borrow checker** similar to rust. 
-It ensure that multiple reader can have a resources but there should be only one writer.
-This ensure that when the systeme resume, either it access the resources because it's safe, or he can't.
+Let's assume you have a system that emit callbacks.
+Since those callbacks aren't handled by the DAG, our current model can't ensure they don't conflit and create data race.
+That's why Cruise plugin introduce a **runtime borrow checker** similar to rust. 
+It ensure that multiple reader can have a resources but there should be only one writer even if those reader/writer aren't systems in the DAG.
 
 ```nim
 var res = sys.getWriteResource[:MyResource] # Or getReadResource for read access

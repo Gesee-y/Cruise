@@ -41,6 +41,7 @@ type
     res_manager*: PResourceManager
     bus: CEventBus
     graph:DiGraph
+    nodeThreadsID: seq[int]
     parallel_cache:seq[array[2, seq[int]]]
     dirty:bool
 
