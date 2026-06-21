@@ -233,9 +233,11 @@ template executeSystems(plugin: var Plugin, scheduler: var ParallelScheduler, fn
 
     executed += 1
 
-template executeSystems(plugin: var Plugin, scheduler: var ParallelScheduler, fn: untyped) =
-  discard
-    
+template executeSystems(plugin: var Plugin, scheduler: var SynchronousScheduler, fn: untyped) =
+  for id in scheduler.cachedSorted:
+    var n = plugin.idtonode[id]
+    exec_node(fn, n)
+
 proc computeParallelLevel*(p:var Plugin) =
   var graph = p.graph
 

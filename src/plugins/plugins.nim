@@ -2,7 +2,7 @@
 ######################################################### PLUGIN SYSTEM ############################################################################
 ####################################################################################################################################################
 
-import tables, typetraits, macros, options, std/monotimes, atomics, locks, std/threadpool
+import tables, typetraits, macros, options, std/monotimes, atomics, locks, std/threadpool, hashes
 import ../graph/graph
 import ../events/events
 include "bitset.nim"
@@ -62,7 +62,7 @@ const MAX_CHANNEL_SIZE = 128
 proc newPlugin*(): Plugin =
   new(result)
 
-proc rebuildScheduler(p: Plugin, scheduler: SynchronousScheduler) =
+proc rebuildScheduler(p: var Plugin, scheduler: var SynchronousScheduler) =
   scheduler.graph = p.graph
 
   p.res_manager.buildGlobalAccessGraph()
@@ -76,14 +76,14 @@ proc rebuildScheduler(p: var Plugin, scheduler: var ParallelScheduler) =
   scheduler.graph.mergeEdgeInto(p.res_manager.cachedGraph)
   scheduler.cachedSorted = scheduler.graph.topo_sort
 
-proc buildParallelScheduler(p: Plugin): ParallelScheduler =
+proc buildParallelScheduler(p: var Plugin): ParallelScheduler =
   var scheduler = ParallelScheduler()
   p.rebuildScheduler(scheduler)
   scheduler.execStream.open(MAX_CHANNEL_SIZE)
   scheduler.lock.initLock()
   scheduler
 
-proc buildSynchronousScheduler(p: Plugin): SynchronousScheduler =
+proc buildSynchronousScheduler(p: var Plugin): SynchronousScheduler =
   var scheduler = SynchronousScheduler()
   p.rebuildScheduler(scheduler)
   scheduler
