@@ -16,17 +16,17 @@ Systems are built around the `EffectivePluginNode` concept, which requires imple
 * `awake`: Initialize the system
 * `update`: Run the system every frame
 * `shutdown`: Stop the system and release resources
-* `getCapability`: Provide an interface for dependent systems
 
 ## Capability
 
-A capability is the interface a system exposes to its dependencies. For example:
+A capability is the interface a system exposes to its dependencies.
+This is simply done through exported field.
 
 ```nim
 type
   MySys = object of PluginNode
     count: int
-    value: int
+    value*: int # Can only access `value`
 
 method update(s: var MySys, dt: float) =
   s.count += s.value
@@ -34,29 +34,8 @@ method update(s: var MySys, dt: float) =
 ## In a dependent system
 
 var dep = node.getDependency[MySys]()
-dep.value = 1
-dep.count = 0  # Modifying count here can break MySys unexpectedly
-```
-
-Using capabilities makes this safer:
-
-```nim
-type
-  Incrementer = ref object
-    value: int
-
-  MySys = object of PluginNode
-    count: int
-    cap: Incrementer
-
-method getCapability(s: MySys): Incrementer = s.cap
-method update(s: var MySys, dt: float) =
-  s.count += s.cap.value
-
-## In a dependent system
-
-var inc = node.getDependency[MySys]() # Only access the interface provided
-inc[].value = 1
+dep.value = 1 # Ok
+dep.count = 0 # Error: Can't access `count`
 ```
 
 With this approach, multiple independent plugins can interact safely, without risking corruption of internal state.
