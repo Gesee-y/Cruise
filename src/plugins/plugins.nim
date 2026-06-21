@@ -2,7 +2,7 @@
 ######################################################### PLUGIN SYSTEM ############################################################################
 ####################################################################################################################################################
 
-import tables, typetraits, macros, options, std/monotimes, atomics, locks
+import tables, typetraits, macros, options, std/monotimes, atomics, locks, std/threadpool
 import ../graph/graph
 import ../events/events
 include "bitset.nim"
@@ -15,10 +15,10 @@ type
     PLUGIN_OK # The plugin is working fine
     PLUGIN_ERR # The plugin encountered an error
     PLUGIN_DEPRECATED # The plugin data or state is stale
-    PLUGIN_WAITING # The plugin is waiting for something 
+    PLUGIN_WAITING # The plugin is waiting for something
     PLUGIN_NOT_READY # The plugin is not ready to execute
     PLUGIN_OFF # The plugin is uninitialized
-  
+
   PluginNode* = ref object of RootObj
     ## Represents a system in our DAG, indexed by his ID
     ## `enabled` allows you make it run or not
@@ -48,12 +48,13 @@ type
     execStream: Channel[int]
     cachedSorted: seq[int]
     cachedIndegree: seq[int]
+    procs: Table[int, proc(scheduler: var ParallelScheduler, node: var PluginNode)]
     lock: Lock
 
   SynchronousScheduler* = object
     graph: DiGraph
     cachedSorted: seq[int]
-    
+
   NullPluginNode* = ref object of PluginNode
 
 const MAX_CHANNEL_SIZE = 128
@@ -61,7 +62,14 @@ const MAX_CHANNEL_SIZE = 128
 proc newPlugin*(): Plugin =
   new(result)
 
-template rebuildScheduler(p: Plugin, scheduler: untyped) =
+proc rebuildScheduler(p: Plugin, scheduler: SynchronousScheduler) =
+  scheduler.graph = p.graph
+
+  p.res_manager.buildGlobalAccessGraph()
+  scheduler.graph.mergeEdgeInto(p.res_manager.cachedGraph)
+  scheduler.cachedSorted = scheduler.graph.topo_sort
+
+proc rebuildScheduler(p: var Plugin, scheduler: var ParallelScheduler) =
   scheduler.graph = p.graph
 
   p.res_manager.buildGlobalAccessGraph()
@@ -85,7 +93,7 @@ template getParallelCache*(p: Plugin): seq[array[2, seq[int]]] = p.parallel_cach
 template getGraph*(p: Plugin): DiGraph = p.graph
 
 template getStatus*(s:typed):untyped = s.status
-template setStatus*(s:typed, st:PluginStatus) = 
+template setStatus*(s:typed, st:PluginStatus) =
   s.status = st
 
 method awake*(p:PluginNode) {.base.} = p.setStatus(PLUGIN_OK)
@@ -99,8 +107,8 @@ template asKey*(t:typedesc): string = $t
 method asKey*(p:PluginNode):string {.base.} = asKey(p.typeof)
 method increaseExecCount*(p: var PluginNode, n: int) {.base.} = p.execCount += n
 method getExecCount(p: PluginNode): int {.base.} = p.execCount
-method getExecAmount*(p: PluginNode): int {.base.} = 
-  if p.execAmount == 0: 1 
+method getExecAmount*(p: PluginNode): int {.base.} =
+  if p.execAmount == 0: 1
   else: p.execAmount
 method setExecAmount*(p: var PluginNode, n:int=1) {.base.} =
   p.execAmount = n
@@ -142,7 +150,7 @@ macro newSystem*(plugin: untyped, nameAndResources: untyped): untyped =
 
   let typeDef = quote do:
     type `sysName` = ref object of PluginNode
-  
+
   res.add(typeDef)
 
   # Generate: makeAsKey(system_name)
@@ -200,7 +208,7 @@ macro newSystem*(plugin: untyped, nameAndResources: untyped, body: untyped): unt
 
   let typeDef = quote do:
     type `sysName` = ref object of PluginNode
-  
+
   # Inject fields into the object def
   typeDef[0][2][0][2] = recList
   res.add(typeDef)
@@ -242,7 +250,7 @@ macro genSystemTy*(sysName: untyped, body: untyped) =
 
   let typeDef = quote do:
     type `sysName` = ref object of PluginNode
-  
+
   # Inject fields into the object def
   typeDef[0][2][0][2] = recList
   res.add(typeDef)

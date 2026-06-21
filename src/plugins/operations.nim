@@ -8,12 +8,11 @@ template isDeprecated*(s:typed):untyped = getstatus(s) == PLUGIN_DEPRECATED
 template isWaiting*(s:typed):untyped = getstatus(s) == PLUGIN_WAITING
 template hasFailed*(s:typed):untyped = getstatus(s) == PLUGIN_ERR
 
-
 template getLastError*(s:typed):untyped = s.lasterr
-template setLastErr*(s:typed, e) = 
+template setLastErr*(s:typed, e) =
   s.lasterr = e
 
-template hasFailedDeps*(s:typed):untyped = 
+template hasFailedDeps*(s:typed):untyped =
   var res = false
   for k,v in s.deps.pairs:
     if hasfailed(v):
@@ -21,7 +20,7 @@ template hasFailedDeps*(s:typed):untyped =
       break
   res
 
-template hasWaitingDeps*(s:typed):untyped = 
+template hasWaitingDeps*(s:typed):untyped =
   var res = false
   for k,v in s.deps.pairs:
     if isWaiting(v):
@@ -29,7 +28,7 @@ template hasWaitingDeps*(s:typed):untyped =
       break
   res
 
-template hasUninitializedDeps*(s:typed):untyped = 
+template hasUninitializedDeps*(s:typed):untyped =
   var res = false
   for k,v in s.deps.pairs:
     if isuninitialized(v):
@@ -53,9 +52,9 @@ proc isResourcesAvailable*(n: PluginNode): bool =
 
   return true
 
-template getDependency*[T](n:typed):untyped = 
+template getDependency*[T](n:typed):untyped =
   let d = $T
-  if not n.deps.hasKey(d): 
+  if not n.deps.hasKey(d):
     raise newException(OSError, "Dependency $n not found in node")
 
   T(n.deps[d])
@@ -67,7 +66,7 @@ template getNodeid*(n:typed, s:string):untyped =
     if $(v.getObject.typeof) == s:
       res = i
       break
-  res 
+  res
 
 template addSystem*(p:var Plugin, obj):int =
   var id = -1
@@ -82,7 +81,7 @@ template addSystem*(p:var Plugin, obj):int =
 
     if id >= p.idtonode.len:
       p.idtonode.setLen(id+1)
-    
+
     p.idtonode[id] = sys
 
     sys.id = id
@@ -147,7 +146,7 @@ proc releaseResource*(n: PluginNode, id: int) =
 
 proc releaseResources*(n: PluginNode) =
   var p = n.plugin
-  if n.id in p.res_manager.sysToRes: 
+  if n.id in p.res_manager.sysToRes:
     for i in p.res_manager.sysToRes[n.id]:
       p.res_manager.resources[n.id].resetRequest(n.id)
 
@@ -174,7 +173,7 @@ proc mergePlugin*(p1:var Plugin, p2:var Plugin) =
         let stop = idmap[j.idx]
 
         discard addDependency(p1, start, stop)
-  
+
   p1.res_manager.mergeResourceManager(p2.res_manager, idmap)
   p1.dirty = true
 
@@ -197,11 +196,15 @@ template exec_node(f, n) =
     finally:
       n.releaseResources()
 
+macro hashc(name: untyped): int =
+  let id = name.repr.hash.int
+  return quote do: `id`
+
 template executeSystems(plugin: var Plugin, scheduler: var ParallelScheduler, fn: untyped) =
   var executed = 0
   if plugin.dirty: plugin.rebuildScheduler(scheduler)
 
-  if scheduler.cachedSorted.len > 0: 
+  if scheduler.cachedSorted.len > 0:
     scheduler.cachedIndegree = scheduler.graph.indegrees
     var current = 0
 
@@ -210,26 +213,29 @@ template executeSystems(plugin: var Plugin, scheduler: var ParallelScheduler, fn
       scheduler.execStream.send(scheduler.cachedSorted[current])
       inc current
 
-  let threadProc = 
-    proc() {.thread.} = 
-      exec_node(fn, node)
-      scheduler.lock.acquire()
-      let ins = scheduler.graph.outedges[node.id]
-      for info in ins:
-        scheduler.cachedIndegree[info.idx] -= 1
-        if scheduler.cachedIndegree[info.idx] == 0:
-          scheduler.execStream.send(info.idx)
-      scheduler.lock.release()
+  let id = hashc(fn)
+  if id notin scheduler.procs:
+    scheduler.procs[id] =
+      proc(scheduler: var ParallelScheduler, node: var PluginNode) =
+        exec_node(fn, node)
+        scheduler.execStream.send(node.id)
+
+  let threadProc = scheduler.procs[id]
 
   while executed < scheduler.cachedSorted.len:
     let id = scheduler.execStream.recv
-    var node = plugin.idtonode[id]
+    let outs = scheduler.graph.outedges[id]
+    for info in outs:
+      var node = plugin.idtonode[info.idx]
+      scheduler.cachedIndegree[info.idx] -= 1
+      if scheduler.cachedIndegree[info.idx] == 0:
+        spawn threadProc(scheduler, node)
 
-    # TODO: Add threadpool. This is highly inefficient
-    var t: Thread[void]
-    createThread(t, threadProc, (scheduler, node))
     executed += 1
 
+template executeSystems(plugin: var Plugin, scheduler: var ParallelScheduler, fn: untyped) =
+  discard
+    
 proc computeParallelLevel*(p:var Plugin) =
   var graph = p.graph
 
@@ -272,7 +278,7 @@ template pmap*(f:untyped,p:Plugin) =
   if p.dirty: computeParallelLevel(p)
 
   for level in p.parallel_cache:
-    
+
     # TODO: Add parallelism here
     for i in level[0]:
       var n = p.idtonode[i]
@@ -282,7 +288,6 @@ template pmap*(f:untyped,p:Plugin) =
       var n = p.idtonode[i]
       exec_node(f, n)
 
-template awake*(p: Plugin) = pmap(awake, p)             
+template awake*(p: Plugin) = pmap(awake, p)
 template update*(p: Plugin) = pmap(update, p)
 template shutdown*(p: Plugin) = pmap(shutdown, p)
-
