@@ -3,66 +3,94 @@
 # ######################################################################################################################################################## #
 
 type
-  CInstance[T] = ref object
+  CMData*[T] = ref object
+    ## Contains the all the messages for a given type `T` and their timestamp
     data: seq[T]
-    timestamp: seq[int]
+    timestamps: seq[int]
+    lock: RWLock
+
+  # Internal structure for a type erased thread-safe message handle
   CMessage = object
     data: pointer
-    lock: Lock
     clear: proc(p: pointer)
     free: proc(p: pointer)
 
-  CEventBus = object
+  CEventBus* = object
+    lock: Lock
     messages: Table[string, CMessage]
 
+var MESSAGE_TYPE_REGISTRY {.compileTime.} = initTable[int, NimNode]()
+
+proc registerMessageType(t: NimNode) =
+  MESSAGE_TYPE_REGISTRY[t.getTypeInst.repr.hash.int] = t
+
 template newMessage[T](): CMessage =
-  let data: CInstance[T]
+  let data: CMData[T]
   new(data)
   GC_ref(data)
+  data.lock.initLock()
   result.data = cast[pointer](data)
-  result.clear = 
-    proc(p: pointer) = 
-      var d = cast[CInstance[T]](p)
-      d.data.setLen(0)
-  result.free = 
-    proc(p: pointer) = 
-      var d = cast[CInstance[T]](p)
+  result.clear =
+    proc(p: pointer) =
+      var d = cast[CMData[T]](p)
+      d.lock.withWriteLock:
+        d.data.setLen(0)
+        d.timestamps.setLen(0)
+  result.free =
+    proc(p: pointer) =
+      var d = cast[CMData[T]](p)
       GC_unref(d)
 
-proc addMessage*[T](bus: var CEventBus, obj: T) =
+macro newCEventBus*(): CEventBus =
+  let msgAdd = newNimNode(nnkStmtList)
+  let bus = ident"bus"
+
+  for t in MESSAGE_TYPE_REGISTRY.values:
+    msgAdd.add quote do:
+      `bus`.messages[$`t`] = newMessage[`t`]()
+
+  return quote do:
+    var `bus` = CEventBus()
+    `msgAdd`
+
+macro addMessage*[T](bus: var CEventBus, obj: T) =
+  registerMessageType(obj)
+
+  return quote do:
+    var msg = `bus`.messages[$`T`]
+    var d = cast[CMData[`T`]](msg.data)
+    d.lock.withWriteLock:
+      d.data.add(`obj`)
+      d.timestamps.add(getMonoTime().ticks)
+
+proc getMessage*[T](bus: var CEventBus, obj: T): Option[CMData[T]] =
   if $T notin bus.messages:
-    bus.messages[$T] = newMessage[T]()
+    return none(CMData[T])
 
   var msg = bus.messages[$T]
-  msg.lock.acquire()
-  var d = cast[CInstance[T]](msg.data)
-  d.data.add(obj)
-  d.data.add(getMonoTime().ticks)
-  msg.lock.release()
+  var d = cast[CMData[`T`]](msg.data)
+  d.lock.withReadLock:
+    var d = cast[CMData[T]](msg.data)
+    if d.data.len <= 0:
+      return none(CMData[T])
 
-proc getMessage*[T](bus: var CEventBus, obj: T): Option[CInstance[T]] =
-  if $T notin bus.messages:
-    return none(CInstance[T])
+    some(d)
 
-  var msg = bus.messages[$T]
-  msg.lock.acquire()
-  var d = cast[CInstance[T]](msg.data)
-  if d.data.len <= 0:
-    return none(CInstance[T])
-
-  msg.lock.release()
-  some(d)
-
-
-proc clearMessage(bus: var CEventBus) =
+proc clearMessage*(bus: var CEventBus) =
   for k, msg in bus.messages.mpairs:
-    msg.lock.acquire()
     msg.clear(msg.data)
-    msg.lock.release()
+
+proc `[]`*[T](c: CMData[T], i: int): T = c.data[i]
+proc timestamp*[T](c: CMData[T], i: int): int = c.timestamps[i]
+
+iterator items*[T](c: CMData[T]): T =
+  c.lock.withReadLock:
+    for data in c.data:
+      yield data
+
+proc destroy*(bus: var CEventBus) =
+  for k, msg in bus.messages.mpairs:
+    msg.free(msg.data)
 
 proc `destroy=`(bus: var CEventBus) =
-  for k, msg in bus.messages.mpairs:
-    msg.lock.acquire()
-    msg.free(msg.data)
-    msg.lock.release()
-
+  bus.destroy()

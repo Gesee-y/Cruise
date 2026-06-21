@@ -5,6 +5,7 @@
 import tables, typetraits, macros, options, std/monotimes, atomics, locks, std/threadpool, hashes
 import ../graph/graph
 import ../events/events
+import ../utilities/rwlock
 include "bitset.nim"
 include "data.nim"
 include "message.nim"
