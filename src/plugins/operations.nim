@@ -125,15 +125,15 @@ proc remDependency*(p:var Plugin, start:int, to:int) =
 
 proc addResource*[T](p: var Plugin, obj: T): int = p.res_manager.addResource(obj)
 
-proc getReadResource*[T](node: PluginNode): Option[T] =
+proc getReadResource*[T](node: PluginNode): lent T =
   let id = node.plugin.res_manager.getId(T)
   let res = node.plugin.res_manager.resources[id]
   if not res.readRequests.contains(node.id):
     raise newException(ValueError, "Can't access resources as read.")
 
-  result = node.plugin.res_manager.getResource[:T](sys=node.id)
+  result = node.plugin.res_manager.getResource[:T]()
 
-proc getWriteResource*[T](node: PluginNode): Option[T] =
+proc getWriteResource*[T](node: PluginNode): var T =
   var plugin = node.plugin
   doAssert getThreadId() != plugin.nodeThreadsID[node.id], "Trying to access unauthorized resource."
   let id = plugin.res_manager.getId(T)
@@ -141,7 +141,7 @@ proc getWriteResource*[T](node: PluginNode): Option[T] =
   if not res.writeRequests.contains(node.id):
     raise newException(ValueError, "Can't access resources as write.")
 
-  result = plugin.res_manager.getResource[:T](sys=node.id)
+  result = plugin.res_manager.getResource[:T]()
 
 proc releaseResource*(n: PluginNode, id: int) =
   var p = n.plugin

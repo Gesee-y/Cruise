@@ -48,7 +48,7 @@ proc addResource*[T](manager: var PResourceManager, obj: T): int =
   let id = manager.resources.len
   manager.resources.add(newPluginResource(obj))
   manager.dirty = true
-  
+
   if not manager.toId.hasKey($T):
     manager.toId[$T] = newSeq[int]()
 
@@ -62,20 +62,9 @@ proc getId[T](m:PResourceManager, t:typedesc[T], i: int = 0): int =
 proc getResourceFromId*[T](manager: PResourceManager, id: int): T =
   return cast[T](manager.resources[id].data)
 
-proc getResource*[T](manager: var PResourceManager, i:int=0, sys:int = -1): Option[T] =
+proc getResource*[T](manager: var PResourceManager, i:int=0): T =
   let id = manager.toId[$T][i]
-  if sys >= 0: 
-    if sys in manager.resources[id].readRequests:
-      if manager.resources[id].isWriteRequested.load > 0:
-        return none(T)
-      discard manager.resources[id].isReadRequested.fetchAdd(1)
-    elif sys in manager.resources[id].writeRequests:
-      if manager.resources[id].isReadRequested.load > 0 or manager.resources[id].isWriteRequested.load > 0:
-        return none(T)
-
-      discard manager.resources[id].isWriteRequested.fetchAdd(1)
-
-  return some(cast[T](manager.resources[id].data))
+  return cast[T](manager.resources[id].data)
 
 proc resetRequest(res: var PluginResource, sys: int) =
   if sys in res.writeRequests: discard res.isWriteRequested.fetchSub(1)
@@ -106,10 +95,10 @@ proc addWriteRequest*(manager: var PResourceManager, sys, id: int) =
   assert not manager.resources[id].readRequests.contains(sys),
     "sys " & $sys & " already has a read request on resource " & $id
   if sys in manager.resources[id].writeRequests: return
-  
+
   if sys > manager.maxRequestId:
     manager.maxRequestId = sys
-  
+
   if sys notin manager.sysToRes:
     manager.sysToRes[sys] = @[]
 
@@ -140,7 +129,7 @@ proc buildAccessGraph(res: var PluginResource) =
   # Collect the total number of systems involved to size the graph.
   # We work with sys IDs directly as node indices, so we need a graph
   # large enough to hold the largest sys id.
-  
+
   var maxId = max(res.readRequests.max, res.writeRequests.max)
 
   res.cachedGraph = newGraph(maxId + 1)
@@ -204,4 +193,3 @@ proc mergeResourceManager*(p1, p2: var PResourceManager, idmap: Table[int, int])
       p1.resources.add(resource)
 
     p1.dirty = true
-
