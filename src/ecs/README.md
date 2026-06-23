@@ -92,6 +92,13 @@ world.registerComponent(Tag)
 world.registerComponent(Inventory[Sword])
 ```
 
+* **Dynamic components**: Cruise allows you to use **dynamic components** which are evaluated at runtime and create a new archetype. It's the building block that allows you to build complex relationships.
+
+```nim
+let e = world.createEntity(Pos, Vel, 6, myRuntimeFunc(5))
+let q = world.query(Pos and myRuntimeFunc(5))
+```
+
 * **Typed functional API**: That allows for way faster operations per entities by encoding the entity signature in the handle. This is totally compatible with the old API
 
 ```nim
