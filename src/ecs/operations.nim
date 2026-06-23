@@ -14,27 +14,46 @@ type
 # ########################################################### DENSE OPERATIONS #################################################################### #
 # ################################################################################################################################################# #
 
-macro createEntity*(world: ECSWorld, comps: varargs[typed]): DenseHandle =
+macro createEntity*(world: ECSWorld, components: varargs[typed]): DenseHandle =
   ## Create a new dense entity with the given components (that you enter as types)
   ## Example:
   ## ```nim
   ## world.createEntity(Position, Velocity)
   ## ```
   let enable_event = EVENT_ACTIVE
-  var (compIds, components) = getComponentsMetadata(comps)
+  var comps = newNimNode(nnkBracket)
+  var dynComps = newNimNode(nnkBracket)
   var regis = newNimNode(nnkStmtList)
-  for c in comps:
-    regis.add quote("@") do: discard `@world`.registerComponent(`@c`)
+  var dn = 0
+
+  for c in components:
+    if c.isType:
+      comps.add(c)
+      var ds = newNimNode(nnkDiscardStmt)
+      ds.add newCall(bindSym"registerComponent", world, c)
+      regis.add(ds)
+    elif c.isDynamicType:
+      let ds = newNimNode(nnkDotExpr)
+      ds.add(c)
+      ds.add(ident"int")
+      dynComps.add(ds)
+      inc dn
+
+  var (compIds, components) = getComponentsMetadata(comps)
 
   return quote("@") do:
     `@regis`
     # Acquire a stable internal ID (widx) for the entity record.
     let pid = getStableEntity(`@world`)
     var arch = `@world`.archGraph.findArchetype(`@compIds`)
+    var dynComps: array[`@dn`, int] = `@dynComps`
+
+    for id in dynComps:
+      arch = `@world`.archGraph.addComponent(arch, id)
 
     # Allocate actual space for the entity data within the specific archetype.
     # Returns block ID (bid), internal block index (id), and the archetype instance ID (archId).
-    let (bid, id) = allocateEntity(`@world`, arch, `@components`)
+    let (bid, id) = allocateEntity(`@world`, arch, `@comps`)
 
     # Calculate the flat index into the handles array based on block arithmetic.
     # Combines the block ID and the local ID within the block.
@@ -55,14 +74,24 @@ macro createEntity*(world: ECSWorld, comps: varargs[typed]): DenseHandle =
     d.widx = pid
     d.gen = `@world`.generations[pid]
     d.world = `@world`
-    if `@enable_event`: 
+    if `@enable_event`:
       var ev = `@world`.events
       ev.emitDenseEntityCreated(d)
 
     d
 
-macro createEntities*(world: ECSWorld, n: untyped, comps: varargs[typed]): seq[DenseHandle] =
+macro createEntities*(world: ECSWorld, n: untyped, components: varargs[typed]): seq[DenseHandle] =
   ## Same as `createEntity` but create `n` entities in bulk.
+  var comps = newNimNode(nnkBracket)
+  var dynComps = newNimNode(nnkBracket)
+  var dn = 0
+  for c in components:
+
+    if c.isType: comps.add(c)
+    elif c.isDynamicType:
+      dynComps.add(quote do: `c`.int)
+      inc dn
+
   var (compIds, components) = getComponentsMetadata(comps)
   var regis = newNimNode(nnkStmtList)
   for c in comps:
@@ -72,6 +101,10 @@ macro createEntities*(world: ECSWorld, n: untyped, comps: varargs[typed]): seq[D
     `@regis`
     var rest = newSeq[DenseHandle](`@n`)
     var arch = `@world`.archGraph.findArchetype(`@compIds`)
+    var dynComps: array[`@dn`, int] = `@dynComps`
+
+    for id in dynComps:
+      arch = `@world`.archGraph.addComponent(arch, id)
 
     # Acquire 'n' stable internal IDs.
     let pids = getStableEntities(`@world`, `@n`)
@@ -206,7 +239,7 @@ proc migrateEntity*(world: var ECSWorld, d: DenseHandle, archNode: uint16) =
     # Update the migrating entity's ID to its new physical position.
     let oldArchId = e.archetypeId
     let newId = makeId(bid, id)
-    
+
     e.id = newId
     e.archetypeId = archNode
     var ev = world.events
@@ -265,12 +298,12 @@ template migrateEntityDefer*(buffer: var ECommandBuffer, d: DenseHandle,
   ## - buffer_id: The ID of the command buffer.
   buffer.addCommand(eckRemEntity, d, archNode)
 
-proc addComponent*(world: var ECSWorld, d: DenseHandle, components: openArray[int]) =
+proc addDynComponent*(world: var ECSWorld, d: DenseHandle, components: varargs[int]) =
   ## Adds components to an existing entity (Dense storage).
   ##
   ## This effectively changes the entity's archetype, triggering a migration.
   ##
-  ## Parameters: 
+  ## Parameters:
   ## - world: The mutable `ECSWorld` instance.
   ## - d: The `DenseHandle` of the entity.
   ## - components: Variadic list of Component IDs to add.
@@ -299,43 +332,26 @@ macro addComponent*(
   world: var ECSWorld,
   d: DenseHandle,
   addedComps: varargs[typed]
-): untyped =
+) =
   var addedIds = newNimNode(nnkBracket)
   var regis = newNimNode(nnkStmtList)
   for c in addedComps:
-    addedIds.add quote("@") do: toComponentId(`@c`)
-    regis.add quote("@") do: discard `@world`.registerComponent(`@c`)
-  if addedIds.len == 0:
-    addedIds = quote("@") do: array[0, int](`@addedIds`)
+    if c.isType:
+      addedIds.add(quote("@") do: toComponentId(`@c`))
+      regis.add(quote("@") do: discard `@world`.registerComponent(`@c`))
+    elif c.isDynamicType: addedIds.add(quote("@") do: `@c`.int)
 
-  return quote("@") do: 
+  var aComp = newNimNode(nnkPrefix)
+  aComp.add(ident"@")
+  aComp.add(addedIds)
+  return quote("@") do:
     `@regis`
-    let components = `@addedIds`
-    check(components.len > 0,
-    "addComponent: component list is empty — no structural change will occur. " &
-    "Pass at least one component ID.")
-    
-    let e = `@d`.obj
-    let oldArch = `@world`.archGraph.nodes[e.archetypeId]
-    for cid in components:
-      check(cid >= 0 and cid < MAX_COMPONENTS,
-        "addComponent: component ID=" & $cid &
-        " is out of valid range [0, " & $MAX_COMPONENTS & "). " &
-        "Ensure the component is registered before use.")
-    var archNode = oldArch.id
-
-    # Traverse the archetype graph, adding components one by one to find the target node.
-    for id in components:
-      archNode = `@world`.archGraph.addComponent(archNode, id)
-
-    # Perform the migration to the new archetype.
-    migrateEntity(`@world`, `@d`, archNode)
-    var ev = `@world`.events
+    `@world`.addDynComponent(`@d`, `@aComp`)
 
 proc addComponent*(dw: var DWEntity, components: varargs[int]) =
-  addComponent(dw.w, dw.handle, components)
+  addDynComponent(dw.w, dw.handle, components)
 
-proc removeComponent*(world: var ECSWorld, d: DenseHandle, components: openArray[int]) =
+proc removeDynComponent*(world: var ECSWorld, d: DenseHandle, components: varargs[int]) =
   ## Removes components from an existing entity (Dense storage).
   ##
   ## This effectively changes the entity's archetype, triggering a migration.
@@ -371,43 +387,22 @@ macro removeComponent*(
   world: var ECSWorld,
   d: DenseHandle,
   removedComps: varargs[typed]
-): untyped =
+) =
   var removedIds = newNimNode(nnkBracket)
   var regis = newNimNode(nnkStmtList)
   for c in removedComps:
-    removedIds.add quote("@") do: toComponentId(`@c`)
-    regis.add quote("@") do: discard `@world`.registerComponent(`@c`)
-  if removedIds.len == 0:
-    removedIds = quote("@") do: array[0, int](`@removedIds`)
+    if c.isType: removedIds.add(quote("@") do: toComponentId(`@c`))
+    elif c.isDynamicType: removedIds.add(quote("@") do: `@c`.int)
 
-  return quote("@") do: 
-    `@regis`
-    let components = `@removedIds`
-    check(components.len > 0,
-    "removeComponent: component list is empty — no structural change will occur.")
-    let e = `@d`.obj
-    let oldArch = `@world`.archGraph.nodes[e.archetypeId]
-    for cid in components:
-      check(cid >= 0 and cid < MAX_COMPONENTS,
-        "removeComponent: component ID=" & $cid &
-        " is out of valid range [0, " & $MAX_COMPONENTS & ").")
-      checkWarn(oldArch.mask.hasComponent(cid),
-        "removeComponent: entity (archetypeId=" & $e.archetypeId &
-        ") does not have component ID=" & $cid &
-        ". Removing a non-existent component produces an undefined archetype edge.")
-    var archNode = oldArch.id
+  var rComp = newNimNode(nnkPrefix)
+  rComp.add(ident"@")
+  rComp.add(removedIds)
 
-    # Traverse the archetype graph, removing components one by one to find the target node.
-    for id in components:
-      archNode = `@world`.archGraph.removeComponent(archNode, id)
-
-    # Perform the migration to the new archetype.
-    migrateEntity(`@world`, `@d`, archNode)
-    var ev = `@world`.events
-    ev.emitDenseComponentRemoved(`@d`, components)
+  return quote("@") do:
+    `@world`.removeDynComponent(`@d`, `@rComp`)
 
 proc removeComponent*(dw: var DWEntity, components: varargs[int]) =
-  removeComponent(dw.w, dw.handle, components)
+  removeDynComponent(dw.w, dw.handle, components)
 
 # ################################################################################################################################################# #
 # ######################################################### SPARSE OPERATIONS ##################################################################### #
@@ -549,7 +544,7 @@ macro addComponent*(
           lastArch = `@world`.sparse_arch[`@entities`[i].id].int
           for cid in `@addedIds`:
             lastArch = `@world`.archGraph.addComponent(lastArch.uint16, cid).int
-        
+
         `@world`.sparse_arch[`@entities`[i].id] = archID
 
       # Typed batch activation — one castTo + one pass per component.
@@ -620,7 +615,7 @@ macro removeComponent*(
       for i in 0..<`@entities`.len:
         batchIds.add(`@entities`[i].id)
 
-      
+
       var lastArchID = -1
       var lastArch: int = -1
       for i in 0..<`@entities`.len:
@@ -676,7 +671,7 @@ proc makeDense*(world: var ECSWorld, s: var SparseHandle): DenseHandle =
   ## Parameters:
   ## - world: The mutable `ECSWorld` instance.
   ## - s: The `SparseHandle` to convert.
-  ## 
+  ##
   ## return: A new `DWEntity` representing the entity in dense storage.
   var d = world.createEntity()
   world.migrateEntity(d, world.sparse_arch[s.id])
@@ -704,7 +699,7 @@ proc makeSparse*(world: var ECSWorld, d: DenseHandle): SparseHandle =
   ## Parameters:
   ## - world: The mutable `ECSWorld` instance.
   ## - d: The `DenseHandle` to convert.
-  ## 
+  ##
   ## return: A new `SWEntity` representing the entity in sparse storage.
   var comps = world.archGraph.nodes[d.obj.archetypeId].componentIds
   var s = world.createSparseEntity()

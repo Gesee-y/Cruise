@@ -32,6 +32,10 @@ proc getComponentIdFromRegistry(T:NimNode): int =
 
   return COMPONENT_ID_REGISTRY[hash]
 
+proc isComponentType(T: NimNode): bool =
+  let hash = T.repr.hash.int
+  return hash in COMPONENT_ID_REGISTRY
+
 proc addRequired(m: var ArchetypeMask, comps: seq[int], registry: Table[int, seq[int]]) {.compileTime.} =
   for c in comps:
     if not m.hasComponent(c):
@@ -54,11 +58,31 @@ proc getRequiredCompsNode(id:int): seq[NimNode] {.compileTime.} =
 
   return res
 
+proc isType(n: NimNode): bool =
+  let ty = n.getTypeInst
+  if ty.kind != nnkBracketExpr: return false
+  return ty[0].strVal == "typeDesc"
+
+proc isDynamicType(n: NimNode): bool =
+  let ty = n.getType.repr
+  case ty:
+  of "int", "int64", "int32", "int16", "int8", "uint", "uint64", "uint32", "uint16", "uint8": return true
+  else: return false
+
 macro toComponentId*(T:typedesc): int =
   let id = getComponentIdFromRegistry(T.getTypeInst()[1])
   ID_TO_COMPONENT[id] = T.getTypeInst()[1]
 
   return quote do: `id`
+
+macro toComponentIdDyn*(T:untyped): int =
+  if isComponentType(T):
+    let id = getComponentIdFromRegistry(T)
+    ID_TO_COMPONENT[id] = T
+
+    return quote do: `id`
+  else:
+    return quote do: `T`.int
 
 proc toArchetypeIDC(comps: openArray[int]): (ArchetypeMask, int) {.compileTime.} =
   var m:ArchetypeMask
@@ -98,13 +122,9 @@ proc getComponentsMetadata(comps:NimNode): tuple[ids: NimNode, components:seq[Ni
     let required = getRequiredCompsNode(id)
     for c in required:
       components.add(c)
-      compIds.add quote("@") do:
-        toComponentId(`@c`)
+      compIds.add newCall(bindSym"toComponentId", c)
 
-    compIds.add quote("@") do:
-      toComponentId(`@comp`)
-  if compIds.len == 0:
-    compIds = quote("@") do: array[0, int](`@compIds`)
+    compIds.add newCall(bindSym"toComponentId", comp)
 
   return (compIds, components)
 

@@ -20,6 +20,7 @@ template initWorld(): ECSWorld =
   discard w.registerComponent(Acc)
   w
 
+proc myFunc(x: int): int = x+1
 # ==========================================================
 # ENTITY CREATION
 # ==========================================================
@@ -40,6 +41,12 @@ suite "ECS Entity creation":
     let idx = int(e.obj.id and ((1'u shl 32)-1))
     check world.handles[idx] == e.widx
     check e.obj.archetypeID == 2'u
+
+  test "Create entity with Dynamic component":
+    var world = initWorld()
+    let e = createEntity(world, Pos, 3)
+
+    check e.obj.archetypeID == 3'u
 
 # ==========================================================
 # COMPONENT ACCESS
@@ -166,14 +173,24 @@ suite "Query integration":
 
   test "Query reflects add/remove":
     var world = initWorld()
-    let e = createEntity(world, Pos)
+    let e = createEntity(world, Pos, 3)
 
     var q1 = query(world, Pos)
     check denseQueryCount(world, q1) == 1
 
-    addComponent(world, e, Vel)
-    var q2 = query(world, Pos and Vel)
+    var q2 = query(world, Pos and 3)
     check denseQueryCount(world, q2) == 1
 
+    addComponent(world, e, Vel)
+    var q3 = query(world, Pos and Vel)
+    check denseQueryCount(world, q3) == 1
+
+    addComponent(world, e, myFunc(6))
+    var q4 = query(world, Pos and myFunc(6))
+    check denseQueryCount(world, q4) == 1
+
+    removeComponent(world, e, myFunc(6))
+    check denseQueryCount(world, q4) == 0
+
     removeComponent(world, e, Vel)
-    check denseQueryCount(world, q2) == 0
+    check denseQueryCount(world, q3) == 0

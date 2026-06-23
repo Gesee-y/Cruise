@@ -141,6 +141,11 @@ proc getL0*(h: HiBitSet | ptr HiBitSet, idx: int): BitBlock {.inline.} =
   if idx >= h.layer0.len: return 0
   h.layer0[idx]
 
+proc getL1*(h: HiBitSet | ptr HiBitSet, idx: int): BitBlock {.inline.} =
+  ## Returns the raw block at layer0 index `idx`.
+  if idx >= h.layer1.len: return 0
+  h.layer1[idx]
+
 proc hasL0*(h: HiBitSet | ptr HiBitSet, l0Idx: int): bool {.inline.} =
   l0Idx < h.layer0.len
 

@@ -247,35 +247,39 @@ iterator denseQuery*[T](world: ECSWorld, sig: QuerySignature[T]): (int, DenseIte
   for archID in cacheEntry.archs:
     if not world.archGraph.nodes[archID].partition.isNil:
       for zone in world.archGraph.nodes[archID].partition.zones:
-        var masked = false
+        block inner:
+          var masked = false
 
-        # Reset mask to all-1s for each zone
-        for k in 0..<maskCount:
-          res[k] = 0'u - 1
+          # Reset mask to all-1s for each zone
+          for k in 0..<maskCount:
+            res[k] = 0'u - 1
 
-        for i in 0..<max(mlen, nmlen):
-          masked = true
-          if i < mlen:
-            let entry = world.registry.entries[sig.modified[i]]
-            let incl = entry.getChangeMaskOp(entry.rawPointer).dLayer
-            for j in 0..<maskCount:
-              res[j] = res[j] and incl.getL0(zone.block_idx*sizeof(uint)*8 + j)
+          for i in 0..<max(mlen, nmlen):
+            masked = true
+            if i < mlen:
+              let entry = world.registry.entries[sig.modified[i]]
+              let incl = entry.getChangeMaskOp(entry.rawPointer).dLayer
+              if incl.getL1(zone.block_idx) != 0: break inner
+              for j in 0..<maskCount:
+                res[j] = res[j] and incl.getL0(zone.block_idx*sizeof(uint)*8 + j)
 
-          if i < nmlen:
-            let entry = world.registry.entries[sig.notModified[i]]
-            let excl = entry.getChangeMaskOp(entry.rawPointer).dLayer
-            for j in 0..<maskCount:
-              res[j] = res[j] and not excl.getL0(zone.block_idx*sizeof(uint)*8 + j)
+            if i < nmlen:
+              let entry = world.registry.entries[sig.notModified[i]]
+              let excl = entry.getChangeMaskOp(entry.rawPointer).dLayer
+              if excl.getL1(zone.block_idx) != 0: break inner
+              for j in 0..<maskCount:
+                res[j] = res[j] and not excl.getL0(zone.block_idx*sizeof(uint)*8 + j)
 
-        for qf in sig.filters:
-          masked = true
-          for i in 0..<maskCount:
-            res[i] = res[i] and qf.dLayer.getL0(zone.block_idx*sizeof(uint)*8 + i)
+          for qf in sig.filters:
+            masked = true
+            if qf.dLayer.getL1(zone.block_idx) != 0: break inner
+            for i in 0..<maskCount:
+              res[i] = res[i] and qf.dLayer.getL0(zone.block_idx*sizeof(uint)*8 + i)
 
-        if masked:
-          yield (zone.block_idx, DenseIterator(masked:true, r:zone.r.s..<zone.r.e, m: res))
-        else:
-          yield (zone.block_idx, DenseIterator(masked:false, r:zone.r.s..<zone.r.e))
+          if masked:
+            yield (zone.block_idx, DenseIterator(masked:true, r:zone.r.s..<zone.r.e, m: res))
+          else:
+            yield (zone.block_idx, DenseIterator(masked:false, r:zone.r.s..<zone.r.e))
 
 
 proc denseQueryCache*[T](world: ECSWorld, sig: QuerySignature[T]): DenseQueryResult =
@@ -459,53 +463,46 @@ proc processQueryExpr*(world, expr: NimNode): (NimNode, NimNode) =
             # not Modified[Type]
             let compNode = operand[1] # The Type inside []
             components.add(quote("@") do:
-              notModifiedComp(toComponentId(`@compNode`))
+              notModifiedComp(toComponentIdDyn(`@compNode`))
             )
           elif operand.kind in {nnkIdent, nnkSym}:
             # not Type
             components.add(quote("@") do:
-              excludeComp(toComponentId(`@operand`))
+              excludeComp(toComponentIdDyn(`@operand`))
             )
           else:
             error("Unsupported operand for 'not': " & $operand.kind)
         else:
           error("Unsupported prefix operator in query: " & node[0].strVal)
 
-      of nnkCall:
-        # Check for Modified[Type]
-        if node[1].eqIdent("Modified"):
-          let compNode = node[2].getTypeInst()
-          componentTypes.add(compNode)
-          components.add(quote("@") do:
-            modifiedComp(toComponentId(`@compNode`))
-          )
-        else:
-          var t = newNimNode(nnkBracketExpr)
-          t.add(node[1])
-          t.add(node[2])
-          componentTypes.add(t)
-          components.add(quote("@") do:
-            includeComp(toComponentId(`@t`))
-          )
-
       of nnkBracketExpr:
         # Check for Modified[Type]
         if node[0].eqIdent("Modified"):
           let compNode = node[1] # The Type inside []
           components.add(quote("@") do:
-            modifiedComp(toComponentId(`@compNode`))
+            modifiedComp(toComponentIdDyn(`@compNode`))
           )
         else:
           componentTypes.add(node)
           components.add(quote("@") do:
-            includeComp(toComponentId(`@node`))
+            includeComp(toComponentIdDyn(`@node`))
           )
 
       of nnkIdent, nnkSym:
         # Process a raw type identifier (Implies 'include')
         componentTypes.add(node)
         components.add(quote("@") do:
-          includeComp(toComponentId(`@node`))
+          includeComp(toComponentIdDyn(`@node`))
+        )
+
+      of nnkIntLit:
+        components.add(quote("@") do:
+          includeComp(toComponentIdDyn(`@node`))
+        )
+
+      of nnkCall:
+        components.add(quote("@") do:
+          includeComp(`@node`)
         )
 
       else:

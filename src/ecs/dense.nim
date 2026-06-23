@@ -28,7 +28,7 @@ macro allocateNewBlocks(
     code.add quote("@") do:
       var fr = castTo(`@table`.registry.entries[toComponentId(`@c`)].rawPointer, `@c`, DEFAULT_BLK_SIZE)
       fr.newBlockAt(`@table`.blockCount)
-  
+
   return quote("@") do:
     check(`@count` >= 0,
       "allocateNewBlocks: count cannot be negative (got " & $`@count` & ").")
@@ -40,20 +40,20 @@ macro allocateNewBlocks(
     var bc = `@table`.blockCount
     let pl = `@partition`.zones.len
     var c = `@current`
-    
+
     `@partition`.zones.setLen(pl + s + 1)
 
     for i in 0..s:
       var trange: TableRange
       let e = min(n, DEFAULT_BLK_SIZE)
-      
+
       # Register allocated range
       `@res`[c] = ((bc.uint, Range(s: 0, e: e)))
       trange.r.s = 0
       trange.r.e = e
       trange.block_idx = bc
       `@partition`.zones[pl + i] = trange
-      
+
       # Advance fill index if the block is fully occupied
       if n >= DEFAULT_BLK_SIZE:
         `@partition`.fill_index += 1
@@ -78,7 +78,6 @@ macro allocateEntities(
 
   return quote("@") do:
     var res = newSeq[(uint, Range)](`@n` div DEFAULT_BLK_SIZE + 1)
-
     # First allocation for this archetype
     if `@table`.archGraph.nodes[`@archNode`].partition.isNil:
       var partition = createPartition(`@table`, `@archNode`)
@@ -97,7 +96,7 @@ macro allocateEntities(
 
         partition.zones[partition.fill_index].r.e = r
         res[current] = ((id.uint, Range(s: e, e: r)))
-        
+
         if r >= DEFAULT_BLK_SIZE:
           partition.fill_index += 1
 
@@ -143,7 +142,7 @@ macro allocateEntity(
     let e = zone.r.e
 
     zone.r.e += 1
-      
+
     if isFull(zone):
       partition.fill_index += 1
 
@@ -179,8 +178,9 @@ template deleteRow(table: var ECSWorld, i: uint, arch: uint16): uint =
   # Move last entity into the deleted slot
   if lid != i:
     for id in partition.components:
-      let entry = table.registry.entries[id]
-      entry.overrideValsOp(entry.rawPointer, i, lid)
+      if id < table.registry.entries.len:
+        let entry = table.registry.entries[id]
+        entry.overrideValsOp(entry.rawPointer, i, lid)
 
   zone.r.e -= 1
   last.uint + bid * DEFAULT_BLK_SIZE
@@ -197,7 +197,7 @@ template changePartition(
   check(oldArch.int < table.archGraph.nodes.len,
     "changePartition: source archetypeId=" & $oldArch & " is out of bounds (nodes.len=" &
     $table.archGraph.nodes.len & ").")
-  
+
   let oldPartition = table.archGraph.nodes[oldArch].partition
   check(not oldPartition.isNil,
     "changePartition: source archetype " & $oldArch & " has no partition. " &
@@ -233,8 +233,9 @@ template changePartition(
     nZone.r.e = 0
 
     for id in newPartition.components:
-      let entry = table.registry.entries[id]
-      entry.newBlockAtOp(entry.rawPointer, table.blockCount)
+      if id < table.registry.entries.len:
+        let entry = table.registry.entries[id]
+        entry.newBlockAtOp(entry.rawPointer, table.blockCount)
 
     table.blockCount += 1
     table.handles.setLen((table.blockCount) * DEFAULT_BLK_SIZE)
@@ -253,30 +254,34 @@ template changePartition(
   if intersection == oldMask:
     # Fast Path: New archetype contains all old components (e.g. addComponent)
     for id in oldNode.componentIds:
-      let entry = table.registry.entries[id]
-      entry.overrideValsOp(entry.rawPointer, destBase, i.uint32)
+      if id < table.registry.entries.len:
+        let entry = table.registry.entries[id]
+        entry.overrideValsOp(entry.rawPointer, destBase, i.uint32)
   elif intersection == newMask:
     # Fast Path: Old archetype contains all new components (e.g. removeComponent)
     for id in table.archGraph.nodes[newArch].componentIds:
-      let entry = table.registry.entries[id]
-      entry.overrideValsOp(entry.rawPointer, destBase, i.uint32)
+      if id < table.registry.entries.len:
+        let entry = table.registry.entries[id]
+        entry.overrideValsOp(entry.rawPointer, destBase, i.uint32)
   else:
     # Slow Path: Partial intersection (unlikely for direct edges)
     for id in oldNode.componentIds:
-      if newMask.hasComponent(id):
-        let entry = table.registry.entries[id]
-        entry.overrideValsOp(entry.rawPointer, destBase, i.uint32)
+      if id < table.registry.entries.len:
+        if newMask.hasComponent(id):
+          let entry = table.registry.entries[id]
+          entry.overrideValsOp(entry.rawPointer, destBase, i.uint32)
 
   # Fix swap-remove in source partition
   if (i and ID_MASK).int != last:
     for id in oldNode.componentIds:
-      let entry = table.registry.entries[id]
-      entry.overrideValsOp(
-        entry.rawPointer,
-        i.uint32,
-        makeId(blast, last)
-      )
-  
+      if id < table.registry.entries.len:
+        let entry = table.registry.entries[id]
+        entry.overrideValsOp(
+          entry.rawPointer,
+          i.uint32,
+          makeId(blast, last)
+        )
+
   newZone.r.e += 1
   if isFull(newZone):
     newPartition.fill_index += 1
@@ -307,7 +312,7 @@ template changePartition(
   var c = 0
   var toSwap = newSeq[uint32](m)
   var toAdd  = newSeq[uint32](m)
-  
+
   # Collect entities to remove from old partition
   while toSwap.len < ids.len:
     check(ofil >= 0,
@@ -339,8 +344,9 @@ template changePartition(
       newPartition.zones[nfil].block_idx = table.blockCount
 
       for id in newPartition.components:
-        let entry = table.registry.entries[id]
-        entry.newBlockAtOp(entry.rawPointer, table.blockCount)
+        if id < table.registry.entries.len:
+          let entry = table.registry.entries[id]
+          entry.newBlockAtOp(entry.rawPointer, table.blockCount)
 
       table.blockCount += 1
       table.handles.setLen((table.blockCount + 1) * DEFAULT_BLK_SIZE)
@@ -375,7 +381,7 @@ template changePartition(
     var e = ids[i].obj
     let s = toSwap[i]
     let a = toAdd[i]
-    
+
     eids[i] = e.id
     table.handles[a.toIdx] = ids[i].widx
     table.handles[e.id.toIdx] = table.handles[s.toIdx]
@@ -385,8 +391,8 @@ template changePartition(
     e.archetypeId = newArch
 
   for id in commonComponents:
-    let entry = table.registry.entries[id]
-    entry.overrideValsBatchOp(entry.rawPointer, eids, toSwap, toAdd)
+    if id < table.registry.entries.len:
+      let entry = table.registry.entries[id]
+      entry.overrideValsBatchOp(entry.rawPointer, eids, toSwap, toAdd)
 
   (eids, toSwap, toAdd)
-
