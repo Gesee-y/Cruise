@@ -54,6 +54,33 @@ gameLogic MyLogic:
 var logic:MyLogic
 ```
 
+## Message Passing
+
+Systems can only access their dependencies, but if we let them modify those dependencies to solve our feedback problem, we end up with two issues:
+
+* This can cause race conditions if multiple systems try to modify the same dependency simultaneously.
+* We still can't access systems that aren't in the current node's graph.
+
+A way to solve both of these is to use **message passing**, a concept from **Event-Driven Architecture**. This allows any system to have an impact on another by simply passing a message onto the bus. Wherever the target system is, it will catch the message at some point — on the next run if it's earlier in the graph, or the current run if it's later — and act accordingly.
+
+But aren't we just inheriting all the problems of event-driven architecture?
+
+* Unknown ordering
+* Traceability hell
+* Unstable system ordering
+* Copies and no mechanism to handle shared data
+
+...
+
+Wait — haven't we already solved the first three issues with our DAG? That's the magic. We get the best of EDA without its pain points. But we still have the shared data issue
+
+So this looks like this
+
+```nim
+let messages = sys.getMessage[:MyType]()
+sys.addMessage(SomeType())
+```
+
 ## World data
 
 Now that we have talked about plugin's logic and dependencies between them the concern now would be about data races.
@@ -94,40 +121,4 @@ Except that you're not limited to components, you can for example use it for saf
 Then the dependency DAG and resource DAG are used to compute the final execution order of the systems.
 Both graphs are dynamic. You can change dependencies between systems at runtime and the data they access but it's recommended to do it in one phase then at the next call to `update` the graph will detect the changes and recompute the correct order.
 
-## Race security
-
-Let's assume you have a system that emit callbacks.
-Since those callbacks aren't handled by the DAG, our current model can't ensure they don't conflit and create data race.
-That's why Cruise plugin introduce a **runtime borrow checker** similar to rust. 
-It ensure that multiple reader can have a resources but there should be only one writer even if those reader/writer aren't systems in the DAG.
-
-```nim
-var res = sys.getWriteResource[:MyResource] # Or getReadResource for read access
-if not res.isSome:
-  sys.setStatus(PLUGIN_WAITING)
-```
-
 The status is to notify depedent systems about what happened
-
-## Temporal coherency
-
-In order to make a simulation coherent, events should happen in a given order, that's temporal coherency. 
-Given a point in real time, the simulation should be at a given state.
-That state is the logical time.
-The point where the simulation should **logically** be given the real time.
-
-That's the principle of **discrete event simulation**
-And Cruise plugin allows you to do that through **execution amounts** (how many time a system should execute to be in sync with the logical time) and **execution condition** that allows you to define when your system should execute
-
-```nim
-method isReady(sys: PhysiscSystem): bool =
-  let ticks = getMonoTime().ticks
-  let elapsed = (ticks - sys.lastTicks).float * 1e-9
-  if elapsed > 0.005:
-    sys.setExecAmount((elapsed div 0.005))
-    return true
-
-  return false
-``` 
-
-Through this we ensure the physic simulation is always in sync with the current point in logical time while giving the power to the developers to control how that time should be treated.

@@ -107,6 +107,8 @@ let et = e.toTyped(Position) # We list the component that the entity has
 let et2 = world.addComponent(et, Position) # Now et2 has the new signature, this is way faster that doing it with `e` which would use vtable
 ```
 
+* **GPU Compatible**: Through [Cruise GPGPU](../gpuarray), you can easily use GPU based fragments blocks and use Cruise abstractions to work on them
+
 * **Setters / getters**: Cruise allows you to define setters and getters for your components. This makes tracking changes easier and simplifies component usage. The compiler ensures they have no side effects.
 
 ```nim
@@ -161,7 +163,7 @@ method update(sys: mySys) =
   # my update
 ```
 
-* **Integrated event system**: Cruise ECS allowsq you to listen for events such as entity creation and more:
+* **Integrated event system**: Cruise ECS allows you to listen for events such as entity creation and more:
 
 ```nim
 world.events.onDenseComponentAdded do _:
@@ -171,7 +173,7 @@ world.events.onDenseComponentAdded do _:
 * **Powerful query system**: Cruise ECS provides a powerful and expressive query syntax:
 
 ```nim
-var sig = world.query(Modified[Position] and Velocity and not Tag)
+var sig = world.query(Modified[Position] and Velocity and myRuntimeValue and not Tag)
 sig.addFilter(MyCustomQueryFilter)
 # The signature can then be used for sparse or dense queries
 ```
