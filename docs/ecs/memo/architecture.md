@@ -465,8 +465,8 @@ To clearly evaluate the impact of our optimizations, we contrast Bevy against Cr
 
 | Benchmark Scenario (2,000 Entities) | Strategy Variant | Cruise ECS (Median) | Bevy ECS (Median) | Comparison / Winner |
 | :--- | :--- | :--- | :--- | :--- |
-| **Insert Many** *(15 components sequential)* | Dense (Untyped)<br>Dense (**Typed**)<br>Sparse (Untyped)<br>Sparse (**Typed**) | 17.95 ms<br>**4.84 ms**<br>472.40 µs<br>**276.05 µs** | —<br>5.10 ms<br>—<br>— | Bevy crushes Untyped Dense<br>**Cruise Typed Dense wins** (~1.05x)<br>—<br>**Cruise Typed Sparse dominates** (~18x) |
-| **Insert Only Last** *(14 $\rightarrow$ 15 components)* | Dense (Untyped)<br>Dense (**Typed**)<br>Sparse (Untyped)<br>Sparse (**Typed**) | 1.05 ms<br>**495.35 µs**<br>254.35 µs<br>**245.95 µs** | —<br>758.41 µs<br>—<br>— | Bevy beats Untyped Dense<br>**Cruise Typed Dense wins** (~1.5x)<br>—<br>**Cruise Typed Sparse wins** (~3x) |
+| **Insert Many** *(15 components sequential)* | Dense (Untyped) - Dense (**Typed**) - Sparse (Untyped) - Sparse (**Typed**) | 17.95 ms - **4.84 ms** - 472.40 µs - **276.05 µs** | — - 5.10 ms - — - — | Bevy crushes Untyped Dense - **Cruise Typed Dense wins** (~1.05x) - — - **Cruise Typed Sparse dominates** (~18x) |
+| **Insert Only Last** *(14 $\rightarrow$ 15 components)* | Dense (Untyped) - Dense (**Typed**) - Sparse (Untyped) - Sparse (**Typed**) | 1.05 ms - **495.35 µs** - 254.35 µs - **245.95 µs** | — - 758.41 µs - — - — | Bevy beats Untyped Dense - **Cruise Typed Dense wins** (~1.5x) - — - **Cruise Typed Sparse wins** (~3x) |
 
 ---
 
@@ -489,9 +489,9 @@ We compare Cruise's strategies against Bevy's two internal tracking backends (`T
 
 | Benchmark Scenario | Entity Count | Cruise Dense (Median) | Cruise Sparse (Median) | Bevy Table (Median) | Bevy Sparse (Median) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Filter All** | 5,000<br>50,000 | **7.90 µs**<br>**80.10 µs** | **6.60 µs**<br>**75.10 µs** | 14.24 µs<br>152.68 µs | 17.39 µs<br>199.89 µs |
-| **Filter Few** | 5,000<br>50,000 | **1.90 µs**<br>**34.80 µs** | **1.40 µs**<br>**37.60 µs** | 11.45 µs<br>213.14 µs | 17.31 µs<br>305.63 µs |
-| **Filter None** | 5,000<br>50,000 | **1.10 µs**<br>**4.70 µs** | **300.00 ns**<br>**400.00 ns** | 6.37 µs<br>69.90 µs | 9.26 µs<br>140.92 µs |
+| **Filter All** | 5,000 - 50,000 | **7.90 µs** - **80.10 µs** | **6.60 µs** - **75.10 µs** | 14.24 µs - 152.68 µs | 17.39 µs - 199.89 µs |
+| **Filter Few** | 5,000 - 50,000 | **1.90 µs** - **34.80 µs** | **1.40 µs** - **37.60 µs** | 11.45 µs - 213.14 µs | 17.31 µs - 305.63 µs |
+| **Filter None** | 5,000 - 50,000 | **1.10 µs** - **4.70 µs** | **300.00 ns** - **400.00 ns** | 6.37 µs - 69.90 µs | 9.26 µs - 140.92 µs |
 
 ---
 
@@ -538,9 +538,9 @@ The test is divided into three tiers of increasing severity:
 
 | Benchmark Tier | Cruise Layout Variant | Cruise (Median) | Bevy Backend (Median) | Structural Winner |
 | :--- | :--- | :--- | :--- | :--- |
-| **Standard** | Dense (Untyped)<br>Dense (**Typed**)<br>Sparse | 10.87 ms<br>**683.15 µs**<br>2.19 ms | 4.36 ms (Table)<br>—<br>2.43 ms (Sparse) | **Cruise Typed Dense** (~6.3x)<br>**Cruise Sparse** (~1.1x) |
-| **Big** *(8x Matrices)* | Dense (Untyped)<br>Dense (**Typed**)<br>Sparse | 24.28 ms<br>13.92 ms<br>**525.85 µs** | 10.20 ms (Table)<br>—<br>2.89 ms (Sparse) | **Cruise Sparse** (~5.5x) |
-| **Very Big** *(Heavy Load)* | Dense (Untyped)<br>Dense (**Typed**)<br>Sparse | 356.01 ms<br>308.51 ms<br>**4.51 ms** | 132.43 ms (Table)<br>—<br>— | **Cruise Sparse** (~29x) |
+| **Standard** | Dense (Untyped) - Dense (**Typed**) - Sparse | 10.87 ms - **683.15 µs** - 2.19 ms | 4.36 ms (Table) - — - 2.43 ms (Sparse) | **Cruise Typed Dense** (~6.3x) - **Cruise Sparse** (~1.1x) |
+| **Big** *(8x Matrices)* | Dense (Untyped) - Dense (**Typed**) - Sparse | 24.28 ms - 13.92 ms - **525.85 µs** | 10.20 ms (Table) - — - 2.89 ms (Sparse) | **Cruise Sparse** (~5.5x) |
+| **Very Big** *(Heavy Load)* | Dense (Untyped) - Dense (**Typed**) - Sparse | 356.01 ms - 308.51 ms - **4.51 ms** | 132.43 ms (Table) - — - — | **Cruise Sparse** (~29x) |
 
 ---
 
@@ -567,10 +567,10 @@ This benchmark evaluates iteration speeds across multiple configuration profiles
 
 | Benchmark Scenario Profile | Strategy / Backend | Cruise ECS (Median) | Bevy ECS (Median) | Performance Delta |
 | :--- | :--- | :--- | :--- | :--- |
-| **Simple Iteration** | Dense / Table<br>Sparse / Sparse Set | **6.10 µs**<br>**19.10 µs** | 17.21 µs<br>36.71 µs | **Cruise Dense wins** (~2.8x)<br>**Cruise Sparse wins** (~1.9x) |
-| **Wide Iteration** | Dense / Table<br>Sparse / Sparse Set | **44.00 µs**<br>89.60 µs | 97.75 µs<br>**269.96 µs** | **Cruise Dense wins** (~2.2x)<br>**Cruise Sparse wins** (~3.0x) |
-| **No Detection** | Dense / Table<br>Sparse / Sparse Set | **6.30 µs**<br>**17.50 µs** | 12.85 µs<br>— | **Cruise Dense wins** (~2.0x)<br>— |
-| **Fragmented** *(Worst Case)* | Dense / Archetype<br>Sparse / Sparse Set | 2.80 µs<br>1.60 µs | **571.92 ns**<br>**15.93 ns** | **Bevy Table wins** (~4.9x)<br>**Bevy Sparse wins** (~100x) |
+| **Simple Iteration** | Dense / Table - Sparse / Sparse Set | **6.10 µs** - **19.10 µs** | 17.21 µs - 36.71 µs | **Cruise Dense wins** (~2.8x) - **Cruise Sparse wins** (~1.9x) |
+| **Wide Iteration** | Dense / Table - Sparse / Sparse Set | **44.00 µs** - 89.60 µs | 97.75 µs - **269.96 µs** | **Cruise Dense wins** (~2.2x) - **Cruise Sparse wins** (~3.0x) |
+| **No Detection** | Dense / Table - Sparse / Sparse Set | **6.30 µs** - **17.50 µs** | 12.85 µs - — | **Cruise Dense wins** (~2.0x) - — |
+| **Fragmented** *(Worst Case)* | Dense / Archetype - Sparse / Sparse Set | 2.80 µs - 1.60 µs | **571.92 ns** - **15.93 ns** | **Bevy Table wins** (~4.9x) - **Bevy Sparse wins** (~100x) |
 
 ---
 
@@ -579,7 +579,7 @@ This benchmark evaluates iteration speeds across multiple configuration profiles
 The iteration telemetry uncovers the fundamental relationship between data layout optimizations and hardware cache lines:
 
 1. **The Dense Cache Victory:** Under normal operating conditions (**Simple** and **Wide** iterations), Cruise’s Dense layout leaves Bevy completely behind, securing up to a **2.8x speedup**. Because our architecture flattens dynamic lookup indirection, the CPU can read component arrays as linear contigous memory segments, achieving maximum L1/L2 cache utilization. Even Cruise’s Sparse layout beats Bevy’s Sparse Set implementation by a comfortable factor of 2x to 3x.
-2. **The Fragmentation Bottleneck:** The one area where Bevy pulls ahead cleanly is the highly fragmented configuration. In this test, a tiny group of 20 entities is shattered across 26 distinct archetypes. For Cruise Dense, this activates our structural archetype machinery overhead over a dataset too tiny to amortize the setup cost (`2.80 µs` vs Bevy’s `571.92 ns`). For Sparse layouts, Bevy's internal architecture reaches an ultra-streamlined `15.93 ns`.
+2. **The Fragmentation Bottleneck:** The one area where Bevy pulls ahead cleanly is the highly fragmented configuration. In this test, a tiny group of 20 entities is shattered across 26 distinct archetypes. For Cruise Dense, this activates our structural archetype machinery overhead over a dataset too tiny to amortize the setup cost (`2.80 µs` vs Bevy’s `571.92 ns`). For Sparse layouts, Bevy's internal architecture reaches an ultra-streamlined `15.93 ns` because sparse set excels at iterating on single components (which was the case here).
 3. **The Workload Factor:** It's important to contextualize the fragmentation test: it represents a worst-case scenario with an extremely miniature payload. As the entity density scales up to realistic production workloads, Cruise’s compile-time lookup optimizations quickly overtake the setup overhead, allowing Cruise to recapture the performance crown across the board.
 
 ## Conclusion
