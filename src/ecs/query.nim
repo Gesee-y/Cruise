@@ -259,20 +259,20 @@ iterator denseQuery*[T](world: ECSWorld, sig: QuerySignature[T]): (int, DenseIte
             if i < mlen:
               let entry = world.registry.entries[sig.modified[i]]
               let incl = entry.getChangeMaskOp(entry.rawPointer).dLayer
-              if incl.getL1(zone.block_idx) != 0: break inner
+              if incl.getL1(zone.block_idx) == 0: break inner
               for j in 0..<maskCount:
                 res[j] = res[j] and incl.getL0(zone.block_idx*sizeof(uint)*8 + j)
 
             if i < nmlen:
               let entry = world.registry.entries[sig.notModified[i]]
               let excl = entry.getChangeMaskOp(entry.rawPointer).dLayer
-              if excl.getL1(zone.block_idx) != 0: break inner
+              if not excl.getL1(zone.block_idx) == 0: break inner
               for j in 0..<maskCount:
                 res[j] = res[j] and not excl.getL0(zone.block_idx*sizeof(uint)*8 + j)
 
           for qf in sig.filters:
             masked = true
-            if qf.dLayer.getL1(zone.block_idx) != 0: break inner
+            if qf.dLayer.getL1(zone.block_idx) == 0: break inner
             for i in 0..<maskCount:
               res[i] = res[i] and qf.dLayer.getL0(zone.block_idx*sizeof(uint)*8 + i)
 
