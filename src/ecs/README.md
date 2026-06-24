@@ -99,6 +99,19 @@ let e = world.createEntity(Pos, Vel, 6, myRuntimeFunc(5))
 let q = world.query(Pos and myRuntimeFunc(5))
 ```
 
+```nim
+# Assuming there is a function to get the id of the parent
+# Just a conceptual example
+
+proc executeTransform(world: ECSWorld, parentID=someRootID)
+for (bid, r, transform) in world.executeDQuery(world.query(Transform and parentId)):
+  for i in r:
+    doStuff()
+    
+  for i in r:
+    executeTransform(world, e.getId())
+```
+
 * **Typed functional API**: That allows for way faster operations per entities by encoding the entity signature in the handle. This is totally compatible with the old API
 
 ```nim

@@ -79,6 +79,7 @@ macro toComponentIdDyn*(T:untyped): int =
   if isComponentType(T):
     let id = getComponentIdFromRegistry(T)
     ID_TO_COMPONENT[id] = T
+    return quote do: `id`
   else:
     return quote do: `T`.int
 

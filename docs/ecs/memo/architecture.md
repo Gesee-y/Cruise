@@ -125,12 +125,11 @@ for entity in predicateA_archetype:
 
 However composition is still not has evident. We have constraints:
 
-- Queries are predifined.
 - Should not be too dynamic as it would cause moving data all the time
 - Entities should be at only one place at a time
 
-Queries compositions is way more constly as you always have to move memory each time you want to make an entity match a predicate.
-That's why most archetypes ECS also have sparse storage that enable soft materialized queries to complement the rigidity of hte hard materialized ones.
+Queries compositions is way more costly as you always have to move memory each time you want to make an entity match a predicate.
+That's why most archetypes ECS also have sparse storage that enable soft materialized queries to complement the rigidity and fragmentation of the hard materialized ones.
 
 ## Cruise ECS in all that ?
 
@@ -249,13 +248,17 @@ If we have multiple queries Q1, Q2, ..., Qn yielding the respective entity sets 
 
 Because operations on queries map perfectly to operations on sets, we can state that **queries are isomorphic to sets**. Through query composition, we can programmatically model any mathematical set we want.
 
-Those queries are represented in Cruise as **abstract queries filter**:
+Those queries are represented in Cruise as **abstract queries filter** and **dynamic components**:
 
 ```nim
+# Abstract query filter are soft materialized queries that allows for custom requirements in a query
 var fil = newQueryFilter()
 fil.set(entity)
 var sig = world.query(Position)
 sig.addFilter(fil)
+
+let e = world.createEntity(Pos, runtimeFunc()) # runtimeFunc is a dynamic component that assign a runtime value as a component to an entity
+# This allows to model to custom filter for an entity, beyond components and hard materialize it
 ```
 
 ### Why This Matters: Representing Complex Structures
@@ -279,6 +282,12 @@ var sig = world.query(Position and Velocity)
 sig.addFilter(tree.getChildren(entity1).toDenseID)
 for (bid, r) in world.denseQuery(sig):
   # Modify the children
+
+# or with hard materialized queries
+var e = world.createEntity(Transform, parentID) # assuming parentID exist as the id of the parent of `e`
+for (bid, r) in world.denseQuery(world.query(Transform and parentId)):
+  for i in r:
+    # Modify children
 ```
 
 Instead of storing hardcoded pointers to child nodes, a parent entity can simply hold a query that filters for its children dynamically. The implications for flexibility and data-oriented design are profound.
