@@ -234,6 +234,13 @@ template makeId(i:untyped):uint32 =
 
   (bid shl ID_SHIFT) or idx
 
+template infoFromID*(i:untyped): untyped =
+  let bid = i.uint32 div DEFAULT_BLK_SIZE.uint32
+  let idx = i.uint32 mod DEFAULT_BLK_SIZE.uint32
+
+  (bid, idx)
+  
+
 proc isAlive*(w:ECSWorld, d:DenseHandle):bool =
   return d.gen == w.generations[d.wid]
 

@@ -32,7 +32,9 @@ type CIndex* = concept type I
 
 type CVertex2D* = concept v, var mv, type V
   ## Minimum requirement: readable and writable 2D position.
-  position2D(v)     is tuple[x, y: float32]
+  position2D(v) is tuple[x, y: float32]
+  setX(mv, float32)
+  setY(mv, float32)
   setPosition2D(mv, tuple[x, y: float32])
 
 # ---------------------------------------------------------------------------
@@ -44,6 +46,9 @@ type CVertex2D* = concept v, var mv, type V
 type CVertex3D* = concept v, var mv, type V
   ## Minimum requirement: readable and writable 3D position.
   position3D(v)     is tuple[x, y, z: float32]
+  setX(mv, float32)
+  setY(mv, float32)
+  setZ(mv, float32)
   setPosition3D(mv, tuple[x, y, z: float32])
 
 # ---------------------------------------------------------------------------

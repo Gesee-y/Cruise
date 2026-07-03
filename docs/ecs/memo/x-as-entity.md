@@ -19,8 +19,7 @@ This one is about letting components be entities. This enable 2 things:
 
 - **Scriptable components**: Meaning components can be added at runtime with fields being editable (a `Position` entity on which you add the `x` , `y` components). Then being able to query them without any hassle.
 
-Cruise doesn't integrate those as entities relationships can easily be handled by **Query filters**, which is how the Scene tree plugin is built. They offer the basic blocks to model relationships without the downside of components as entities.
-About scriptable components, Cruise is using many [statics assumptions]() making those almost not possible at the core level but not at the user level. It's still possible to have an entity named `Position` with the necessary fields and track through `QueryFilter`s entities possessing that component and enabling queries without affecting the main storage, that's an idea for a plugin, not a refactor for the core.
+Cruise doesn't integrate those as entities relationships can easily be handled by **Query filters**, which is how the Scene tree plugin is built. **Dynamic components** also achieve the same purpose as entities as components without overhead and more flexibility, so no need for this.
 
 ## [Assets as entities](https://github.com/bevyengine/bevy/issues/11266)
 
@@ -28,5 +27,3 @@ Assets as entities refers to having assets just be entities with the correspondi
 This allows for simpler changes tracking, better handling for assets, accelerate lookups and more.
 
 This doesn't need to be integrated in Cruise ECS as this is fully user side logics.
-
-

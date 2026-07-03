@@ -483,14 +483,14 @@ proc processQueryExpr*(world, expr: NimNode): (NimNode, NimNode) =
             modifiedComp(toComponentIdDyn(`@compNode`))
           )
         else:
-          componentTypes.add(node)
+          if isComponentType(node): componentTypes.add(node)
           components.add(quote("@") do:
             includeComp(toComponentIdDyn(`@node`))
           )
 
       of nnkIdent, nnkSym:
         # Process a raw type identifier (Implies 'include')
-        componentTypes.add(node)
+        if isComponentType(node): componentTypes.add(node)
         components.add(quote("@") do:
           includeComp(toComponentIdDyn(`@node`))
         )
@@ -537,7 +537,7 @@ macro query*(world: untyped, expr: untyped): untyped =
 var ITERATOR_REGISTRY {.compileTime.} = initTable[int, NimNode]()
 var ITERATOR_SREGISTRY {.compileTime.} = initTable[int, NimNode]()
 
-macro executeDQuery(w: ECSWorld, q: QuerySignature): untyped =
+macro executeDQuery*(w: ECSWorld, q: QuerySignature): untyped =
   let qtype = q.getTypeInst()
   let Ty = qtype[1]
   let id = Ty.repr.hash().int
@@ -603,7 +603,7 @@ macro executeDQuery(w: ECSWorld, q: QuerySignature): untyped =
       `iterBody`
       `w`.`iterName`(`q`)
 
-macro executeSQuery(w: ECSWorld, q: QuerySignature): untyped =
+macro executeSQuery*(w: ECSWorld, q: QuerySignature): untyped =
   let qtype = q.getTypeInst()
   let Ty = qtype[1]
   let id = Ty.repr.hash().int

@@ -243,7 +243,7 @@ proc runSparseBenchmarks() =
       for e in ents.mitems:
         entsV.add(w.addComponent(e, Velocity))
     ),
-    for e in ents.mitems:
+    for e in entsV.mitems:
       discard w.removeComponent(e, Velocity)
   )
 
