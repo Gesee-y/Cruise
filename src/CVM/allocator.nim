@@ -1,33 +1,78 @@
-######################################################################################################################################################################
-############################################################################# IR ALLOCATOR ##########################################################################
-######################################################################################################################################################################
+  # ########################################################################################################################################## #
+ # ############################################################### IR ALLOCATOR ############################################################# #
+# ########################################################################################################################################## #
 
-const MAX_INTERPRETER_MEM = 128
+#
+# This allocator is based on hibitset to efficiently fetch the best chunk of memory for a given allocation
+# Thus avoiding fragmentation.
+# 
+# Allocation are lazily free only when a new allocation is requested.
+# Old ones are removed at that instant.
+
+
+const 
+  LINE_BITPOS = 32
+  COL_BITMASK = (1'u64 shl LINE_BITPOS) - 1
 
 type
+  # Representation of an allocation.
+  # `pos` is the start of the allocation
+  # For the others, I think it's straightforward
   CAllocation = object
     pos, size: int
-  CRegisterAllocator = object
-    active: Table[(int, int), int]
+    lastUse: uint
+  
+  # The main allocator for our program.
+  # Tracks allocation and release them on demand of a new allocation
+  CVramAllocator = object
+    active: Table[uint, CAllocation]
     allocator: CAHibitset
-    tick: int
+    maxMem: int
 
-proc alloc(c: var CRegisterAllocator, size, line: int): int =
+# ########################################################################################################################################## #
+# ################################################################## UTILITIES ############################################################# #
+# ########################################################################################################################################## #
+
+# Transfrom line information into a single unsigned integer
+# So it can be used for direct comparison (ie. get stale allocation and free them)
+proc compactifyLineInfo(line, col: int): uint =
+  (uint(line) shl LINE_BITPOS) or uint(col) 
+
+# From a compactified line information, return the elements that compose it
+proc decompactLineInfo(info: uint): tuple[line, col: int] =
+  let line = int(info shr LINE_BITPOS)
+  let col = info and COL_BITMASK
+
+# Remove a given allocation from the list of active allocation
+# So his memory can be reused
+proc free(c: var CVramAllocator, id: uint) =
+  let allocation = c.active[id]
+  c.allocator.freeRange(allocation.pos, allocation.size)
+  c.active.del(id)
+
+# Update tick of the static memory allocator
+proc updateTick(c: var CVramAllocator, line, col: int) =
+  let id = compactifyLineInfo(line, col)
+  var toDelete: seq[uint]
+
+  # Since the id is compactified, a simple comparison with the last use tell us if it's stale
+  for aid, allocation in c.active.mpairs:
+    if allocation.lastUse < id: toDelete.add(aid)
+
+  for aid in toDelete:
+    c.free(aid)
+
+# ########################################################################################################################################## #
+# ################################################################# API Functions ########################################################## #
+# ########################################################################################################################################## #
+
+proc alloc(c: var CVramAllocator, size, line, col, lline, lcol: int): int =
+  c.updateTick(line, col) # Updating the tick to lazily free unused memory
+
   let s = c.allocator.getSpace(size)
-  c.allocator.fillAlloc(s, size)
-  c.active[(s, size)] = line
-  s
-
-proc free(c: var CRegisterAllocator, s, size: int) =
-  c.allocator.freeRange(s, size)
-  c.active.del((s, size))
-
-proc updateTick(c: var CRegisterAllocator, t: int) =
-  if t <= c.tick: return
-  c.tick = t
-  var toDelete: seq[(int, int)]
-  for i, n in c.active.mpairs:
-    if n <= c.tick: toDelete.add(i)
-
-  for (i, size) in toDelete:
-    c.free(i, size)
+  let allocation = CAllocation(pos: s, size: size, lastUse: compactifyLineInfo(lline, lcol))
+  
+  # Setting the allocator with new infor
+  c.allocator.fillAlloc(s, size) # Making the memory unavailable for future allocations
+  c.active[compactifyLineInfo(line, col)] = allocation # adding the allocation to the active set 
+  return s

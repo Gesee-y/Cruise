@@ -1,6 +1,6 @@
-######################################################################################################################################################################
-###################################################################### ALLOCATOR HIBITSET ############################################################################
-######################################################################################################################################################################
+  # ######################################################################################################################################### #
+ # ########################################################### ALLOCATOR HIBITSET ########################################################## #
+# ######################################################################################################################################### #
 
 type
   ## A 4-bit Hierarchical bitset for allocation
@@ -155,7 +155,7 @@ proc getSpace(c: var CAHiBitSet, size: int=4): int =
             var currentBits = (not c.layer2[currentL2]) and 0xF
 
             while currentBits != 0:
-              let bit = countTrailingZeroBits(currentBits)
+              let bit = countTrailingZeroBits(currentBits) # Get the available bits
               let pos = currentL2*L0_BITS+bit # Our position relative to this layer, since `currentBits` is 4 bits long
 
               # if our last position is not consecutive to this one.
@@ -163,7 +163,7 @@ proc getSpace(c: var CAHiBitSet, size: int=4): int =
               if (pos-lastL2 != 1): 
                 countL2 = 0
 
-              # Updating ou last position and counter
+              # Updating our last position and counter
               lastL2 = pos
               inc countL2
 
@@ -239,6 +239,8 @@ proc getSpace(c: var CAHiBitSet, size: int=4): int =
 
       shouldContinue = false
 
+# Fills a space in an allocator with one in order to make it unavailave for future allocations
+# until freed
 proc fillAlloc*(h: var CAHiBitSet, startSlot: int, size: int) =
   if size <= 0: return
   let stop = startSlot+size*2 - 1
