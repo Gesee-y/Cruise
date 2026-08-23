@@ -47,6 +47,7 @@ type
     raw*: NifCursor
     nameToId*: Table[string, int]
     fields*: seq[TypeField]
+    scopeId: int
 
   # Type cache, a global structure bookeeping informations about types
   TypeCache* = object

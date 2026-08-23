@@ -45,6 +45,7 @@ type
     errorStack: seq[ErrorInstance]
     currentLHS: tuple[scopeId: int, varId: int]
     currentCond: int
+    currentProcName: string
     shouldStop: bool
     varToAdd: seq[Variable]
 
@@ -234,6 +235,11 @@ proc collectVarData(ctx: var CodeGenCtx, nid: int, root: NifCursor, isCond: bool
       ctx.scopes.add(newNode)
       current = newNode.id
 
+      if ctx.currentProcName != "":
+        let pid = ctx.cache.nameToId.getOrDefault(ctx.currentProcName, -1)
+        ctx.cache.instances[pid].scopeId = current
+        ctx.currentProcName = ""
+        
       # Implicit variabke to add to the scope.
       # Those are generally function arguments
       while ctx.varToAdd.len > 0:
@@ -249,6 +255,7 @@ proc collectVarData(ctx: var CodeGenCtx, nid: int, root: NifCursor, isCond: bool
       if symNode.kind == SymbolDef:
         let name = symNode.symText
         let ty = ctx.cache.getType(name)
+        ctx.currentProcName = name
 
         # add the parameters of the proc as implicit arguments
         for field in ty.fields:
