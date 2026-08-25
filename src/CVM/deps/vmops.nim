@@ -7,7 +7,20 @@ type
   # Reflect what can be done on GPU
   VMOpCode = enum
     vocHalt = 0
-    vocAdd = 1
-    vocSub = 2
-    vocMul = 3
-    vocDiv = 4
+    vocAddi = 1
+    vocSubi = 2
+    vocMuli = 3
+    vocDivi = 4
+    vocModi = 5
+    vocAddf = 6
+    vocSubf = 7
+    vocMulf = 8
+    vocDivf = 9
+    vocModf = 10
+    vocAnd = 11
+    vocOr = 12
+    vocNot = 13
+    vocXor = 14
+    vocPush = 15
+    vocPop = 16
+    vocMov = 17

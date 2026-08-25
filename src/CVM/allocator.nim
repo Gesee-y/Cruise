@@ -50,6 +50,11 @@ proc free(c: var CVramAllocator, id: uint) =
   c.allocator.freeRange(allocation.pos, allocation.size)
   c.active.del(id)
 
+proc free(c: var CVramAllocator, pos, size: int) =
+  let allocation = c.active[id]
+  c.allocator.freeRange(allocation.pos, allocation.size)
+  c.active.del(id)
+
 # Update tick of the static memory allocator
 proc updateTick(c: var CVramAllocator, line, col: int) =
   let id = compactifyLineInfo(line, col)
@@ -66,8 +71,8 @@ proc updateTick(c: var CVramAllocator, line, col: int) =
 # ################################################################# API Functions ########################################################## #
 # ########################################################################################################################################## #
 
-proc alloc(c: var CVramAllocator, size, line, col, lline, lcol: int): int =
-  c.updateTick(line, col) # Updating the tick to lazily free unused memory
+proc alloc(c: var CVramAllocator, size, line, col: int, lline = 0, lcol = 0, cleanup=true): int =
+  if cleanup: c.updateTick(line, col) # Updating the tick to lazily free unused memory
 
   let s = c.allocator.getSpace(size)
   let allocation = CAllocation(pos: s, size: size, lastUse: compactifyLineInfo(lline, lcol))
@@ -76,3 +81,11 @@ proc alloc(c: var CVramAllocator, size, line, col, lline, lcol: int): int =
   c.allocator.fillAlloc(s, size) # Making the memory unavailable for future allocations
   c.active[compactifyLineInfo(line, col)] = allocation # adding the allocation to the active set 
   return s
+
+# Anonymous alloc for temporary values
+proc alloc(c: var CVramAllocator, size: int): int =
+  let s = c.allocator.getSpace(size)
+  c.allocator.fillAlloc(s, size) # Making the memory unavailable for future allocations
+  return s
+
+

@@ -5,8 +5,12 @@
 #
 # To run these tests, simply execute `nimble test`.
 
-import unittest
+import std/syncio
 
-import CVM
-test "can add":
-  check add(5, 5) == 10
+proc main =
+  var (a, b, c, d, e) = (1, 2, 3, 4, 5)
+  var f = (a + b) * c * d - e 
+
+  echo f
+
+main()
