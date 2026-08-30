@@ -41,7 +41,7 @@ proc toOpcode(s: string, ty: string): VMOpCode =
 proc genIntruction(op: VMOpCode, dst, src: CMemLoc): uint32 =
   (uint32(op) shl OPCODE_POS) or (uint32(dst) shl REGA_BITS) or uint32(src)
 
-proc genExpr(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, ty: TypeInst, c: NifCursor): CMemLoc =
+proc genExpr(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, ty: TypeInst, c: NifCursor): CAllocation =
   var lineInfo = c.info
   var size = ty.size
   result = ctx.allocator.alloc(size)
@@ -57,12 +57,12 @@ proc genExpr(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, ty: TypeIns
     let r2 = ctx.genExpr(code, scopeId, ty, right)
 
     # Now We generate 1 move and one op
-    code.data.add(genIntruction(vocMov, result, r1))
-    code.data.add(genIntruction(opCode, result, r2))
+    code.data.add(genIntruction(vocMov, result.pos, r1.pos))
+    code.data.add(genIntruction(opCode, result.pos, r2.pos))
     code.currentPos += 2
 
-    ctx.allocator.free(r1, size)
-    ctx.allocator.free(r2, size)
+    ctx.allocator.free(r1)
+    ctx.allocator.free(r2)
   of PrefixX:
     var sym = firstChild(c) # Name
     var opCode = toOpcode(c.symText)

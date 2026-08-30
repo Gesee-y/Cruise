@@ -55,8 +55,11 @@ proc free(c: var CVramAllocator, id: uint) =
   c.allocator.freeRange(allocation.pos, allocation.size)
   c.active.del(id)
 
-proc free(c: var CVramAllocator, pos, size: int) =
+proc free*(c: var CVramAllocator, pos, size: int) =
   c.allocator.freeRange(pos, size)
+
+proc free*(c: var CVramAllocator, allocation: CAllocation) =
+  c.allocator.freeRange(allocation.pos, allocation.size)
 
 # Update tick of the static memory allocator
 proc updateTick(c: var CVramAllocator, line, col: int) =
@@ -83,13 +86,13 @@ proc alloc*(c: var CVramAllocator, size, line, col: int, lline = 0, lcol = 0, cl
   # Setting the allocator with new infor
   c.allocator.fillAlloc(s, size) # Making the memory unavailable for future allocations
   c.active[compactifyLineInfo(line, col)] = allocation # adding the allocation to the active set 
-  return s
+  return allocation
 
 # Anonymous alloc for temporary values
-proc alloc*(c: var CVramAllocator, size: int): int =
+proc alloc*(c: var CVramAllocator, size: int): CAllocation =
   let s = c.allocator.getSpace(size)
   c.allocator.fillAlloc(s, size) # Making the memory unavailable for future allocations
-  return s
+  return CAllocation(pos: s, size: size)
 
 proc newVramAllocator*(): CVramAllocator =
   result = CVramAllocator(active: initTable[uint, CAllocation]())
