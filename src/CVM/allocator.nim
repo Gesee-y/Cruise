@@ -1,6 +1,5 @@
 import std/tables
-
-include "hibitset.nim"
+import ./hibitset
 
   # ########################################################################################################################################## #
  # ############################################################### IR ALLOCATOR ############################################################# #
@@ -28,7 +27,7 @@ type
   
   # The main allocator for our program.
   # Tracks allocation and release them on demand of a new allocation
-  CVramAllocator = object
+  CVramAllocator* = object
     active: Table[uint, CAllocation]
     allocator: CAHiBitSet
     maxMem: int
@@ -75,7 +74,7 @@ proc updateTick(c: var CVramAllocator, line, col: int) =
 # ################################################################# API Functions ########################################################## #
 # ########################################################################################################################################## #
 
-proc alloc(c: var CVramAllocator, size, line, col: int, lline = 0, lcol = 0, cleanup=true): int =
+proc alloc*(c: var CVramAllocator, size, line, col: int, lline = 0, lcol = 0, cleanup=true): int =
   if cleanup: c.updateTick(line, col) # Updating the tick to lazily free unused memory
 
   let s = c.allocator.getSpace(size)
@@ -87,9 +86,12 @@ proc alloc(c: var CVramAllocator, size, line, col: int, lline = 0, lcol = 0, cle
   return s
 
 # Anonymous alloc for temporary values
-proc alloc(c: var CVramAllocator, size: int): int =
+proc alloc*(c: var CVramAllocator, size: int): int =
   let s = c.allocator.getSpace(size)
   c.allocator.fillAlloc(s, size) # Making the memory unavailable for future allocations
   return s
+
+proc newVramAllocator*(): CVramAllocator =
+  result = CVramAllocator(active: initTable[uint, CAllocation]())
 
 

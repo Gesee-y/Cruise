@@ -35,6 +35,8 @@ type
   TypeField* = object
     name*: string
     ty*: string
+    ## Offset in virtual-memory words from the start of the enclosing object.
+    offset*: int
     raw*: NifCursor
     subinfo*: set[TypeFlag]
 
@@ -47,6 +49,8 @@ type
     raw*: NifCursor
     nameToId*: Table[string, int]
     fields*: seq[TypeField]
+    ## Size in virtual-memory words. Primitive shader values occupy one word.
+    size*: int
     scopeId: int
 
   # Type cache, a global structure bookeeping informations about types
@@ -62,44 +66,44 @@ type
 proc newTypeCache(): TypeCache =
   result = TypeCache()
   result.nameToId["int"] = result.instances.len
-  result.instances.add TypeInst(kind: PrimitiveType, name: "int")
+  result.instances.add TypeInst(kind: PrimitiveType, name: "int", size: 4)
   result.nameToId["int8"] = result.instances.len
-  result.instances.add TypeInst(kind: PrimitiveType, name: "int8")
+  result.instances.add TypeInst(kind: PrimitiveType, name: "int8", size: 1)
   result.nameToId["int16"] = result.instances.len
-  result.instances.add TypeInst(kind: PrimitiveType, name: "int16")
+  result.instances.add TypeInst(kind: PrimitiveType, name: "int16", size: 2)
   result.nameToId["int32"] = result.instances.len
-  result.instances.add TypeInst(kind: PrimitiveType, name: "int32")
+  result.instances.add TypeInst(kind: PrimitiveType, name: "int32", size: 4)
   result.nameToId["int64"] = result.instances.len
-  result.instances.add TypeInst(kind: PrimitiveType, name: "int64")
+  result.instances.add TypeInst(kind: PrimitiveType, name: "int64", size: 8)
 
   result.nameToId["uint"] = result.instances.len
-  result.instances.add TypeInst(kind: PrimitiveType, name: "uint")
+  result.instances.add TypeInst(kind: PrimitiveType, name: "uint", size: 1)
   result.nameToId["uint8"] = result.instances.len
-  result.instances.add TypeInst(kind: PrimitiveType, name: "uint8")
+  result.instances.add TypeInst(kind: PrimitiveType, name: "uint8", size: 1)
   result.nameToId["uint16"] = result.instances.len
-  result.instances.add TypeInst(kind: PrimitiveType, name: "uint16")
+  result.instances.add TypeInst(kind: PrimitiveType, name: "uint16", size: 2)
   result.nameToId["uint32"] = result.instances.len
-  result.instances.add TypeInst(kind: PrimitiveType, name: "uint32")
+  result.instances.add TypeInst(kind: PrimitiveType, name: "uint32", size: 4)
   result.nameToId["uint64"] = result.instances.len
-  result.instances.add TypeInst(kind: PrimitiveType, name: "uint64")
+  result.instances.add TypeInst(kind: PrimitiveType, name: "uint64", size: 8)
 
   result.nameToId["float"] = result.instances.len
-  result.instances.add TypeInst(kind: PrimitiveType, name: "float")
+  result.instances.add TypeInst(kind: PrimitiveType, name: "float", size: 4)
   result.nameToId["float32"] = result.instances.len
-  result.instances.add TypeInst(kind: PrimitiveType, name: "float32")
+  result.instances.add TypeInst(kind: PrimitiveType, name: "float32", size: 4)
   result.nameToId["float64"] = result.instances.len
-  result.instances.add TypeInst(kind: PrimitiveType, name: "float64")
+  result.instances.add TypeInst(kind: PrimitiveType, name: "float64", size: 8)
 
   result.nameToId["bool"] = result.instances.len
-  result.instances.add TypeInst(kind: PrimitiveType, name: "bool")
+  result.instances.add TypeInst(kind: PrimitiveType, name: "bool", size: 1)
 
   # Not allowed in GPU kernel
   # But here as a placeholder for an hypothetic time with a JIT support
   result.nameToId["char"] = result.instances.len
-  result.instances.add TypeInst(kind: PrimitiveType, name: "char")
+  result.instances.add TypeInst(kind: PrimitiveType, name: "char", size: 1)
 
   result.nameToId["string"] = result.instances.len
-  result.instances.add TypeInst(kind: PrimitiveType, name: "string")
+  result.instances.add TypeInst(kind: PrimitiveType, name: "string", size: 16)
 
 # ######################################################################################################### #
 # ################################################# UTILS ################################################# #
@@ -356,7 +360,23 @@ proc propagateRefs(t: var TypeCache) =
   var visited = initTable[string, bool]()
   for inst in t.nameToId.keys:
     if inst notin visited:
-      discard updateRef(t, inst, visited)
+       discard updateRef(t, inst, visited)
+
+proc computeLayouts*(t: var TypeCache) =
+  ## Assign field offsets after every declaration is known. Unknown fields keep
+  ## one word so a backend can still report them without corrupting neighbours.
+  for index in 0 ..< t.instances.len:
+    if t.instances[index].kind != ObjectType:
+      continue
+    var offset = 0
+    for fieldIndex in 0 ..< t.instances[index].fields.len:
+      t.instances[index].fields[fieldIndex].offset = offset
+      let fieldType = t.nameToId.getOrDefault(t.instances[index].fields[fieldIndex].ty, -1)
+      if fieldType >= 0:
+        offset += max(1, t.instances[fieldType].size)
+      else:
+        inc offset
+    t.instances[index].size = max(1, offset)
 
 # ########################################################################################################################################## #
 # ################################################################### Query API ############################################################ #

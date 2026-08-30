@@ -6,7 +6,7 @@ type
   ## A 4-bit Hierarchical bitset for allocation
   ## Allows us to quickly get an available memory chuck when allocating
   BitBlock = uint8
-  CAHiBitSet = object
+  CAHiBitSet* = object
     layer0: seq[uint8] # Get to know if 4 bits are used
     layer1: seq[uint8] # Get to know if 16 bits are used
     layer2: seq[uint8] # Get to know if 64 bits are used
@@ -123,7 +123,7 @@ proc clear*(h: var CAHiBitSet) =
   for i in 0..<h.layer1.len: h.layer1[i] = 0
   for i in 0..<h.layer2.len: h.layer2[i] = 0
 
-proc getSpace(c: var CAHiBitSet, size: int=4): int =
+proc getSpace*(c: var CAHiBitSet, size: int=4): int =
   ## Return the starting point of the index with enough space for the request.
   ## `size` in bytes
   result = 0

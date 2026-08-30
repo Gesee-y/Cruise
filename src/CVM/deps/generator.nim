@@ -35,7 +35,7 @@ proc toOpcode(s: string, ty: string): VMOpCode =
   of "and": vocAnd
   of "or": vocOr
   of "not": vocNot
-  of "xor": vocXoe
+  of "xor": vocXor
   else: error "No opCode for `" & s & "`."
 
 proc genIntruction(op: VMOpCode, dst, src: CMemLoc): uint32 =

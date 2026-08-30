@@ -25,6 +25,7 @@ type
     ty*: TypeInst
     liveness*: Liveness
     ownerId*: int
+    offset*: int
 
 include "trie.nim"
 
