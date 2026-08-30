@@ -2,56 +2,91 @@
  # ################################################## SCOPE INFORMATIONS ################################################## #
 # ######################################################################################################################## #
 
-import std/strutils, std/sets
+import std/strutils, std/sets, std/hashes
 
 type
-  Liveness = object
+  Liveness* = object
     birth: NifCursor
     uses: seq[NifCursor]
 
-  VarType = enum
+  VarType* = enum
     RootVar
     VarField
     ProcArg
 
-  Variable = object
-    kind: VarKind
-    vtype: VarType
-    name: string
-    ty: TypeInst
-    liveness: Liveness
-    ownerId: int
+  VarKind = enum
+    LetK
+    VarK
+
+  Variable* = object
+    kind*: VarKind
+    vtype*: VarType
+    name*: string
+    ty*: TypeInst
+    liveness*: Liveness
+    ownerId*: int
 
 include "trie.nim"
 
 type
-  ScopeKind = enum
+  SymPath = object
+    valid: bool
+    path: seq[SymId]
+    ty: seq[NimonyType]
+
+  ScopeKind* = enum
     SimpleScope
     CondScope
 
-  ScopeNode = object
-    kind: ScopeKind
+  ScopeNode* = object
+    kind*: ScopeKind
     id: int
     subId: int
     variables: Trie
     children: seq[int]
     parent: int
     stackCount: int
-    errorStack: seq[ErrorInstance]
 
   CodeGenCtx = object
     cache: TypeCache
     scopes: seq[ScopeNode]
-    errorStack: seq[ErrorInstance]
     currentLHS: tuple[scopeId: int, varId: int]
     currentCond: int
     currentProcName: string
     shouldStop: bool
     varToAdd: seq[Variable]
 
+const 
+  PATH_SEPARATOR = "::"
+
 # ############################################################################################################ #
 # ############################################### UTILITIES ################################################## #
 # ############################################################################################################ #
+
+func hash(s: SymPath): Hash =
+  var h: Hash = 0
+  for item in s.path:
+    h = h !& hash(item)
+  h = h !& hash(s.valid)
+  result = !$h
+
+func `==`(s1, s2: SymPath): bool =
+  if s1.valid != s2.valid:
+    return false
+  if s1.path.len != s2.path.len:
+    return false
+  for i in 0 .. s1.path.high:
+    if s1.path[i] != s2.path[i]:
+      return false
+  true
+
+proc renderPath(path: SymPath): string =
+  if path.path.len == 0:
+    return "<path>"
+  result = symText(path.path[0])
+  for i in 1 .. path.path.high:
+    result.add PATH_SEPARATOR
+    result.add symText(path.path[i])
 
 proc cmpLineInfo(l1, l2: LineInfo): int =
   result = 0

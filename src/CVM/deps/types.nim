@@ -10,7 +10,7 @@
 # Typically in a GPU kernel, Ref types and string types will get rejected
 #
 
-import std/tables
+import std/tables, std/strutils, std/assertions
 
 type
   # Describe which kind of type we are dealing with
@@ -144,7 +144,8 @@ proc getRawTypeKind*(t: NifCursor): TypeKind =
   of UntypedT, TypedT, AutoT:
     result = UnknownType
   of NoType:
-    error "Unable to get raw type of `" & asNimCode(n) & "`."
+    assert false, "Unable to get raw type."
+    return UnknownType
   else:
     result = ObjectType
 
@@ -170,7 +171,8 @@ proc getTypeName(ty: NifCursor): string =
     for i in 2..txt.high:
       result = result & "." & txt[i]
   of NoType:
-    error "Unable to get type name of `" & asNimCode(n) & "`."
+    assert false, "Unable to get type name."
+    return ""
   else:
     if n.kind == TagLit: inc n
     result = n.symText
@@ -195,7 +197,8 @@ proc getSubTypeInfo*(n: NifCursor): set[TypeFlag] =
         result.incl NilF
       else: discard
   else:
-    error "Unable to get sub type information of `" & asNimCode(n) & "`."
+    assert false, "Unable to get sub type information."
+    return default(set[TypeFlag])
 
 # Add a type instance to the cache
 proc addInstance(c: var TypeCache, instance: TypeInst) =

@@ -17,29 +17,35 @@ const
   L0_MASK*  = 3
   L0_FULL* = 0xF
 
+proc firstSetBit(v: BitBlock): int {.inline.} =
+  ## Returns the index of the least significant set bit. `v` must be non-zero.
+  var bits = v
+  result = 0
+  while (bits and BitBlock(1)) == 0:
+    inc result
+    bits = bits shr 1
+
 proc len*(h: CAHiBitSet): int {.inline.} =
   ## Total capacity of the bitset in bits.
-  h.layer0.len * L0_BITS
+  result = h.layer0.len * L0_BITS
 
 # ---------- internal growth helper ----------
 
-template ensureCapacity(h: var CAHiBitSet, i: untyped) =
-  let idx = i.int
+proc ensureCapacity(h: var CAHiBitSet, idx: int) =
   let neededL0 = (idx shr L0_SHIFT) + 1
   if neededL0 > h.layer0.len:
     h.layer0.setLen(neededL0)
-    let neededL1 = (neededL0 + L0_BITS - 1) shr L0_SHIFT
-    if neededL1 > h.layer1.len:
-      h.layer1.setLen(neededL1)
-      let neededL2 = (neededL1 + L0_BITS - 1) shr L0_SHIFT
-      if neededL2 > h.layer2.len:
-        h.layer2.setLen(neededL2)
+  let neededL1 = (neededL0 + L0_BITS - 1) shr L0_SHIFT
+  if neededL1 > h.layer1.len:
+    h.layer1.setLen(neededL1)
+  let neededL2 = (neededL1 + L0_BITS - 1) shr L0_SHIFT
+  if neededL2 > h.layer2.len:
+    h.layer2.setLen(neededL2)
 
 # ---------- bit manipulation ----------
 
-template unsafeSet*(h: var CAHiBitSet, i: untyped) =
+proc unsafeSet*(h: var CAHiBitSet, idx: int) =
   ## Sets the bit at `idx` to 1. Grows automatically.
-  let idx = i.int
   let l0Idx  = idx   shr L0_SHIFT
   let bitPos = idx   and L0_MASK
   h.layer0[l0Idx] = h.layer0[l0Idx] or (BitBlock(1) shl bitPos)
@@ -50,11 +56,10 @@ template unsafeSet*(h: var CAHiBitSet, i: untyped) =
   let l2Idx  = l1Idx shr L0_SHIFT
   h.layer2[l2Idx] = h.layer2[l2Idx] or (BitBlock(1) shl (l1Idx and L0_MASK))
 
-template set*(h: var CAHiBitSet, i: untyped) =
+proc set*(h: var CAHiBitSet, idx: int) =
   ## Sets the bit at `idx` to 1. Grows automatically.
-  let idx = i.int
   h.ensureCapacity(idx)
-  h.unsafeSet(i)
+  h.unsafeSet(idx)
   
 template unset*(h: var CAHiBitSet, idx: int) =
   ## Sets the bit at `idx` to 0.
@@ -93,17 +98,24 @@ proc setL0Block*(h: var CAHiBitSet, l0Idx: int, value: BitBlock) {.inline.} =
   else:
     h.layer2[l2Idx] = h.layer2[l2Idx] and not (BitBlock(1) shl l2Bit)
 
-proc get*(h: CAHiBitSet | ptr CAHiBitSet, idx: int): bool {.inline.} =
+proc get*(h: CAHiBitSet, idx: int): bool {.inline.} =
   ## Returns true if the bit at `idx` is set. Time complexity: O(1)
   if idx >= h.len: return false
   let l0Idx  = idx shr L0_SHIFT
   let bitPos = idx and L0_MASK
-  (h.layer0[l0Idx] and (BitBlock(1) shl bitPos)) != 0
+  let mask = BitBlock(1) shl bitPos
+  (h.layer0[l0Idx] and mask) != 0
 
-proc getL0*(h: CAHiBitSet | ptr CAHiBitSet, idx: int): BitBlock {.inline.} =
+proc get*(h: ptr CAHiBitSet, idx: int): bool {.inline.} =
+  h[].get(idx)
+
+proc getL0*(h: CAHiBitSet, idx: int): BitBlock {.inline.} =
   ## Returns the raw block at layer0 index `idx`.
   if idx >= h.layer0.len: return 0
   h.layer0[idx]
+
+proc getL0*(h: ptr CAHiBitSet, idx: int): BitBlock {.inline.} =
+  h[].getL0(idx)
 
 proc clear*(h: var CAHiBitSet) =
   ## Resets all bits to 0. Time complexity: O(n)
@@ -114,6 +126,7 @@ proc clear*(h: var CAHiBitSet) =
 proc getSpace(c: var CAHiBitSet, size: int=4): int =
   ## Return the starting point of the index with enough space for the request.
   ## `size` in bytes
+  result = 0
   
   # Store our current position in the allocator, tells us if we are still contiguous and where to continue from if not
   var current = 0
@@ -155,7 +168,7 @@ proc getSpace(c: var CAHiBitSet, size: int=4): int =
             var currentBits = (not c.layer2[currentL2]) and 0xF
 
             while currentBits != 0:
-              let bit = countTrailingZeroBits(currentBits) # Get the available bits
+              let bit = firstSetBit(currentBits) # Get the available bits
               let pos = currentL2*L0_BITS+bit # Our position relative to this layer, since `currentBits` is 4 bits long
 
               # if our last position is not consecutive to this one.
@@ -191,7 +204,7 @@ proc getSpace(c: var CAHiBitSet, size: int=4): int =
             var currentBits = (not c.layer1[currentL1]) and 0xF
 
             while currentBits != 0:
-              let bit = countTrailingZeroBits(currentBits)
+              let bit = firstSetBit(currentBits)
               let pos = currentL1*L0_BITS+bit
 
               if (pos-lastL1 != 1): 
@@ -221,7 +234,7 @@ proc getSpace(c: var CAHiBitSet, size: int=4): int =
             var currentBits = (not c.layer0[currentL0]) and 0xF
 
             while currentBits != 0:
-              let bit = countTrailingZeroBits(currentBits)
+              let bit = firstSetBit(currentBits)
               let pos = currentL0*L0_BITS+bit
 
               if (pos-lastL0 != 1): 

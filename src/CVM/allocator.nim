@@ -1,3 +1,7 @@
+import std/tables
+
+include "hibitset.nim"
+
   # ########################################################################################################################################## #
  # ############################################################### IR ALLOCATOR ############################################################# #
 # ########################################################################################################################################## #
@@ -26,7 +30,7 @@ type
   # Tracks allocation and release them on demand of a new allocation
   CVramAllocator = object
     active: Table[uint, CAllocation]
-    allocator: CAHibitset
+    allocator: CAHiBitSet
     maxMem: int
 
 # ########################################################################################################################################## #
@@ -41,24 +45,24 @@ proc compactifyLineInfo(line, col: int): uint =
 # From a compactified line information, return the elements that compose it
 proc decompactLineInfo(info: uint): tuple[line, col: int] =
   let line = int(info shr LINE_BITPOS)
-  let col = info and COL_BITMASK
+  let col = int(info and COL_BITMASK)
+  (line, col)
 
 # Remove a given allocation from the list of active allocation
 # So his memory can be reused
 proc free(c: var CVramAllocator, id: uint) =
-  let allocation = c.active[id]
+  if not c.active.hasKey(id): return
+  let allocation = c.active.getOrDefault(id)
   c.allocator.freeRange(allocation.pos, allocation.size)
   c.active.del(id)
 
 proc free(c: var CVramAllocator, pos, size: int) =
-  let allocation = c.active[id]
-  c.allocator.freeRange(allocation.pos, allocation.size)
-  c.active.del(id)
+  c.allocator.freeRange(pos, size)
 
 # Update tick of the static memory allocator
 proc updateTick(c: var CVramAllocator, line, col: int) =
   let id = compactifyLineInfo(line, col)
-  var toDelete: seq[uint]
+  var toDelete: seq[uint] = @[]
 
   # Since the id is compactified, a simple comparison with the last use tell us if it's stale
   for aid, allocation in c.active.mpairs:
