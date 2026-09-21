@@ -15,7 +15,7 @@ type
     ## Maps each proc name to its starting word index in `data`.
     ## Entries start at -1 (placeholder) and are backpatched by `genFunc`.
     procTable:  Table[string, int]
-    callToPatch: Table[string, int]
+    callToPatch: Table[string, int] # TODO: Reverse this to `Table[int, string]` as `int` are more precise
     currentPos: int
 
 # ################################################################################################################################ #
@@ -31,51 +31,15 @@ const
   REGB_BITS   = 8
   REGA_POS    = REGB_BITS           ##  8: shift for the destination field
   OPCODE_POS  = REGA_POS + REGA_BITS ## 16: shift for the opcode field
+  # TODO: Add unused byte constant
 
 # ################################################################################################################################ #
-# ######################################################### HELPER PROCS ######################################################## #
+# ########################################################## HELPER PROCS ######################################################## #
 # ################################################################################################################################ #
-
-proc asNimCode(c: NifCursor): string =
-  case c.kind
-  of Symbol, SymbolDef: c.symText
-  of Ident: c.identText
-  of TagLit: c.tagText
-  of StrLit: c.stringValue
-  of IntLit: $c.intValue
-  of FloatLit: $c.floatValue
-  else: $c.kind
 
 proc isFloatType(ty: TypeInst): bool {.inline.} =
   ## Returns true when `ty` is a floating-point primitive.
   ty.name.startsWith("float")
-
-proc toOpcode(op: NimonyExpr, isFloat: bool): VMOpCode =
-  ## Map a binary NimonyExpr tag to the matching VM opcode,
-  ## choosing between the integer and float variant via `isFloat`.
-  case op
-  of AddX:  result = if isFloat: vocAddf else: vocAddi
-  of SubX:  result = if isFloat: vocSubf else: vocSubi
-  of MulX:  result = if isFloat: vocMulf else: vocMuli
-  of DivX:  result = if isFloat: vocDivf else: vocDivi
-  of ModX:  result = vocMod
-  of AndX:  result = vocAnd
-  of OrX:   result = vocOr
-  of XorX:  result = vocXor
-  of EqX:   result = if isFloat: vocEqf  else: vocEqi
-  of NeqX:  result = if isFloat: vocNeqf else: vocNeqi
-  of LtX:   result = if isFloat: vocLtf  else: vocLti
-  of LeX:   result = if isFloat: vocLef  else: vocLei
-  else:
-    result = vocHalt
-
-proc toBuiltinCall(op: string): BuiltinOp =
-  case op
-  of "abs": boAbs
-  of "min": boMin
-  of "max": boMax
-  of "sqrt": boSqrt
-  else: boCustom
 
 proc genInstruction(op: VMOpCode, dst, src: CMemLoc): uint32 {.inline.} =
   ## Encode a two-operand instruction into a single 32-bit word.
@@ -157,6 +121,7 @@ proc genExpr(ctx: var CodeGenCtx, code: var CBytecode,
     let r2 = ctx.genExpr(code, scopeId, opTy, right)
 
     code.emitInst(vocMov, result.pos, r1.pos)
+    # TODO: Make op code take into account the type
     code.emitInst(toOpcode(ek, opIsFloat), result.pos, r2.pos)
 
     code.freeIfTemp(r1)

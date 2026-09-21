@@ -69,3 +69,30 @@ type
     boMin    = 2
     boMax    = 3
     boSqrt   = 4
+
+proc toOpcode(op: NimonyExpr, isFloat: bool): VMOpCode =
+  ## Map a binary NimonyExpr tag to the matching VM opcode,
+  ## choosing between the integer and float variant via `isFloat`.
+  case op
+  of AddX:  result = if isFloat: vocAddf else: vocAddi
+  of SubX:  result = if isFloat: vocSubf else: vocSubi
+  of MulX:  result = if isFloat: vocMulf else: vocMuli
+  of DivX:  result = if isFloat: vocDivf else: vocDivi
+  of ModX:  result = vocMod
+  of AndX:  result = vocAnd
+  of OrX:   result = vocOr
+  of XorX:  result = vocXor
+  of EqX:   result = if isFloat: vocEqf  else: vocEqi
+  of NeqX:  result = if isFloat: vocNeqf else: vocNeqi
+  of LtX:   result = if isFloat: vocLtf  else: vocLti
+  of LeX:   result = if isFloat: vocLef  else: vocLei
+  else:
+    result = vocHalt
+
+proc toBuiltinCall(op: string): BuiltinOp =
+  case op
+  of "abs": boAbs
+  of "min": boMin
+  of "max": boMax
+  of "sqrt": boSqrt
+  else: boCustom
