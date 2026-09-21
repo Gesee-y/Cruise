@@ -5,7 +5,9 @@
 #
 # To run these tests, simply execute `nimble test`.
 
-import std/syncio
+import std/[syncio, math]
+
+#{.plugin: "internals/deps/scopes_compile_plugin.nim".}
 
 proc main =
   var (a, b, c, d, e) = (1, 2, 3, 4, 5)

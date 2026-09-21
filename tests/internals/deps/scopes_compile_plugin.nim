@@ -1,5 +1,5 @@
 import plugins
-import std/assertions
+import std/[assertions, syncio]
 
 include ../../../src/CVM/deps/types
 include ../../../src/CVM/deps/scopes
@@ -18,7 +18,7 @@ verifyTriePaths()
 proc emptyOutput(n: var NifCursor): NifBuilder =
   result = createTree()
   result.takeTree(n)
-
+  echo renderTree(result)
 
 var inp = loadPluginInput()
 saveTree emptyOutput(inp)

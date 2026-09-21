@@ -30,8 +30,10 @@ proc generateBytecode(n: var NifCursor): NifBuilder =
   statements.loopInto:
     if statements.stmtKind in {ProcS, FuncS}:
       ctx.genFunc(code, statements)
+    elif statements.stmtKind in {StmtsS, BlockS}:
+      ctx.genStmt(code, 0, statements)
     statements.skip()
-
+  
   # The plugin API currently returns a NIF tree. Keep the source unchanged
   # while the generated program is consumed by the forthcoming backend API.
   result = createTree()

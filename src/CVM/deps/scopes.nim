@@ -47,6 +47,10 @@ type
     children: seq[int]
     parent: int
     stackCount: int
+    ## Index into `children` consumed during code generation.
+    ## Incremented each time genStmt descends into a nested block so that
+    ## subsequent nested blocks receive the correct child scope.
+    childScopeIdx: int
 
   CodeGenCtx = object
     cache: TypeCache
@@ -133,7 +137,7 @@ proc addPathSegment(res: var SymPath; n: NifCursor) =
   res.path.add n.symId
   res.ty.add n.typeKind
 
-proc extractPath(c: var ScopeNode; n: NifCursor; res: var SymPath; followInlineVars = true) =
+proc extractPath(c: ScopeNode; n: NifCursor; res: var SymPath; followInlineVars = true) =
   if not res.valid:
     return
   case n.kind
@@ -174,7 +178,7 @@ proc extractPath(c: var ScopeNode; n: NifCursor; res: var SymPath; followInlineV
   else:
     res.valid = false
 
-proc extractPath(c: var ScopeNode; n: NifCursor; followInlineVars = true): SymPath =
+proc extractPath(c: ScopeNode; n: NifCursor; followInlineVars = true): SymPath =
   result = SymPath(valid: true)
   extractPath(c, n, result, followInlineVars)
   if not result.valid or result.path.len == 0:
@@ -192,6 +196,17 @@ proc pathsOverlap(a, b: SymPath): bool =
 
 proc rootPath(sym: SymId): SymPath =
   result = SymPath(valid: true, path: @[sym])
+
+proc getType(ctx: CodeGenCtx, scope: int, c: NifCursor): TypeInst =
+  let path = ctx.scopes[scope].extractPath(c)
+  let root = path.path[0].symText
+  let sid = ctx.getOwnerScope(ctx.scopes[scope], root)
+  var ownerScope = addr ctx.scopes[sid]
+  let rv = ownerScope.variables.nodes[ownerScope.variables.fetchNode(root)].data
+
+  return if path.path.len > 1: ctx.cache.getType(rv.ty, renderPath(path).split(PATH_SEPARATOR)[1..^1]) else: rv.ty
+
+
 
 # ################################################################################################################ #
 # ############################################### API Functions ################################################## #

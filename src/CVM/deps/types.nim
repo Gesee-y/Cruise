@@ -157,29 +157,34 @@ proc getRawTypeKind*(t: NifCursor): TypeKind =
 proc getTypeName(ty: NifCursor): string =
   result = ""
   var n = stripTypeWrappers(ty)
+  if n.kind == DotToken: return ""
 
   let k = n.typeKind
-  case k:
+  case k
   of IT:
-    result = "int" & $(n.firstChild.intValue)
+    if n.firstChild.kind == IntLit:
+      result = "int" & $(n.firstChild.intValue)
+    else:
+      result = "int"
   of BoolT:
-    result = $k
+    result = "bool"
   of RefT:
-    # For field who uses ref types
-    # We need to infer the ref type name from the object one
-    # They are ina the form `typeName.Obj.version.otherStuff`
-    # We just need to remove the `Obj`
     inc n
-    var txt = n.symText.split(".")
-    result = txt[0]
-    for i in 2..txt.high:
-      result = result & "." & txt[i]
+    if n.kind in {Symbol, SymbolDef}:
+      var txt = n.symText.split(".")
+      result = txt[0]
+      for i in 2..txt.high:
+        result = result & "." & txt[i]
   of NoType:
-    assert false, "Unable to get type name."
+    if n.kind in {Symbol, SymbolDef}:
+      return n.symText.split(".")[0]
     return ""
   else:
     if n.kind == TagLit: inc n
-    result = n.symText
+    if n.kind in {Symbol, SymbolDef}:
+      result = n.symText.split(".")[0]
+    else:
+      result = ""
 
 # Quickly check if the current cursor point to a Ref Type
 proc isRefType*(n: NifCursor): bool =
