@@ -32,16 +32,16 @@ proc generateBytecode(n: var NifCursor): NifBuilder =
   statements.loopInto:
     if statements.stmtKind in {ProcS, FuncS}:
       ctx.genFunc(code, statements)
-    #elif statements.stmtKind in {StmtsS, BlockS}:
-    #  ctx.genStmt(code, 0, statements)
+    elif statements.stmtKind in {StmtsS, BlockS}:
+      ctx.genStmt(code, 0, statements)
     statements.skip()
 
-  echo "["
-  for i in 0..<code.data.len-1:
-    echo code.data[i], ", "
+  #var byteData = newSeq[byte](code.data.len*sizeof(uint32))
+  #copyMem(addr byteData[0], addr code.data[0], code.data.len*sizeof(uint32))
 
-  if code.data.len > 0: echo code.data[^1]
-  echo "]"
+  var f = open("generated.cbc", fmWrite)
+  discard writeBuffer(f, addr code.data[0], code.data.len*sizeof(uint32))
+  close(f)
   
   # The plugin API currently returns a NIF tree. Keep the source unchanged
   # while the generated program is consumed by the forthcoming backend API.

@@ -15,7 +15,7 @@ const
   L0_BITS*  = 4
   L0_SHIFT* = 2
   L0_MASK*  = 3
-  L0_FULL* = 0xF
+  L0_FULL*  = 0xF
 
 proc firstSetBit(v: BitBlock): int {.inline.} =
   ## Returns the index of the least significant set bit. `v` must be non-zero.
