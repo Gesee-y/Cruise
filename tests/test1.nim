@@ -5,14 +5,17 @@
 #
 # To run these tests, simply execute `nimble test`.
 
-import std/[syncio, math]
-
+#import std/[syncio, math]
+import ../src/CVM/disassembler
 #{.plugin: "internals/deps/scopes_compile_plugin.nim".}
 
 proc main =
-  var (a, b, c, d, e) = (1, 2, 3, 4, 5)
-  var f = (a + b) * c * d - e 
+  var f = open("generated.cbc", fmRead)
+  var data = newSeq[uint32](256)
+  discard f.readBuffer(addr data[0], 1024)
 
-  echo f
+  disassemble(data)
+
+
 
 main()

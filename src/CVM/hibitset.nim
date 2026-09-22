@@ -127,7 +127,7 @@ proc getSpace*(c: var CAHiBitSet, size: int = 4): int =
   ## Return the starting point of the index with enough space for the request.
   ## `size` in words (needed slots = size * 2)
   if size <= 0: return 0
-  let needed = size * 2
+  let needed = size
   var slot = 0
   var count = 0
 
@@ -192,7 +192,7 @@ proc getSpace*(c: var CAHiBitSet, size: int = 4): int =
 # until freed
 proc fillAlloc*(h: var CAHiBitSet, startSlot: int, size: int) =
   if size <= 0: return
-  let stop = startSlot+size*2 - 1
+  let stop = startSlot+size - 1
   h.set(stop)
   
   for i in startSlot..<stop:
@@ -203,5 +203,5 @@ proc fillAlloc*(h: var CAHiBitSet, startSlot: int, size: int) =
 ##########################################################################################################################################################
 
 proc freeRange*(h: var CAHiBitSet, startSlot: int, size: int) =
-  for i in startSlot..<startSlot+size*2:
+  for i in startSlot..<startSlot+size:
     h.unset(i)

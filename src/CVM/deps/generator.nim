@@ -37,6 +37,25 @@ const
 # ########################################################## HELPER PROCS ######################################################## #
 # ################################################################################################################################ #
 
+proc toOpcode(op: NimonyExpr, isFloat: bool): VMOpCode =
+  ## Map a binary NimonyExpr tag to the matching VM opcode,
+  ## choosing between the integer and float variant via `isFloat`.
+  case op
+  of AddX:  result = if isFloat: vocAddf else: vocAddi
+  of SubX:  result = if isFloat: vocSubf else: vocSubi
+  of MulX:  result = if isFloat: vocMulf else: vocMuli
+  of DivX:  result = if isFloat: vocDivf else: vocDivi
+  of ModX:  result = vocMod
+  of AndX:  result = vocAnd
+  of OrX:   result = vocOr
+  of XorX:  result = vocXor
+  of EqX:   result = if isFloat: vocEqf  else: vocEqi
+  of NeqX:  result = if isFloat: vocNeqf else: vocNeqi
+  of LtX:   result = if isFloat: vocLtf  else: vocLti
+  of LeX:   result = if isFloat: vocLef  else: vocLei
+  else:
+    result = vocHalt
+
 proc isFloatType(ty: TypeInst): bool {.inline.} =
   ## Returns true when `ty` is a floating-point primitive.
   ty.name.startsWith("float")
@@ -77,7 +96,7 @@ proc resolveSymbol(ctx: var CodeGenCtx, code: var CBytecode,
                    scopeId: int, c: NifCursor): CAllocation =
   ## Resolve a Symbol cursor to the CAllocation of the named variable.
   ## Searches the scope chain upward.  Returns an empty CAllocation on failure.
-  let varName = c.symText.split(".")[0]
+  let varName = c.symText
   let ownerId = ctx.getOwnerScope(ctx.scopes[scopeId], varName)
   if ownerId < 0:
     return CAllocation()
@@ -109,10 +128,8 @@ proc genExpr(ctx: var CodeGenCtx, code: var CBytecode,
     let opIsFloat  = opTypeName.startsWith("float")
     skip child            # skip T
     let left = child
-    var rightCur = child
-    skip rightCur         # advance to right operand
-    let right = rightCur
-
+    var right = child
+    skip right         # advance to right operand
     let opTy = ctx.cache.getType(opTypeName)
 
     result = code.allocator.alloc(opTy.size)
@@ -299,6 +316,7 @@ proc genVar(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCursor
   let name = sym.symText
 
   var nav = sym
+  skip nav
   skip nav                  # E: export marker
   skip nav                  # P: pragmas
   let tyNode = nav          # T: type annotation
@@ -324,11 +342,11 @@ proc genVar(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCursor
   let alloc = code.allocator.alloc(max(1, ty.size), bp.line, bp.col, lline, lcol)
 
   # Emit initializer when present.
-  #if nav.kind != DotToken:
-  #  let initAlloc = ctx.genExpr(code, scopeId, ty, nav)
-  #  if initAlloc.pos != alloc.pos:
-  #    code.emitInst(vocMov, alloc.pos, initAlloc.pos)
-  #  code.freeIfTemp(initAlloc)
+  if nav.kind != DotToken:
+    let initAlloc = ctx.genExpr(code, scopeId, ty, nav)
+    if initAlloc.pos != alloc.pos:
+      code.emitInst(vocMov, alloc.pos, initAlloc.pos)
+    code.freeIfTemp(initAlloc)
 
 proc genAsgn(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCursor) =
   ## Generate code for an assignment statement `(asgn LHS RHS)`.
