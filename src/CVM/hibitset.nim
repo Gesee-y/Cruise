@@ -123,134 +123,70 @@ proc clear*(h: var CAHiBitSet) =
   for i in 0..<h.layer1.len: h.layer1[i] = 0
   for i in 0..<h.layer2.len: h.layer2[i] = 0
 
-proc getSpace*(c: var CAHiBitSet, size: int=4): int =
+proc getSpace*(c: var CAHiBitSet, size: int = 4): int =
   ## Return the starting point of the index with enough space for the request.
-  ## `size` in bytes
-  result = 0
-  
-  # Store our current position in the allocator, tells us if we are still contiguous and where to continue from if not
-  var current = 0
+  ## `size` in words (needed slots = size * 2)
+  if size <= 0: return 0
+  let needed = size * 2
+  var slot = 0
+  var count = 0
 
-  # The positions of the previous run.
-  # Those allow the program to continue searching space where it stopped
-  var 
-    lastL0 = -1
-    lastL1 = -1
-    lastL2 = -1
+  while true:
+    if slot >= c.len:
+      let start = slot - count
+      c.ensureCapacity(start + needed)
+      return start
 
-  # Our main loop. Run until we find enough space and return it's starting offset
-  var shouldContinue = true
-  while shouldContinue:
+    # Hierarchy acceleration when count == 0:
+    if count == 0 and (slot and 63) == 0:
+      let l2Idx = slot shr 6
+      if l2Idx < c.layer2.len and c.layer2[l2Idx] == 0xF:
+        slot += 64
+        continue
 
-    # This block will be broken if we fail to find contiguous space in this run.
-    block searchSpace:
+    if count == 0 and (slot and 15) == 0:
+      let l1Idx = slot shr 4
+      if l1Idx < c.layer1.len and c.layer1[l1Idx] == 0xF:
+        slot += 16
+        continue
 
-      # `s` = number of bit necessary for this layer
-      # `v` = number of remainder of bit necessary, used by the next layer as `size`
-      var (s, v) = (size div 8, size mod 8)
+    if count == 0 and (slot and 3) == 0:
+      let l0Idx = slot shr 2
+      if l0Idx < c.layer0.len and c.layer0[l0Idx] == 0xF:
+        slot += 4
+        continue
 
-      # These let us know if we found the required number of blocks for this layer before continuing
-      var
-        countL0 = 0
-        countL1 = 0
-        countL2 = 0
+    # Fast forward full free blocks when aligned and fitting into needed:
+    if (slot and 15) == 0 and count + 16 <= needed:
+      let l1Idx = slot shr 4
+      if l1Idx < c.layer1.len and c.layer1[l1Idx] == 0:
+        count += 16
+        slot += 16
+        if count >= needed:
+          return slot - count
+        continue
 
-      if s != 0:
+    if (slot and 3) == 0 and count + 4 <= needed:
+      let l0Idx = slot shr 2
+      if l0Idx < c.layer0.len and c.layer0[l0Idx] == 0:
+        count += 4
+        slot += 4
+        if count >= needed:
+          return slot - count
+        continue
 
-        # This block is in case we found the necessary number of block and need to escape the loop
-        # BUT if in lower layers we fail to find contiguous space, we continue where we stopped this
-        block l2Search:
-          while countL2 < s:
+    # Single-slot check
+    let l0Idx = slot shr L0_SHIFT
+    let bitPos = slot and L0_MASK
+    let isOccupied = (c.layer0[l0Idx] and (BitBlock(1) shl bitPos)) != 0
+    inc slot
 
-            # The current index in the L2 layer
-            let currentL2 = current div 64
-            if currentL2 >= c.layer2.len: c.layer2.setLen(currentL2+1)
-            var currentBits = (not c.layer2[currentL2]) and 0xF
-
-            while currentBits != 0:
-              let bit = firstSetBit(currentBits) # Get the available bits
-              let pos = currentL2*L0_BITS+bit # Our position relative to this layer, since `currentBits` is 4 bits long
-
-              # if our last position is not consecutive to this one.
-              # We reset the counter
-              if (pos-lastL2 != 1): 
-                countL2 = 0
-
-              # Updating our last position and counter
-              lastL2 = pos
-              inc countL2
-
-              # If we found the necessary space, we just escape the block
-              if countL2 >= s: break l2Search
-
-              # Else we update `currentBits` for the next iteration
-              currentBits = currentBits and (currentBits - 1)
-
-            current += 64
-
-          result = (lastL2+1)*16 - size*2
-      
-      # If countL2 = 0, this means we didn't need the previous layer for this allocation
-      # So we should not update next layer based on it
-      if countL2 > 0: 
-        lastL1 = (lastL2*4) - 1
-
-      (s, v) = (v div 2, v mod 2)
-      if s != 0:
-        block l1Search:
-          while countL1 < s:
-            let currentL1 = (lastL1+1) div 4
-            if currentL1 >= c.layer1.len: c.layer1.setLen(currentL1+1)
-            var currentBits = (not c.layer1[currentL1]) and 0xF
-
-            while currentBits != 0:
-              let bit = firstSetBit(currentBits)
-              let pos = currentL1*L0_BITS+bit
-
-              if (pos-lastL1 != 1): 
-                countL1 = 0
-                if countL2 != 0: break searchSpace
-
-              lastL1 = pos
-              inc countL1
-              if countL1 >= s: break l1Search
-
-              currentBits = currentBits and (currentBits - 1)
-
-            current += 16
-
-        result = (lastL1+1)*4 - size*2
-
-      if countL1 > 0: 
-        lastL0 = lastL1*4 - 1
-
-      s = v*2
-      if s != 0:
-        block l0Search:
-          while countL0 < s:
-            let currentL0 = (lastL0+1) div 4
-            
-            if currentL0 >= c.layer0.len: c.layer0.setLen(currentL0+1)
-            var currentBits = (not c.layer0[currentL0]) and 0xF
-
-            while currentBits != 0:
-              let bit = firstSetBit(currentBits)
-              let pos = currentL0*L0_BITS+bit
-
-              if (pos-lastL0 != 1): 
-                countL0 = 0
-                if countL2 != 0 or countL1 != 0: break searchSpace
-
-              lastL0 = pos
-              inc countL0
-              if countL0 >= s: break l0Search
-
-              currentBits = currentBits and (currentBits - 1)
-
-            current += 4
-        result = (lastL0+1) - size*2
-
-      shouldContinue = false
+    if isOccupied:
+      count = 0
+    else:
+      inc count
+      if count >= needed:
+        return slot - count
 
 # Fills a space in an allocator with one in order to make it unavailave for future allocations
 # until freed

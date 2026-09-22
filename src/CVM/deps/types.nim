@@ -35,7 +35,6 @@ type
   TypeField* = object
     name*: string
     ty*: string
-    ## Offset in virtual-memory words from the start of the enclosing object.
     offset*: int
     raw*: NifCursor
     subinfo*: set[TypeFlag]
@@ -193,7 +192,7 @@ proc isRefType*(n: NifCursor): bool =
 # Fetch sub type information
 proc getSubTypeInfo*(n: NifCursor): set[TypeFlag] =
   # Assume modifiers have already been stripped away
-  result = default(set[TypeFlag])
+  result = {}
   if n.kind == TagLit:
     var marker = firstChild(n)
     skip marker
@@ -207,7 +206,7 @@ proc getSubTypeInfo*(n: NifCursor): set[TypeFlag] =
       else: discard
   else:
     assert false, "Unable to get sub type information."
-    return default(set[TypeFlag])
+    return {}
 
 # Add a type instance to the cache
 proc addInstance(c: var TypeCache, instance: TypeInst) =

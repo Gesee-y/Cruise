@@ -1,4 +1,4 @@
-import std/assertions
+import std/[assertions, syncio]
 
 include ../../src/CVM/hibitset
 
@@ -42,3 +42,4 @@ proc testAllocationRanges() =
 
 testBitsAndHierarchy()
 testAllocationRanges()
+echo "[OK] Passed"

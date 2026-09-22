@@ -190,7 +190,7 @@ proc genExpr(ctx: var CodeGenCtx, code: var CBytecode,
             return CAllocation(pos: baseAlloc.pos + offset,
                                size: ty.size, isTemp: false)
     
-    #error "Invalid field access `" & asNimCode(c) & "`."
+    #error "Invalid field access `" & renderNode(c) & "`."
     
   # Function call — (call callee arg*)
   of CallX, CmdX:
@@ -237,7 +237,7 @@ proc genExpr(ctx: var CodeGenCtx, code: var CBytecode,
     code.emitWord(0u32)
     return
 
-  else: discard "Unsupported expression `" & asNimCode(c) & "`."
+  else: discard "Unsupported expression `" & renderNode(c) & "`."
 
   # Atom cases: fall through to kind-based dispatch
   case c.kind
@@ -248,7 +248,7 @@ proc genExpr(ctx: var CodeGenCtx, code: var CBytecode,
       return alloc
 
     # Unknown symbol: return an empty temp
-    #error "Unknown symbol `" & asNimCode(c) & "`." 
+    #error "Unknown symbol `" & renderNode(c) & "`." 
 
   of IntLit:
     result = code.allocator.alloc(INT_SIZE)
@@ -292,7 +292,7 @@ proc genVar(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCursor
   ## Allocates virtual memory using the variable's birth and last-use positions
   ## so the allocator can reclaim the slot automatically.
   assert c.stmtKind in {VarS, LetS, TvarS, TletS},
-    "genVar: expected var/let, got `" & asNimCode(c) & "`."
+    "genVar: expected var/let, got `" & renderNode(c) & "`."
 
   var sym = firstChild(c)   # SymbolDef
   if sym.kind != SymbolDef: return
@@ -324,11 +324,11 @@ proc genVar(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCursor
   let alloc = code.allocator.alloc(max(1, ty.size), bp.line, bp.col, lline, lcol)
 
   # Emit initializer when present.
-  if nav.kind != DotToken:
-    let initAlloc = ctx.genExpr(code, scopeId, ty, nav)
-    if initAlloc.pos != alloc.pos:
-      code.emitInst(vocMov, alloc.pos, initAlloc.pos)
-    code.freeIfTemp(initAlloc)
+  #if nav.kind != DotToken:
+  #  let initAlloc = ctx.genExpr(code, scopeId, ty, nav)
+  #  if initAlloc.pos != alloc.pos:
+  #    code.emitInst(vocMov, alloc.pos, initAlloc.pos)
+  #  code.freeIfTemp(initAlloc)
 
 proc genAsgn(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCursor) =
   ## Generate code for an assignment statement `(asgn LHS RHS)`.
@@ -458,7 +458,7 @@ proc genStmt(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCurso
   if c.kind == DotToken: return
 
   assert c.stmtKind in {StmtsS, BlockS},
-    "genStmt: expected stmts/block, got `" & asNimCode(c) & "`."
+    "genStmt: expected stmts/block, got `" & renderNode(c) & "`."
 
   var n = c
   n.loopInto:
@@ -521,7 +521,7 @@ proc genStmt(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCurso
 proc genFunc(ctx: var CodeGenCtx, code: var CBytecode, c: NifCursor) =
   ## Generate code for a proc or func declaration.
   assert c.stmtKind in {ProcS, FuncS},
-    "genFunc: expected proc/func, got `" & asNimCode(c) & "`."
+    "genFunc: expected proc/func, got `" & renderNode(c) & "`."
 
   var symNode = firstChild(c)   # SymbolDef
   if symNode.kind != SymbolDef: return
