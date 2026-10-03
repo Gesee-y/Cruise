@@ -546,6 +546,31 @@ proc genFunc(ctx: var CodeGenCtx, code: var CBytecode, c: NifCursor) =
 
   let name = symNode.symText
   let ty   = ctx.cache.getType(name)
+  var offset = 0
+  var ownerScope = addr ctx.scopes[ty.scopeId]
+  
+  # For a function, the fields are it's arguments
+  for field in ty.fields:
+    # We get the scope and the variable for each arguments
+    let fid = ownerScope.variables.fetchNode(field.name)
+    let v  = addr ownerScope.variables.nodes[fid].data
+
+    # Getting liveness information for the allocations
+    let bp = v.liveness.birth.info
+    var lline = bp.line + 1
+    var lcol  = bp.col
+    if v.liveness.uses.len > 0:
+      let lp = v.liveness.uses[^1].info
+      lline = lp.line
+      lcol  = lp.col
+
+    # Allocate the variable, then emitting a move to get the effective value of the variable from the stack
+    let fsize = ctx.cache.getType(field.ty).size
+    let allc = code.allocator.alloc(fsize, bp.line, bp.col, lline, lcol)
+    code.emitInst(vocSMov, allc.pos, offset)
+
+    # Updating the offset so we can fetch the next argument
+    offset += fsize
 
   # Record the real starting address (backpatch the placeholder set by
   # predeclareFunctions).

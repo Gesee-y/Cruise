@@ -60,6 +60,8 @@ type
     # Immediate loads — value is encoded in the *next* bytecode word
     vocLoadi   = 34  ## dst = <next word>  (int immediate)
     vocLoadf   = 35  ## dst = <next word>  (float immediate)
+    
+    vocSMov    = 36  ## A move from a value on the stack to a register
 
   # Builtins deliberately have a stable, compact ID space: calls occupy one
   # bytecode word and do not need a name lookup at runtime.
