@@ -377,7 +377,7 @@ proc genIf(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCursor)
 
   while child.hasMore and child.otherKind == ElifU:
     var elifChild = firstChild(child)
-    let condCur   = elifChild        # condition expression
+    let condCur   = firstChild(elifChild)        # condition expression
     var bodyCur   = elifChild
     skip bodyCur                     # body (stmts)
 

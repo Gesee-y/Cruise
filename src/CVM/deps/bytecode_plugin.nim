@@ -47,6 +47,7 @@ proc generateBytecode(n: var NifCursor): NifBuilder =
   # while the generated program is consumed by the forthcoming backend API.
   result = createTree()
   result.takeTree(n)
+  echo renderTree(result)
 
 proc noTransform(n: var NifCursor): NifBuilder =
   result = createTree()
