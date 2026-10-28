@@ -48,6 +48,7 @@ type
     raw*: NifCursor
     nameToId*: Table[string, int]
     fields*: seq[TypeField]
+    returnType*: string
     ## Size in virtual-memory words. Primitive shader values occupy one word.
     size*: int
     scopeId: int
@@ -314,6 +315,11 @@ proc addProcTypeInstance*(pDef: NifCursor): TypeInst =
           result.addField f
         skip fieldCursor
 
+    var retNode = symNode
+    skip retNode # Skip ParamsU to reach return type slot
+    if retNode.hasMore and retNode.kind != DotToken:
+      result.returnType = retNode.getTypeName
+
 # Collect type declaration and fill the type cache
 proc collectTypeDecls*(c: var TypeCache, root: NifCursor) =
   var n = root
@@ -338,22 +344,28 @@ proc collectTypeDecls*(c: var TypeCache, root: NifCursor) =
 
 # Recursively goes through the type cache to mark types with `ref` fields as `ref` types
 proc updateRef(t: var TypeCache, ty: string, visited: var Table[string, bool]): bool =
-  var id = t.nameToId.getOrDefault(ty)
+  var id = t.nameToId.getOrDefault(ty, -1)
+  if id < 0: return false
 
   # If we have already seen the type, just return it
   if ty in visited:
-    return visited.getOrDefault(ty)
+    return visited.getOrDefault(ty, false)
 
   # Primitive types and procs are always not refs
   if t.instances[id].kind in {PrimitiveType, ProcType}:
     visited[ty] = false
     return false
 
-  # We recursively check the fields
+  # Copy field types so we don't borrow t while recursing
+  var fieldTypes: seq[string] = @[]
   for field in t.instances[id].fields:
-    if updateRef(t, field.ty, visited):
-      var id = t.nameToId.getOrDefault(ty)
-      t.instances[id].kind = RefType
+    fieldTypes.add(field.ty)
+
+  for fieldTy in fieldTypes:
+    if updateRef(t, fieldTy, visited):
+      var id2 = t.nameToId.getOrDefault(ty, -1)
+      if id2 >= 0:
+        t.instances[id2].kind = RefType
       visited[ty] = true
       return true
 
@@ -362,9 +374,12 @@ proc updateRef(t: var TypeCache, ty: string, visited: var Table[string, bool]): 
 
 proc propagateRefs(t: var TypeCache) =
   var visited = initTable[string, bool]()
+  var allKeys: seq[string] = @[]
   for inst in t.nameToId.keys:
+    allKeys.add(inst)
+  for inst in allKeys:
     if inst notin visited:
-       discard updateRef(t, inst, visited)
+      discard updateRef(t, inst, visited)
 
 proc computeLayouts*(t: var TypeCache) =
   ## Assign field offsets after every declaration is known. Unknown fields keep
@@ -393,6 +408,7 @@ proc getType*(c: TypeCache, root: TypeInst, additional: seq[string]): TypeInst =
   for f in additional:
     if inst.associated.len > 0:
       let id = c.nameToId.getOrDefault(inst.associated[0], -1)
+      if id < 0: return TypeInst(kind: UnknownType)
       inst = c.instances[id]
     let fid = inst.nameToId.getOrDefault(f, -1)
     if fid == -1: return TypeInst(kind: UnknownType)
@@ -410,6 +426,7 @@ proc getType*(c: TypeCache, root: TypeInst, idx: int): TypeInst =
   var inst = root
   if inst.associated.len > 0:
     let id = c.nameToId.getOrDefault(inst.associated[0], -1)
+    if id < 0: return TypeInst(kind: UnknownType)
     inst = c.instances[id]
   if idx < inst.fields.len:
     let field = inst.fields[idx]

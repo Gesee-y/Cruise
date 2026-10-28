@@ -15,7 +15,7 @@ type
     ## Maps each proc name to its starting word index in `data`.
     ## Entries start at -1 (placeholder) and are backpatched by `genFunc`.
     procTable:  Table[string, int]
-    callToPatch: Table[string, int] # TODO: Reverse this to `Table[int, string]` as `int` are more precise
+    callToPatch: Table[string, seq[int]]
     currentPos: int
 
 # ################################################################################################################################ #
@@ -234,11 +234,14 @@ proc genExpr(ctx: var CodeGenCtx, code: var CBytecode,
     if bopCode == boCustom:
       procPos = code.procTable.getOrDefault(procName, -1)
 
-      # If the proc doesn't yet exist, we register it for backpatching
-      if procPos < 0:
-        code.callToPatch[procName] = code.data.len
     code.emitInst(vocCall, bopCode.int, result.pos)
-    code.emitWord(uint32(procPos))
+    let patchPos = code.data.len
+    code.emitWord(if procPos >= 0: uint32(procPos) else: 0u32)
+
+    if bopCode == boCustom and procPos < 0:
+      var list = code.callToPatch.getOrDefault(procName, @[])
+      list.add(patchPos)
+      code.callToPatch[procName] = list
     return
 
   # Boolean literals
@@ -444,12 +447,137 @@ proc genWhile(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCurs
   # Backpatch exit.
   code.data[exitPatch] = uint32(code.data.len)
 
+proc genFor(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCursor) =
+  ## Generate code for `(for iter vars body)`.
+  var child = firstChild(c)
+  let iterCur = child
+  skip child
+  var varsCur = child
+  skip child
+  let bodyCur = child
+
+  # 1. Parse loop variable name and type
+  var varName = ""
+  var ty = ctx.cache.getType("int") # default to int
+
+  if varsCur.kind == TagLit and varsCur.otherKind == UnpackflatU:
+    var vchild = firstChild(varsCur)
+    while vchild.hasMore:
+      if vchild.stmtKind in {VarS, LetS}:
+        var symNode = firstChild(vchild)
+        if symNode.kind in {Symbol, SymbolDef}:
+          varName = symNode.symText
+          var typ = symNode
+          skip typ # export
+          skip typ # pragmas
+          ty = ctx.cache.getType(typ.getTypeName)
+          break
+      skip vchild
+  elif varsCur.kind in {Symbol, SymbolDef}:
+    varName = varsCur.symText
+
+  # Enter the child scope created for this loop
+  let forScopeId = ctx.nextChildScope(scopeId)
+
+  # Allocate loop variable using its liveness information
+  var varAlloc = CAllocation()
+  let nodeId = ctx.scopes[forScopeId].variables.fetchNode(varName)
+  if nodeId >= 0:
+    let v = ctx.scopes[forScopeId].variables.nodes[nodeId].data
+    let bp = v.liveness.birth.info
+    var lline = bp.line + 1
+    var lcol = bp.col
+    if v.liveness.uses.len > 0:
+      let lp = v.liveness.uses[^1].info
+      lline = lp.line
+      lcol = lp.col
+    varAlloc = code.allocator.alloc(max(1, ty.size), bp.line, bp.col, lline, lcol)
+  else:
+    varAlloc = code.allocator.alloc(max(1, ty.size))
+
+  # 2. Parse iterator expression: (infix op start stop) or (call op start stop)
+  var isExclusive = true
+  var startCur = iterCur
+  var stopCur = iterCur
+  var hasExplicitStart = false
+
+  if iterCur.kind == TagLit and iterCur.exprKind in {InfixX, CallX, CmdX}:
+    var ic = firstChild(iterCur)
+    let opStr = if ic.kind in {Symbol, SymbolDef}: ic.symText else: ""
+    if opStr.contains("<"):
+      isExclusive = true
+    elif opStr.contains("..") or opStr.contains("\2E."):
+      isExclusive = false
+    else:
+      isExclusive = true
+
+    skip ic # skip op to start operand
+    if ic.hasMore:
+      startCur = ic
+      skip ic # skip start operand to stop operand
+      if ic.hasMore:
+        stopCur = ic
+        hasExplicitStart = true
+
+  # 3. Initialize loop variable with start value
+  if hasExplicitStart:
+    let startAlloc = ctx.genExpr(code, scopeId, ty, startCur)
+    if startAlloc.pos != varAlloc.pos:
+      code.emitInst(vocMov, varAlloc.pos, startAlloc.pos)
+    code.freeIfTemp(startAlloc)
+  else:
+    let zeroAlloc = code.allocator.alloc(1)
+    code.emitInst(vocLoadi, zeroAlloc.pos, 0)
+    code.emitWord(0u32)
+    code.emitInst(vocMov, varAlloc.pos, zeroAlloc.pos)
+    code.freeIfTemp(zeroAlloc)
+
+  # 4. Evaluate upper bound (stop) once into an allocation
+  let stopAlloc = ctx.genExpr(code, scopeId, ty, stopCur)
+
+  # 5. Loop condition check
+  let loopStart = code.data.len
+  let cmpOp = if isExclusive: vocLti else: vocLei
+
+  let condAlloc = code.allocator.alloc(1)
+  code.emitInst(vocMov, condAlloc.pos, varAlloc.pos)
+  code.emitInst(cmpOp, condAlloc.pos, stopAlloc.pos)
+
+  code.emitInst(vocJmpFalse, condAlloc.pos, 0)
+  let exitPatch = code.data.len
+  code.emitWord(0u32)
+  code.freeIfTemp(condAlloc)
+
+  # 6. Generate body
+  if bodyCur.kind != DotToken:
+    let bodyScopeId = ctx.nextChildScope(forScopeId)
+    ctx.genStmt(code, bodyScopeId, bodyCur)
+
+  # 7. Step / Increment: varAlloc += 1
+  let oneAlloc = code.allocator.alloc(1)
+  code.emitInst(vocLoadi, oneAlloc.pos, 0)
+  code.emitWord(1u32)
+  code.emitInst(vocAddi, varAlloc.pos, oneAlloc.pos)
+  code.freeIfTemp(oneAlloc)
+
+  # 8. Jump back to condition
+  code.emitInst(vocJmp, 0, 0)
+  code.emitWord(uint32(loopStart))
+
+  # 9. Backpatch exit jump
+  code.data[exitPatch] = uint32(code.data.len)
+
+  # 10. Free stopAlloc if it was temporary
+  code.freeIfTemp(stopAlloc)
+
 proc genRet(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCursor) =
   ## Generate code for `(ret .X)`.
   ## When a return value is present it is moved into register 0 by convention.
   var child = firstChild(c)
   if child.kind != DotToken:
-    let retTy    = ctx.cache.getType(ctx.currentProcName)
+    let procInst = ctx.cache.getType(ctx.currentProcName)
+    let retTy    = if procInst.returnType != "": ctx.cache.getType(procInst.returnType)
+                   else: TypeInst(kind: PrimitiveType, size: 1)
     let retAlloc = ctx.genExpr(code, scopeId, retTy, child)
     code.emitInst(vocMov, 0, retAlloc.pos)
     code.freeIfTemp(retAlloc)
@@ -475,8 +603,8 @@ proc genStmt(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCurso
   ## `c` must point to a `stmts` or `block` node (or DotToken for empty body).
   if c.kind == DotToken: return
 
-  assert c.stmtKind in {StmtsS, BlockS},
-    "genStmt: expected stmts/block, got `" & renderNode(c) & "`."
+  assert c.stmtKind in {StmtsS, BlockS, ScopeS},
+    "genStmt: expected stmts/block/scope, got `" & renderNode(c) & "`."
 
   var n = c
   n.loopInto:
@@ -484,7 +612,7 @@ proc genStmt(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCurso
     of DotToken: discard   # empty placeholder
     of TagLit:
       case n.stmtKind
-      of StmtsS, BlockS:
+      of StmtsS, BlockS, ScopeS:
         ## Nested block — consume the next child scope.
         let childScopeId = ctx.nextChildScope(scopeId)
         ctx.genStmt(code, childScopeId, n)
@@ -504,6 +632,9 @@ proc genStmt(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCurso
       of WhileS:
         ctx.genWhile(code, scopeId, n)
 
+      of ForS:
+        ctx.genFor(code, scopeId, n)
+
       of RetS:
         ctx.genRet(code, scopeId, n)
 
@@ -512,6 +643,9 @@ proc genStmt(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCurso
 
       of CallS, CmdS:
         ctx.genCallStmt(code, scopeId, n)
+
+      of AssumeS, AssertS, LabS, ContinueS, BreakS:
+        discard
 
       of UnpackdeclS:
         ## Tuple unpacking: treat each inner var/let individually.
@@ -577,10 +711,16 @@ proc genFunc(ctx: var CodeGenCtx, code: var CBytecode, c: NifCursor) =
   code.procTable[name] = code.currentPos
   ctx.currentProcName  = name
 
+  if code.callToPatch.hasKey(name):
+    let patchList = code.callToPatch.getOrDefault(name, @[])
+    for patchPos in patchList:
+      code.data[patchPos] = uint32(code.currentPos)
+    code.callToPatch.del(name)
+
   # Locate the body statement node among proc children dynamically
   var cur = firstChild(c)
   while cur.hasMore:
-    if cur.stmtKind in {StmtsS, BlockS}:
+    if cur.stmtKind in {StmtsS, BlockS, ScopeS}:
       ctx.genStmt(code, ty.scopeId, cur)
       break
     skip cur

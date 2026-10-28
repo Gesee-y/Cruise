@@ -68,14 +68,14 @@ const
 # ############################################### UTILITIES ################################################## #
 # ############################################################################################################ #
 
-func hash(s: SymPath): Hash =
+proc hash(s: SymPath): Hash =
   var h: Hash = 0
   for item in s.path:
     h = h !& hash(item)
   h = h !& hash(s.valid)
   result = !$h
 
-func `==`(s1, s2: SymPath): bool =
+proc `==`(s1, s2: SymPath): bool =
   if s1.valid != s2.valid:
     return false
   if s1.path.len != s2.path.len:
@@ -105,8 +105,10 @@ proc cmpLineInfo(l1, l2: LineInfo): int =
     elif l1.col > l2.col:
       result = 1
 
-proc getLastUse(scope: var ScopeNode, id: int): LineInfo =
-  result = scope.variables.nodes[id].data.liveness.uses[^1].info
+proc getLastUse(scope: ScopeNode, id: int): LineInfo =
+  result = LineInfo()
+  if scope.variables.nodes[id].data.liveness.uses.len > 0:
+    result = scope.variables.nodes[id].data.liveness.uses[^1].info
   for i in scope.variables.nodes[id].children.values:
     let last = scope.getLastUse(i)
     if cmpLineInfo(result, last) < 0:
@@ -137,7 +139,7 @@ proc addPathSegment(res: var SymPath; n: NifCursor) =
   res.path.add n.symId
   res.ty.add n.typeKind
 
-proc extractPath(c: ScopeNode; n: NifCursor; res: var SymPath; followInlineVars = true) =
+proc extractPath(n: NifCursor; res: var SymPath; followInlineVars = true) =
   if not res.valid:
     return
   case n.kind
@@ -148,25 +150,25 @@ proc extractPath(c: ScopeNode; n: NifCursor; res: var SymPath; followInlineVars 
     of DotX, DdotX:
       var left = n
       inc left
-      extractPath(c, left, res, followInlineVars)
+      extractPath(left, res, followInlineVars)
       skip left
       if left.kind == Symbol:
         addPathSegment(res, left)
     of HderefX, HaddrX, AddrX, DerefX, TupatX, ArratX, AtX, PatX:
       var inner = n
       inc inner
-      extractPath(c, inner, res, followInlineVars)
+      extractPath(inner, res, followInlineVars)
     of ConvX, HconvX, DconvX:
       var inner = n
       inc inner
       skip inner
-      extractPath(c, inner, res, followInlineVars)
+      extractPath(inner, res, followInlineVars)
     of BaseobjX:
       var inner = n
       inc inner
       skip inner
       skip inner
-      extractPath(c, inner, res, followInlineVars)
+      extractPath(inner, res, followInlineVars)
     of AconstrX, SetconstrX, TupconstrX, OconstrX, NilX, TrueX, FalseX:
       res.valid = false
     else:
@@ -178,9 +180,9 @@ proc extractPath(c: ScopeNode; n: NifCursor; res: var SymPath; followInlineVars 
   else:
     res.valid = false
 
-proc extractPath(c: ScopeNode; n: NifCursor; followInlineVars = true): SymPath =
+proc extractPath(n: NifCursor; followInlineVars = true): SymPath =
   result = SymPath(valid: true)
-  extractPath(c, n, result, followInlineVars)
+  extractPath(n, result, followInlineVars)
   if not result.valid or result.path.len == 0:
     result.valid = false
 
@@ -197,14 +199,25 @@ proc pathsOverlap(a, b: SymPath): bool =
 proc rootPath(sym: SymId): SymPath =
   result = SymPath(valid: true, path: @[sym])
 
+proc rest(s: seq[string]): seq[string] =
+  result = @[]
+  for i in 1 ..< s.len:
+    result.add(s[i])
+
 proc getType(ctx: CodeGenCtx, scope: int, c: NifCursor): TypeInst =
-  let path = ctx.scopes[scope].extractPath(c)
+  let path = extractPath(c)
+  if not path.valid or path.path.len == 0:
+    return TypeInst(kind: UnknownType)
   let root = path.path[0].symText
   let sid = ctx.getOwnerScope(ctx.scopes[scope], root)
-  var ownerScope = addr ctx.scopes[sid]
-  let rv = ownerScope.variables.nodes[ownerScope.variables.fetchNode(root)].data
+  if sid < 0 or sid >= ctx.scopes.len:
+    return TypeInst(kind: UnknownType)
+  let nid = ctx.scopes[sid].variables.fetchNode(root)
+  if nid < 0:
+    return TypeInst(kind: UnknownType)
+  let rv = ctx.scopes[sid].variables.nodes[nid].data
 
-  return if path.path.len > 1: ctx.cache.getType(rv.ty, renderPath(path).split(PATH_SEPARATOR)[1..^1]) else: rv.ty
+  return if path.path.len > 1: ctx.cache.getType(rv.ty, renderPath(path).split(PATH_SEPARATOR).rest) else: rv.ty
 
 
 
@@ -223,7 +236,7 @@ proc collectVarData(ctx: var CodeGenCtx, nid: int, root: NifCursor, isCond: bool
 
   # If we end up on a mere symbol, of field access
   if n.kind != TagLit or n.exprKind in {DotX, DdotX, HderefX}:
-    let path = ctx.scopes[current].extractPath(n)
+    let path = extractPath(n)
     if path.valid and path.path.len > 0:
       # We fetch the root of the path (the variable)
       let root = path.path[0].symText
@@ -232,22 +245,23 @@ proc collectVarData(ctx: var CodeGenCtx, nid: int, root: NifCursor, isCond: bool
       # Fetch the node that own
       let scopeId = ctx.getOwnerScope(ctx.scopes[current], root)
       if scopeId == -1: return
-      var ownerScope = addr ctx.scopes[scopeId]
-
 
       # We fetch the 2 `Variable` objects representing those symbols      
-      let rv = ownerScope.variables.fetchNode(root)
-      var id = ownerScope.variables.fetchNode(strPath.split(PATH_SEPARATOR))
+      let rv = ctx.scopes[scopeId].variables.fetchNode(root)
+      if rv < 0: return
+      var id = ctx.scopes[scopeId].variables.fetchNode(strPath.split(PATH_SEPARATOR))
 
       if id == -1:
-        # If the symbol don't exist we just make it
-        # As the field is owned by the root
-        var v = Variable(name: strPath, kind: ownerScope.variables.nodes[rv].data.kind, vtype: VarField,
-          ty: ctx.cache.getType(ownerScope.variables.nodes[rv].data.ty, strPath.split(PATH_SEPARATOR)[1..^1]),
+        # If the symbol don't exist we make it and add it to the trie
+        let rData = ctx.scopes[scopeId].variables.nodes[rv].data
+        var v = Variable(name: strPath, kind: rData.kind, vtype: VarField,
+          ty: ctx.cache.getType(rData.ty, strPath.split(PATH_SEPARATOR).rest),
           liveness: Liveness(birth: n), ownerId: scopeId)
+        let nid = ctx.scopes[scopeId].variables.addNode(strPath.split(PATH_SEPARATOR))
+        ctx.scopes[scopeId].variables.nodes[nid].data = v
 
       # And only extend the root's lifetime
-      ownerScope.variables.nodes[rv].data.liveness.uses.add(n)
+      ctx.scopes[scopeId].variables.nodes[rv].data.liveness.uses.add(n)
 
     return
 
@@ -278,7 +292,7 @@ proc collectVarData(ctx: var CodeGenCtx, nid: int, root: NifCursor, isCond: bool
       return
 
     # If we end up on a new statement (that create a new scope)
-    of StmtsS, BlockS:
+    of StmtsS, BlockS, ScopeS:
       var kind = if isCond: CondScope else: SimpleScope
       var newNode = ScopeNode(kind: kind, id: ctx.scopes.len, parent: current, variables: newTrie())
 
@@ -300,6 +314,45 @@ proc collectVarData(ctx: var CodeGenCtx, nid: int, root: NifCursor, isCond: bool
 
       newS = true
       collectVarData(ctx, current, n)
+
+    of ForS:
+      var newNode = ScopeNode(kind: SimpleScope, id: ctx.scopes.len, parent: current, variables: newTrie())
+      ctx.scopes[current].children.add(newNode.id)
+      ctx.scopes.add(newNode)
+      let forScopeId = newNode.id
+
+      var child = firstChild(n)
+      let iterCur = child
+      skip child
+      var varsCur = child
+      skip child
+      let bodyCur = child
+
+      if varsCur.kind == TagLit and varsCur.otherKind == UnpackflatU:
+        var vchild = firstChild(varsCur)
+        while vchild.hasMore:
+          if vchild.stmtKind in {VarS, LetS}:
+            var symNode = firstChild(vchild)
+            let kind = if vchild.stmtKind == VarS: VarK else: LetK
+            if symNode.kind in {Symbol, SymbolDef}:
+              let varName = symNode.symText
+              var typ = symNode
+              skip typ
+              skip typ
+              let tyInst = ctx.cache.getType(typ.getTypeName)
+              let v = Variable(kind: kind, vtype: RootVar, ty: tyInst, name: varName, liveness: Liveness(birth: n))
+              let vid = ctx.scopes[forScopeId].variables.addNode(varName)
+              ctx.scopes[forScopeId].variables.nodes[vid].data = v
+          skip vchild
+      elif varsCur.kind in {Symbol, SymbolDef}:
+        let varName = varsCur.symText
+        let tyInst = ctx.cache.getType("int")
+        let v = Variable(kind: LetK, vtype: RootVar, ty: tyInst, name: varName, liveness: Liveness(birth: n))
+        let vid = ctx.scopes[forScopeId].variables.addNode(varName)
+        ctx.scopes[forScopeId].variables.nodes[vid].data = v
+
+      collectVarData(ctx, current, iterCur)
+      collectVarData(ctx, forScopeId, bodyCur)
     of TypeS: discard
     of ProcS, FuncS:
       var symNode = firstChild(n)
