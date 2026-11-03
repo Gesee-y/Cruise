@@ -53,14 +53,49 @@ type
     size*: int
     scopeId: int
 
+
+  ProcOverloadNode* = object
+    id: int = -1
+    tid: int
+    children: Table[string, int]
+  
+  ProcOverload* = object
+    name: string
+    nodes: seq[ProcOverloadNode]
+
   # Type cache, a global structure bookeeping informations about types
   TypeCache* = object
     nameToId*: Table[string, int]
     instances*: seq[TypeInst]
+    variables*: Table[string, int]
+    functions*: Table[string, ProcOverload] 
 
 # ######################################################################################################### #
 # ############################################# CONSTRUCTORS ############################################## #
 # ######################################################################################################### #
+
+proc newProcOverloadNode(id: int, tid = -1): ProcOverloadNode =
+  result = ProcOverloadNode(id: id, tid: -1)
+proc newProcOverload(name: string): ProcOverload =
+  result = ProcOverload(name: name, nodes = @[newProcOverloadNode(0, -1)])
+proc addOverloadNode(p: var ProcOverload, n: int, t: TypeInst, fid, tid: int) =
+  if fid >= t.fields.len:
+    p.nodes[n].tid = tid
+    return
+
+  let ftype = t.fields[fid].ty
+  var cid = 0
+  try:
+    cid = p.nodes[n].children[ftype]
+  except:
+    cid = p.nodes.len
+    p.nodes.add(newProcOverloadNode(cid))
+    p.nodes[n].children[ftype] = cid
+
+  p.addOverloadNode(cid, t, fid + 1, tid)
+
+proc addOverload(p: var ProcOverload, t: TypeInst, tid: int) =
+  addOverloadNode(p.nodes[0], t, 0, tid)
 
 # Instantiate a new `TypeCache` with primitive types already registered
 proc newTypeCache(): TypeCache =
@@ -214,6 +249,13 @@ proc addInstance(c: var TypeCache, instance: TypeInst) =
   let id = c.instances.len
   c.nameToId[instance.name] = id
   c.instances.add(instance)
+
+  if instance.kind == ProcType:
+    try:
+      addOverload(c.functions[instance.name], instances, id)
+    except:
+      c.functions[instance.name] = newProcOverload(instance.name)
+      addOverload(c.functions.mGetOrDefault(instance.name), instance, id)
 
 # And a field instance to a type
 proc addField(t: var TypeInst, field: TypeField) =

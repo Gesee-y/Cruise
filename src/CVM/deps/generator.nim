@@ -56,6 +56,24 @@ proc toOpcode(op: NimonyExpr, isFloat: bool): VMOpCode =
   else:
     result = vocHalt
 
+proc opcodeFor(op: string, isFloat: bool): VMOpCode =
+  case op
+  of "+": if isFloat: vocAddf else: vocAddi
+  of "-": if isFloat: vocSubf else: vocSubi
+  of "*": if isFloat: vocMulf else: vocMuli
+  of "/": if isFloat: vocDivf else: vocDivi
+  of "mod": vocMod
+  of "and": vocAnd
+  of "or": vocOr
+  of "xor": vocXor
+  of "==": if isFloat: vocEqf else: vocEqi
+  of "!=": if isFloat: vocNeqf else: vocNeqi
+  of "<": if isFloat: vocLtf else: vocLti
+  of "<=": if isFloat: vocLef else: vocLei
+  of ">": if isFloat: vocLtf else: vocLti
+  of ">=": if isFloat: vocLef else: vocLei
+  else: assert false, "Unsupported CIR binary operator: " & op
+
 proc isFloatType(ty: TypeInst): bool {.inline.} =
   ## Returns true when `ty` is a floating-point primitive.
   ty.name.startsWith("float")
@@ -93,10 +111,10 @@ proc lookupVarAlloc(code: var CBytecode, v: Variable): CAllocation =
   code.allocator.lookup(sp.line, sp.col)
 
 proc resolveSymbol(ctx: var CodeGenCtx, code: var CBytecode,
-                   scopeId: int, c: NifCursor): CAllocation =
+                   scopeId: int, c: CIRNode): CAllocation =
   ## Resolve a Symbol cursor to the CAllocation of the named variable.
   ## Searches the scope chain upward.  Returns an empty CAllocation on failure.
-  let varName = c.symText
+  let varName = c.name
   let ownerId = ctx.getOwnerScope(ctx.scopes[scopeId], varName)
   if ownerId < 0:
     return CAllocation()
@@ -111,34 +129,28 @@ proc resolveSymbol(ctx: var CodeGenCtx, code: var CBytecode,
 # ################################################################################################################################ #
 
 proc genExpr(ctx: var CodeGenCtx, code: var CBytecode,
-             scopeId: int, ty: TypeInst, c: NifCursor): CAllocation =
+             scopeId: int, ty: TypeInst, c: CIRNode): CAllocation =
   ## Generate code that evaluates the expression at `c` and returns the
   ## allocation holding the result.
   # Binary arithmetic / comparison ops (all carry a type annotation child T)
   let ek = c.exprKind
   result = default(CAllocation)
   case ek:
-  of AddX, SubX, MulX, DivX, ModX,
-             EqX, NeqX, LtX, LeX:
+  of cnkInfix:
     # Navigation: (op T left right)
     var child = firstChild(c) 
     # For comparison ops the type annotation describes the *operand* type,
     # which may differ from the result type (bool).  Read it for opcode selection.
-    let opTypeName = child.getTypeName
+    let opTypeName = if c.args[3].kind == cnkSym: c.args[3].name else: ""
     let opIsFloat  = opTypeName.startsWith("float")
-    skip child            # skip T
-    let left = child
-    var right = child
-    skip right         # advance to right operand
     let opTy = ctx.cache.getType(opTypeName)
 
     result = code.allocator.alloc(opTy.size)
 
-    let r1 = ctx.genExpr(code, scopeId, opTy, left)
-    let r2 = ctx.genExpr(code, scopeId, opTy, right)
+    let r1 = ctx.genExpr(code, scopeId, opTy, c.args[1])
+    let r2 = ctx.genExpr(code, scopeId, opTy, c.args[2])
 
     code.emitInst(vocMov, result.pos, r1.pos)
-    # TODO: Make op code take into account the type
     code.emitInst(toOpcode(ek, opIsFloat), result.pos, r2.pos)
 
     code.freeIfTemp(r1)
