@@ -192,9 +192,9 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode): CAllocation =
     if bopCode == boCustom:
       procPos = ctx.code.procTable.getOrDefault(procName, -1)
 
-    ctx.code.emitInst(vocCall, bopCode.int, result.pos)
+    ctx.emitInst(vocCall, bopCode.int, result.pos)
     let patchPos = ctx.code.data.len
-    ctx.code.emitWord(if procPos >= 0: uint32(procPos) else: 0u32)
+    ctx.emitWord(if procPos >= 0: uint32(procPos) else: 0u32)
 
     if bopCode == boCustom and procPos < 0:
       var list = ctx.code.callToPatch.getOrDefault(procName, @[])
@@ -257,314 +257,196 @@ proc genVar(ctx: var CodeGenCtx, c: CIRNode) =
 
   # Emit initializer when present.
   let initAlloc = ctx.genExpr(c.args[1])
-  ctx.code.emitInst(vocMov, alloc.pos, initAlloc.pos)
-  ctx.code.freeIfTemp(initAlloc)
+  ctx.emitInst(vocMov, alloc.pos, initAlloc.pos)
+  ctx.freeIfTemp(initAlloc)
 
 proc genAsgn(ctx: var CodeGenCtx, c: CIRNode) =
   let lhsAlloc = ctx.genExpr(c.args[0])
   let rhs = ctx.genExpr(c.args[1])
-  ctx.code.emitInst(vocMov, lhsAlloc.pos, rhs.pos)
-  ctx.code.freeIfTemp(rhs)
+  ctx.emitInst(vocMov, lhsAlloc.pos, rhs.pos)
+  ctx.freeIfTemp(rhs)
 
-proc genIf(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCursor) =
+proc genIf(ctx: var CodeGenCtx, c: CIRNode) =
   ## Generate code for `(if (elif cond body)+ (else body)?)`.
   ## Uses two-word jump instructions: the instruction word encodes the
   ## opcode and condition register; the following word holds the target address.
   ## All forward jump targets are backpatched after the full if/else chain.
-  var child       = firstChild(c)
-  let boolTy      = ctx.cache.getType("bool")
   var endPatches: seq[int] = @[]   # positions of the "jump to end" target words
+  var i = 0
 
-  while child.hasMore and child.otherKind == ElifU:
-    var elifChild = firstChild(child)
-    let condCur   = firstChild(elifChild)        # condition expression
-    var bodyCur   = elifChild
-    skip bodyCur                     # body (stmts)
-
-    let condAlloc = ctx.genExpr(code, scopeId, boolTy, condCur)
-
-    # Conditional jump: vocJmpFalse + target placeholder
-    code.emitInst(vocJmpFalse, condAlloc.pos, 0)
+  while i < ctx.args.len and c.args[i].kind == cnkElifBranch:
+    let condAlloc = ctx.genExpr(code, c.args[0])
+    ctx.emitInst(vocJmpFalse, condAlloc.pos, 0)
+    
     let falsePatch = code.data.len
-    code.emitWord(0u32)
-    code.freeIfTemp(condAlloc)
+    ctx.emitWord(0u32)
+    ctx.freeIfTemp(condAlloc)
 
     # Generate the elif body in a fresh child scope.
-    let childScopeId = ctx.nextChildScope(scopeId)
-    ctx.genStmt(code, childScopeId, bodyCur)
+    ctx.genStmt(c.args[1])
+    ctx.emitInst(vocJmp, 0, 0)
 
-    # Unconditional jump past remaining branches + else.
-    code.emitInst(vocJmp, 0, 0)
     let endPatch = code.data.len
-    code.emitWord(0u32)
+    ctx.emitWord(0u32)
     endPatches.add(endPatch)
 
     # Backpatch false-jump to land here (start of next branch / else / end).
-    code.data[falsePatch] = uint32(code.data.len)
-
-    skip child
+    ctx.code.data[falsePatch] = uint32(ctx.code.data.len)
+    inc i
 
   # Optional else branch.
-  if child.hasMore and child.otherKind == ElseU:
-    var elseBody = firstChild(child)
-    let childScopeId = ctx.nextChildScope(scopeId)
-    ctx.genStmt(code, childScopeId, elseBody)
+  if i < c.args.len:
+    ctx.genStmt(c.args[^1])
 
   # Backpatch all end-of-if jumps.
-  let endTarget = uint32(code.data.len)
+  let endTarget = uint32(ctx.code.data.len)
   for pos in endPatches:
-    code.data[pos] = endTarget
+    ctx.code.data[pos] = endTarget
 
-proc genWhile(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCursor) =
+proc genWhile(ctx: var CodeGenCtx, c: CIRNode) =
   ## Generate code for `(while cond body)`.
-  var child   = firstChild(c)
-  let condCur = child
-  var bodyCur = child
-  skip bodyCur
-
-  let loopStart = code.data.len
-  let boolTy    = ctx.cache.getType("bool")
-
-  let condAlloc = ctx.genExpr(code, scopeId, boolTy, condCur)
+  let loopStart = ctx.code.data.len
+  let condAlloc = ctx.genExpr(c.args[0])
 
   # Exit the loop when condition is false.
-  code.emitInst(vocJmpFalse, condAlloc.pos, 0)
+  ctx.emitInst(vocJmpFalse, condAlloc.pos, 0)
   let exitPatch = code.data.len
-  code.emitWord(0u32)
-  code.freeIfTemp(condAlloc)
+  ctx.emitWord(0u32)
+  ctx.freeIfTemp(condAlloc)
 
-  # Loop body.
-  let childScopeId = ctx.nextChildScope(scopeId)
-  ctx.genStmt(code, childScopeId, bodyCur)
+  ctx.genStmt(c.args[1])
 
   # Jump back to condition evaluation.
-  code.emitInst(vocJmp, 0, 0)
-  code.emitWord(uint32(loopStart))
+  ctx.emitInst(vocJmp, 0, 0)
+  ctx.emitWord(uint32(loopStart))
 
   # Backpatch exit.
-  code.data[exitPatch] = uint32(code.data.len)
+  ctx.code.data[exitPatch] = uint32(ctx.code.data.len)
 
-proc genFor(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCursor) =
+proc genFor(ctx: var CodeGenCtx, c: CIRNode) =
   ## Generate code for `(for iter vars body)`.
-  var child = firstChild(c)
-  let iterCur = child
-  skip child
-  var varsCur = child
-  skip child
-  let bodyCur = child
-
-  # 1. Parse loop variable name and type
-  var varName = ""
-  var ty = ctx.cache.getType("int") # default to int
-
-  if varsCur.kind == TagLit and varsCur.otherKind == UnpackflatU:
-    var vchild = firstChild(varsCur)
-    while vchild.hasMore:
-      if vchild.stmtKind in {VarS, LetS}:
-        var symNode = firstChild(vchild)
-        if symNode.kind in {Symbol, SymbolDef}:
-          varName = symNode.symText
-          var typ = symNode
-          skip typ # export
-          skip typ # pragmas
-          ty = ctx.cache.getType(typ.getTypeName)
-          break
-      skip vchild
-  elif varsCur.kind in {Symbol, SymbolDef}:
-    varName = varsCur.symText
-
-  # Enter the child scope created for this loop
-  let forScopeId = ctx.nextChildScope(scopeId)
-
-  # Allocate loop variable using its liveness information
-  var varAlloc = CAllocation()
-  let nodeId = ctx.scopes[forScopeId].variables.fetchNode(varName)
-  if nodeId >= 0:
-    let v = ctx.scopes[forScopeId].variables.nodes[nodeId].data
-    let bp = v.liveness.birth.info
-    var lline = bp.line + 1
-    var lcol = bp.col
-    if v.liveness.uses.len > 0:
-      let lp = v.liveness.uses[^1].info
-      lline = lp.line
-      lcol = lp.col
-    varAlloc = code.allocator.alloc(max(1, ty.size), bp.line, bp.col, lline, lcol)
-  else:
-    varAlloc = code.allocator.alloc(max(1, ty.size))
+  ctx.genVar(c.args[0].args[0])
+  let sym = c.args[0].args[0].args[0]
+  let varName = sym.args[0].name
 
   # 2. Parse iterator expression: (infix op start stop) or (call op start stop)
   var isExclusive = true
-  var startCur = iterCur
-  var stopCur = iterCur
+  var iter = c.args[1]
   var hasExplicitStart = false
 
-  if iterCur.kind == TagLit and iterCur.exprKind in {InfixX, CallX, CmdX}:
-    var ic = firstChild(iterCur)
-    let opStr = if ic.kind in {Symbol, SymbolDef}: ic.symText else: ""
-    if opStr.contains("<"):
-      isExclusive = true
-    elif opStr.contains("..") or opStr.contains("\2E."):
-      isExclusive = false
-    else:
-      isExclusive = true
-
-    skip ic # skip op to start operand
-    if ic.hasMore:
-      startCur = ic
-      skip ic # skip start operand to stop operand
-      if ic.hasMore:
-        stopCur = ic
-        hasExplicitStart = true
+  var ic = firstChild(iterCur)
+  let opStr = iter.args[0].name
+  if opStr.contains("<"):
+    isExclusive = true
+  elif opStr.contains("..") or opStr.contains("\2E."):
+    isExclusive = false
+  else:
+    isExclusive = true
 
   # 3. Initialize loop variable with start value
-  if hasExplicitStart:
-    let startAlloc = ctx.genExpr(code, scopeId, ty, startCur)
-    if startAlloc.pos != varAlloc.pos:
-      code.emitInst(vocMov, varAlloc.pos, startAlloc.pos)
-    code.freeIfTemp(startAlloc)
-  else:
-    let zeroAlloc = code.allocator.alloc(1)
-    code.emitInst(vocLoadi, zeroAlloc.pos, 0)
-    code.emitWord(0u32)
-    code.emitInst(vocMov, varAlloc.pos, zeroAlloc.pos)
-    code.freeIfTemp(zeroAlloc)
-
+  let startAlloc = ctx.genExpr(iter.args[1])
+  ctx.emitInst(vocMov, varAlloc.pos, startAlloc.pos)
+  ctx.freeIfTemp(startAlloc)
+  
   # 4. Evaluate upper bound (stop) once into an allocation
-  let stopAlloc = ctx.genExpr(code, scopeId, ty, stopCur)
+  let stopAlloc = ctx.genExpr(iter.args[2])
 
   # 5. Loop condition check
-  let loopStart = code.data.len
+  let loopStart = ctx.code.data.len
   let cmpOp = if isExclusive: vocLti else: vocLei
 
-  let condAlloc = code.allocator.alloc(1)
-  code.emitInst(vocMov, condAlloc.pos, varAlloc.pos)
-  code.emitInst(cmpOp, condAlloc.pos, stopAlloc.pos)
+  let condAlloc = ctx.code.allocator.alloc(1)
+  ctx.emitInst(vocMov, condAlloc.pos, varAlloc.pos)
+  ctx.emitInst(cmpOp, condAlloc.pos, stopAlloc.pos)
 
-  code.emitInst(vocJmpFalse, condAlloc.pos, 0)
-  let exitPatch = code.data.len
-  code.emitWord(0u32)
-  code.freeIfTemp(condAlloc)
-
-  # 6. Generate body
-  if bodyCur.kind != DotToken:
-    let bodyScopeId = ctx.nextChildScope(forScopeId)
-    ctx.genStmt(code, bodyScopeId, bodyCur)
+  ctx.emitInst(vocJmpFalse, condAlloc.pos, 0)
+  let exitPatch = ctx.code.data.len
+  ctx.emitWord(0u32)
+  ctx.freeIfTemp(condAlloc)
+  ctx.genStmt(c.args[2])
 
   # 7. Step / Increment: varAlloc += 1
-  let oneAlloc = code.allocator.alloc(1)
-  code.emitInst(vocLoadi, oneAlloc.pos, 0)
-  code.emitWord(1u32)
-  code.emitInst(vocAddi, varAlloc.pos, oneAlloc.pos)
-  code.freeIfTemp(oneAlloc)
+  let oneAlloc = ctx.code.allocator.alloc(1)
+  ctx.emitInst(vocLoadi, oneAlloc.pos, 0)
+  ctx.emitWord(1u32)
+  ctx.emitInst(vocAddi, varAlloc.pos, oneAlloc.pos)
+  ctx.freeIfTemp(oneAlloc)
 
   # 8. Jump back to condition
-  code.emitInst(vocJmp, 0, 0)
-  code.emitWord(uint32(loopStart))
+  ctx.emitInst(vocJmp, 0, 0)
+  ctx.emitWord(uint32(loopStart))
 
   # 9. Backpatch exit jump
-  code.data[exitPatch] = uint32(code.data.len)
+  ctx.code.data[exitPatch] = uint32(ctx.code.data.len)
 
   # 10. Free stopAlloc if it was temporary
-  code.freeIfTemp(stopAlloc)
+  ctx.freeIfTemp(stopAlloc)
 
-proc genRet(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCursor) =
+proc genRet(ctx: var CodeGenCtx, c: CIRNode) =
   ## Generate code for `(ret .X)`.
   ## When a return value is present it is moved into register 0 by convention.
-  var child = firstChild(c)
-  if child.kind != DotToken:
-    let procInst = ctx.cache.getType(ctx.currentProcName)
-    let retTy    = if procInst.returnType != "": ctx.cache.getType(procInst.returnType)
-                   else: TypeInst(kind: PrimitiveType, size: 1)
-    let retAlloc = ctx.genExpr(code, scopeId, retTy, child)
-    code.emitInst(vocMov, 0, retAlloc.pos)
-    code.freeIfTemp(retAlloc)
-  code.emitInst(vocRet, 0, 0)
+  if c.args[0].kind != cnkEmpty:
+    let retAlloc = ctx.genExpr(c.args[0])
+    ctx.emitInst(vocMov, 0, retAlloc.pos)
+    ctx.freeIfTemp(retAlloc)
+  ctx.emitInst(vocRet, 0, 0)
 
-proc genDiscard(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCursor) =
+proc genDiscard(ctx: var CodeGenCtx, c: CIRNode) =
   ## Generate code for `(discard .X)`: evaluate the expression for side effects
   ## and immediately discard the result.
-  var child = firstChild(c)
-  if child.kind != DotToken:
-    let ty    = TypeInst(kind: UnknownType, size: 1)
-    let alloc = ctx.genExpr(code, scopeId, ty, child)
-    code.freeIfTemp(alloc)
+  if c.args[0].kind != cnkEmpty:
+    let disAlloc = ctx.genExpr(c.args[0])
+    ctx.emitInst(vocMov, 0, disAlloc.pos)
+    ctx.freeIfTemp(disAlloc)
 
-proc genCallStmt(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCursor) =
+proc genCallStmt(ctx: var CodeGenCtx, c: CIRNode) =
   ## Generate code for a call used as a statement (result discarded).
-  let ty    = TypeInst(kind: UnknownType, size: 1)
-  let alloc = ctx.genExpr(code, scopeId, ty, c)
+  let alloc = ctx.genExpr(c)
   code.freeIfTemp(alloc)
 
 proc genStmt(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCursor) =
   ## Dispatch one block of statements.
   ## `c` must point to a `stmts` or `block` node (or DotToken for empty body).
-  if c.kind == DotToken: return
-
-  assert c.stmtKind in {StmtsS, BlockS, ScopeS},
-    "genStmt: expected stmts/block/scope, got `" & renderNode(c) & "`."
-
-  var n = c
-  n.loopInto:
+  for n in c.args
     case n.kind
-    of DotToken: discard   # empty placeholder
-    of TagLit:
-      case n.stmtKind
-      of StmtsS, BlockS, ScopeS:
-        ## Nested block — consume the next child scope.
-        let childScopeId = ctx.nextChildScope(scopeId)
-        ctx.genStmt(code, childScopeId, n)
+    of cnkEmpty: discard   # empty placeholder
+    of StmtsS, BlockS, ScopeS:
+      ## Nested block — consume the next child scope.
+      let childScopeId = ctx.nextChildScope(scopeId)
+      ctx.genStmt(code, childScopeId, n)
 
-      of VarS, LetS, TvarS, TletS:
-        ctx.genVar(code, scopeId, n)
+    of cnkVarTy:
+      ctx.genVar(n)
 
-      of AsgnS:
-        ctx.genAsgn(code, scopeId, n)
+    of cnkAsgn:
+      ctx.genAsgn(n)
 
-      of IfS:
-        ctx.genIf(code, scopeId, n)
+    of cnkIf:
+      ctx.genIf(n)
 
-      of WhenS:
-        ctx.genIf(code, scopeId, n)   # treat `when` identically for now
+    of cnkWhileStmt:
+      ctx.genWhile(n)
 
-      of WhileS:
-        ctx.genWhile(code, scopeId, n)
+    of cnkForStmt:
+      ctx.genFor(n)
 
-      of ForS:
-        ctx.genFor(code, scopeId, n)
+    of cnkReturnStmt:
+      ctx.genRet(n)
 
-      of RetS:
-        ctx.genRet(code, scopeId, n)
+    of cnkDiscardStmt:
+      ctx.genDiscard(n)
 
-      of DiscardS:
-        ctx.genDiscard(code, scopeId, n)
+    of cnkCall:
+      ctx.genCallStmt(n)
 
-      of CallS, CmdS:
-        ctx.genCallStmt(code, scopeId, n)
+    of cnkContinueStmt, cnkBreakStmt: discard
 
-      of AssumeS, AssertS, LabS, ContinueS, BreakS:
-        discard
-
-      of UnpackdeclS:
-        ## Tuple unpacking: treat each inner var/let individually.
-        var inner = firstChild(n)
-        while inner.hasMore:
-          if inner.stmtKind in {VarS, LetS}:
-            ctx.genVar(code, scopeId, inner)
-          skip inner
-
-      of TypeS, ImportS, CommentS:
-        discard    # not relevant to code generation
-
-      else:
-        ## Propagate into substructures (elif, else, etc.).
-        case n.otherKind
-        of ElifU, ElseU, OfU:
-          discard   # handled by their parent statement
-        else:
-          discard
-
-    else:
-      discard   # raw tokens at statement level are ignored
+    of cnkSection:
+      ## Tuple unpacking: treat each inner var/let individually.
+      var inner = firstChild(n)
+      for arg in c.args:
+        if inner.stmtKind in {VarS, LetS}:
+          ctx.genVar(inner)
     skip n
 
 proc genFunc(ctx: var CodeGenCtx, code: var CBytecode, c: NifCursor) =
