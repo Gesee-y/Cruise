@@ -308,7 +308,6 @@ proc makeBranchIR(c: NifCursor): CIRNode =
 
 proc toIR(n: NifCursor): CIRNode =
   var c = n
-  echo c.renderNode
   result = newCIRNode(n.info, cnkEmpty)
 
   case c.kind:
@@ -397,7 +396,8 @@ proc toIR(n: NifCursor): CIRNode =
         result.add(sd)
         skip typ
 
-        assert typ.kind != DotToken, "A variable can't be uninitialized to be translated to bytecode."
+        if typ.kind == DotToken:
+          reportIRError typ.info, "A variable can't be uninitialized to be translated to bytecode."
         result.add(toIR(typ))
       of AsgnS:
         result = newCIRNode(c.info, cnkAsgn)
@@ -424,7 +424,9 @@ proc toIR(n: NifCursor): CIRNode =
         var found = false
         while vchild.hasMore:
           if vchild.stmtKind in {VarS, LetS}:
-            assert not found, "Can't use more than one iterator in for statement"
+            if found:
+              reportIRError vchild.info, "Can't use more than one iterator in for statement"
+              break
             var v = newCIRNode(vchild.info, cnkVarTy)
             var symNode = firstChild(vchild)
             var sd = newCIRNode(symNode.info, cnkSymDef)
@@ -444,7 +446,9 @@ proc toIR(n: NifCursor): CIRNode =
         result.add(sec)
 
         assert found, "Can't make for loop statement without loop variable"
-        assert iterCur.exprKind == InfixX and iterCur.firstChild.symText.contains(".."), "Only `..` and `..<` can be used as iterators" 
+        if iterCur.exprKind != InfixX or not iterCur.firstChild.symText.contains(".."):
+          reportIRError iterCur.info, "Only `..` and `..<` can be used as iterators" 
+          return
         var it = newCIRNode(iterCur.info, cnkInfix)
         var ic = firstChild(iterCur)
         let opStr = ic.symText
@@ -551,10 +555,3 @@ proc toIR(n: NifCursor): CIRNode =
       else: return
     else: assert false, "Unknown node: " & renderNode(c) & ". Kind = " & $c.kind & ", Expr = " & $c.exprKind & ", Stmt = " & $c.exprKind & ", Other = " & $c.otherKind
   else: assert false, "Unknown node: " & renderNode(c) & ". Kind = " & $c.kind & ", Expr = " & $c.exprKind & ", Stmt = " & $c.exprKind & ", Other = " & $c.otherKind
-
-
-
-
-          
-
-

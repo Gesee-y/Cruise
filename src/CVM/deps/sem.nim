@@ -3,19 +3,25 @@
 # ###################################################################################################################################### #
 
 proc resolveSymbol(cache: TypeCache, n: CIRNode) =
-  assert cache.variables.getOrDefault(n.name, -1) >= 0 or cache.functions.getOrDefault(n.name, -1) >= 0, """Unable to resolve symbol `""" & n.name & """`. 
-    May be a symbol unaccessible from the current module or not natively supported by GPU"""
+  if cache.variables.getOrDefault(n.name, -1) < 0 and cache.functions.getOrDefault(n.name, -1) < 0:
+    reportSemError n.info, """Unable to resolve symbol `""" & n.name & """`. 
+      May be a symbol unaccessible from the current module or not natively supported by GPU"""
 
 proc registerDefinition(cache: var TypeCache, n: CIRNode) =
   let tyName = n.args[1].name
   let vname = n.args[0].name
-  assert tyName in cache.nameToId, "Unknown type `" & tyName & "` for variable `" & vname  & "`. Maybe the type is not native to GPU or undeclared in the current module."
+  if tyName notin cache.nameToId:
+    reportSemError n.info, "Unknown type `" & tyName & "` for variable `" & vname  & "`. Maybe the type is not native to GPU or undeclared in the current module."
+    return
   let typeId = cache.nameToId.getOrDefault(tyName, -1)
 
-  assert cache.instances[typeId].kind notin {ProcType, RefType}, "Can't declare variable of type `ref` or `proc` because pointers are unsupported."
+  if cache.instances[typeId].kind in {ProcType, RefType}:
+    reportSemError n.info, "Can't declare variable of type `ref` or `proc` because pointers are unsupported."
+    return
   cache.variables[n.args[0].name] = typeId
 
 proc inferType*(cache: var TypeCache, node: var CIRNode): string =
+  result = "auto"
   case node.kind
   of cnkIntLit: "int"
   of cnkUintLit: "uint"
@@ -25,7 +31,9 @@ proc inferType*(cache: var TypeCache, node: var CIRNode): string =
   
   of cnkSym:
     let typeId = cache.variables.getOrDefault(node.name, -1)
-    assert typeId >= 0, "Failed to get symbol type `" & node.name & "`."
+    if typeId < 0:
+      reportSemError node.info, "Failed to get symbol type `" & node.name & "`."
+      return
     cache.instances[typeId].name
       
   of cnkPrefix, cnkInfix, cnkCall:
@@ -38,20 +46,25 @@ proc inferType*(cache: var TypeCache, node: var CIRNode): string =
     return node.args[0].name
     
   else:
-    assert false, "Failed to infer type of expression ```" & renderIR(node) & "```."
+    reportSemError node.info, "Failed to infer type of expression ```" & renderIR(node) & "```."
 
-proc resolveProc*(c: TypeCache, name: string, argTypes: seq[string]): int =
-  assert name in c.functions, "Unknown function `" & name & "`. Maybe the function is not native to GPU or not declared in the current module."
+proc resolveProc*(c: TypeCache, n: CIRNode, argTypes: seq[string]): int =
+  let name = n.args[0].name
+  result = 0
+  if name notin c.functions:
+   reportSemError n.info, "Unknown function `" & name & "`. Maybe the function is not native to GPU or not declared in the current module."
+   return
+  
   let overload = c.functions.getOrDefault(name)
   var currentNodeId = 0
-  result = -1
-
+  
   for argTy in argTypes:
     try:
       currentNodeId = overload.nodes[currentNodeId].children[argTy]
       result = overload.nodes[currentNodeId].tid
     else:
-      assert false, "Unknown function `" & name & "`. Maybe the function is not native to GPU or not declared in the current module."
+      reportSemError n.info, "Unknown function `" & name & "`. Maybe the function is not native to GPU or not declared in the current module."
+      return 0
 
 proc resolveCall(cache: var TypeCache, n: var CIRNode) =
   let funcName = n.args[0].name
@@ -61,8 +74,7 @@ proc resolveCall(cache: var TypeCache, n: var CIRNode) =
     cache.resolveNode(n.args[i])
     argTypes.add(cache.inferType(n.args[i]))
 
-  let procId = cache.resolveProc(funcName, argTypes)
-  assert procId >= 0, "No matching overload found for function `" & funcName & "` with these argument types."
+  let procId = cache.resolveProc(n, argTypes)
   n.args[0] = newCIRRSym(n.args[0].info, funcName, procId)
 
 proc resolveNode(cache: var TypeCache, n: var CIRNode) =

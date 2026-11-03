@@ -469,6 +469,8 @@ include "builtins.nim"
 # Instantiate a new `TypeCache` with primitive types already registered
 proc newTypeCache(): TypeCache =
   result = TypeCache()
+  result.nameToId["auto"] = result.instances.len
+  result.instances.add TypeInst(kind: UnknownType, name: "auto", size: 0)
   result.nameToId["int"] = result.instances.len
   result.instances.add TypeInst(kind: PrimitiveType, name: "int", size: 4)
   result.nameToId["int8"] = result.instances.len
