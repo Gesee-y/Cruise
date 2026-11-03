@@ -18,7 +18,7 @@ type
     cnkForStmt
     cnkWhileStmt
     cnkReturnStmt
-    cnkSym, cnkSymDef, cnkUniform, cnkBuffer, cnkSampler, cnkImage, cnkArray
+    cnkSym, cnkRSym, cnkSymDef, cnkUniform, cnkBuffer, cnkSampler, cnkImage, cnkArray
     cnkHiddenDeref
     cnkPar
     cnkIntLit
@@ -76,23 +76,24 @@ type
     else:
       args*: seq[CIRNode]
 
-proc newCIRNode*(info: LineInfo, kind: static CIRNodeKind): CIRNode = CIRNode(src: info, kind: kind)
-proc add*(a: var CIRNode, b: CIRNode) = a.args.add(b)
-proc newCIRSym*(info: LineInfo, name: string): CIRNode = CIRNode(src: info, kind: cnkSym, na: name)
-proc newCIRRSym*(info: LineInfo, name: string, tid: int): CIRNode = CIRNode(src: info, kind: cnkSym, n: name, tid: tid)
-proc newCIRIntLit*(info: LineInfo, i: int): CIRNode = CIRNode(src: info, kind: cnkIntLit, intVal: i)
-proc newCIRCharLit*(info: LineInfo, i: char): CIRNode = CIRNode(src: info, kind: cnkCharLit, charVal: i)
-proc newCIRUintLit*(info: LineInfo, i: uint): CIRNode = CIRNode(src: info, kind: cnkUintLit, uintVal: i)
-proc newCIRBoolLit*(info: LineInfo, i: bool): CIRNode = CIRNode(src: info, kind: cnkBoolLit, boolVal: i)
-proc newCIRFloatLit*(info: LineInfo, i: float): CIRNode = CIRNode(src: info, kind: cnkFloatLit, floatVal: i)
+proc newCIRNode*(info: LineInfo, kind: static CIRNodeKind): CIRNode {.inline.} = CIRNode(src: info, kind: kind)
+proc add*(a: var CIRNode, b: CIRNode) {.inline.} = a.args.add(b)
+proc newCIRSym*(info: LineInfo, name: string): CIRNode {.inline.} = CIRNode(src: info, kind: cnkSym, na: name)
+proc newCIRRSym*(info: LineInfo, name: string, tid: int): CIRNode {.inline.} = CIRNode(src: info, kind: cnkRSym, n: name, tid: tid)
+proc newCIRIntLit*(info: LineInfo, i: int): CIRNode {.inline.} = CIRNode(src: info, kind: cnkIntLit, intVal: i)
+proc newCIRCharLit*(info: LineInfo, i: char): CIRNode {.inline.} = CIRNode(src: info, kind: cnkCharLit, charVal: i)
+proc newCIRUintLit*(info: LineInfo, i: uint): CIRNode {.inline.} = CIRNode(src: info, kind: cnkUintLit, uintVal: i)
+proc newCIRBoolLit*(info: LineInfo, i: bool): CIRNode {.inline.} = CIRNode(src: info, kind: cnkBoolLit, boolVal: i)
+proc newCIRFloatLit*(info: LineInfo, i: float): CIRNode {.inline.} = CIRNode(src: info, kind: cnkFloatLit, floatVal: i)
+proc info*(c: CIRNode): LineInfo {.inline.} = c.src
 proc name*(c: CIRNode): string =
   case c.kind:
-  of cnkSym
+  of cnkSym:
     result = c.na
   of cnkRSym:
     result = c.n
   else:
-    result = "\0"
+    result = ""
 
 proc renderIR*(node: CIRNode, indent: int = 0): string =
   let ind = repeat("  ", indent)
@@ -247,7 +248,7 @@ proc renderIR*(node: CIRNode, indent: int = 0): string =
 
 proc toInfixOp(c: NifCursor): string =
   result = ""
-  assert c.exprKind in {AddX, SubX, MulX, DivX, AndX, OrX, XorX, EqX, NeqX, LtX, LeX}, "Can't get infix op of an unknown operation"
+  assert c.exprKind in {AddX, SubX, MulX, DivX, AndX, OrX, XorX, EqX, NeqX, LtX, LeX, InfixX}, "Can't get infix op of an unknown operation: `" & renderNode(c) & "`." 
   case c.exprKind:
   of AddX: return "+"
   of SubX: return "-"
@@ -260,20 +261,22 @@ proc toInfixOp(c: NifCursor): string =
   of NeqX: return "!="
   of LeX: return "<="
   of LtX: return "<"
+  of InfixX: return firstChild(c).symText
   else: return
 
 proc toPrefixOp(c: NifCursor): string =
   result = ""
-  assert c.exprKind in {NegX, NotX}, "Can't get prefix op of an unknown operation"
+  assert c.exprKind in {NegX, NotX, PrefixX}, "Can't get prefix op of an unknown operation: `" & renderNode(c) & "`." 
   case c.exprKind:
   of NegX: return "-"
   of NotX: return "not"
+  of PrefixX: return firstChild(c).symText
   else: return
 
 proc makeCallIR(c: NifCursor): CIRNode =
-  result = newCIRNode(cnkCall)
+  result = newCIRNode(c.info, cnkCall)
   var it = firstChild(c)
-  result.add(newCIRSym(it.symText))
+  result.add(newCIRSym(it.info, it.symText))
   skip it
 
   while it.hasMore:
@@ -325,13 +328,15 @@ proc toIR(n: NifCursor): CIRNode =
   of LineInfoLit: return
   of TagLit:
     case c.exprKind:
-    of DotX, DdotX, HderefX:
+    of DotX, DdotX:
       result = newCIRNode(c.info, cnkDotExpr)
-      let path = c.extractPath()
-
-      if path.valid and path.path.len > 0:
-        for p in path.path:
-          result.add(newCIRSym(p.info, p.symText))
+      var it = firstChild(c)
+      result.add(toIR(it))
+      skip it
+      result.add(toIR(it))
+    of HderefX:
+      var it = firstChild(c)
+      return toIR(it)
     of CallX, CmdX:
       result = makeCallIR(c)
     of ConvX:
@@ -350,7 +355,7 @@ proc toIR(n: NifCursor): CIRNode =
       result = newCIRNode(c.info, cnkInfix)
       var it = firstChild(c)
       var ty = it.getTypeName
-      result.add(newCIRSym(it.info, it.toInfixOp))
+      result.add(newCIRSym(it.info, c.toInfixOp))
       skip it # Skip type
 
       result.add(toIR(it))
@@ -384,7 +389,6 @@ proc toIR(n: NifCursor): CIRNode =
         result = newCIRNode(c.info, cnkVarTy)
         let symNode = firstChild(n)
         var sd = newCIRNode(symNode.info, cnkSymDef)
-        let kind = if n.stmtKind in {VarS, TvarS}: VarK else: LetK
         var typ = symNode
         skip typ
         skip typ
@@ -485,15 +489,15 @@ proc toIR(n: NifCursor): CIRNode =
           while fieldCursor.hasMore:
             if fieldCursor.exprKind != DotX:
               var field = firstChild(fieldCursor)
-              var f = newCIRNode(fieldCursor, cnkSymDef)
+              var f = newCIRNode(fieldCursor.info, cnkSymDef)
               let fieldName = field
               skip field
               skip field
               skip field # pragmas
               let fieldType = field
               let fieldTyName = fieldType.getTypeName
-              f.add(newCIRSym(fieldName.symText))
-              f.add(newCIRSym(fieldTyName))
+              f.add(newCIRSym(fieldName.info, fieldName.symText))
+              f.add(newCIRSym(fieldType.info, fieldTyName))
               p.add(f)
             skip fieldCursor
 
@@ -505,7 +509,7 @@ proc toIR(n: NifCursor): CIRNode =
         if retNode.hasMore and retNode.kind != DotToken:
           returnType = retNode.getTypeName
 
-        result.add(newCIRSym(returnType))
+        result.add(newCIRSym(retNode.info, returnType))
         skip symNode
         skip symNode
         skip symNode
@@ -515,14 +519,14 @@ proc toIR(n: NifCursor): CIRNode =
         result.add(toIR(symNode))
 
       of RetS:
-        result = newCIRNode(cnkReturnStmt)
+        result = newCIRNode(c.info, cnkReturnStmt)
         result.add(toIR(firstChild(c)))
 
       of CallS:
         result = makeCallIR(c)
 
       of UnpackdeclS:
-        result = newCIRNode(cnkSection)
+        result = newCIRNode(c.info, cnkSection)
         var inner = firstChild(n)
         while inner.hasMore:
           if inner.stmtKind in {VarS, LetS}:
@@ -530,7 +534,7 @@ proc toIR(n: NifCursor): CIRNode =
           skip inner
 
       of IfS:
-        result = newCIRNode(cnkIfStmt)
+        result = newCIRNode(c.info, cnkIfStmt)
         var it = firstChild(c)
         
         while it.hasMore:
@@ -538,7 +542,7 @@ proc toIR(n: NifCursor): CIRNode =
           skip it
 
       of WhileS:
-        result = newCIRNode(cnkWhileStmt)
+        result = newCIRNode(c.info, cnkWhileStmt)
         var child   = firstChild(c)
         let condCur = child
         var bodyCur = child
@@ -549,9 +553,9 @@ proc toIR(n: NifCursor): CIRNode =
 
       of AssumeS, AssertS: return
       of ContinueS:
-        result = newCIRNode(cnkContinueStmt)
+        result = newCIRNode(c.info, cnkContinueStmt)
       of BreakS:
-        result = newCIRNode(cnkBreakStmt)
+        result = newCIRNode(c.info, cnkBreakStmt)
       else: return
     else: assert false, "Unknown node: " & renderNode(c) & ". Kind = " & $c.kind & ", Expr = " & $c.exprKind & ", Stmt = " & $c.exprKind & ", Other = " & $c.otherKind
   else: assert false, "Unknown node: " & renderNode(c) & ". Kind = " & $c.kind & ", Expr = " & $c.exprKind & ", Stmt = " & $c.exprKind & ", Other = " & $c.otherKind

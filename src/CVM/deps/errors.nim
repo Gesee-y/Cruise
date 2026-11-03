@@ -1,5 +1,7 @@
-  # ###################################################################################################### #
- # ############################################# ERRORS HANDLING ######################################## #
+{.feature: "assumeSync".}
+
+# ###################################################################################################### #
+# ############################################# ERRORS HANDLING ######################################## #
 # ###################################################################################################### #
 
 type
@@ -18,8 +20,8 @@ proc reportSemError*(info: LineInfo, msg: string) =
 
 proc flushIRErrors*(n: var NifBuilder) =
   for e in irGenErrors:
-    n.takeTree errorTree(e.msg, e.info)
+    n.addTree errorTree(e.msg, e.info)
 
 proc flushSemErrors*(n: var NifBuilder) =
   for e in semErrors:
-    n.takeTree errorTree(e.msg, e.info)
+    n.addTree errorTree(e.msg, e.info)

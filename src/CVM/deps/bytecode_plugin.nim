@@ -1,63 +1,73 @@
+{.feature: "assumeSync".}
+
 # ################################################################################################################### #
 # ############################################## BYTECODE TRANSLATOR ################################################ #
 # ################################################################################################################### #
 
 import plugins
-import std/[syncio, tables]
+import std/[syncio, tables, strutils]
 
+include "errors.nim"
 include "types.nim"
 include "../allocator.nim"
 include "vmops.nim"
-include "scopes.nim"
-include "generator.nim"
 include "ir.nim"
+include "sem.nim"
+include "generator.nim"
 
 proc generateBytecode(n: var NifCursor): NifBuilder =
-  var ctx = CodeGenCtx(
-    cache: newTypeCache(),
-    scopes: @[ScopeNode(id: 0, parent: -1, variables: newTrie())]
-  )
+  var cache = newTypeCache()
   var source = n
-  let irCode = toIR(source)
+  echo renderNode(n)
+  cache.collectTypeDecls(source)
+  cache.propagateRefs()
+  cache.computeLayouts()
+
+  var irCode = toIR(source)
   echo renderIR(irCode)
-  ctx.cache.collectTypeDecls(source)
-  ctx.cache.propagateRefs()
-  ctx.cache.computeLayouts()
-  ctx.collectVarData(0, source)
+  cache.semPass(irCode)
+  echo "Sem Done"
 
-  var code = CBytecode(
-    allocator: newVramAllocator(),
-    procTable: initTable[string, int](),
-    callToPatch: initTable[string, seq[int]](),
-    data: @[]
+  var ctx = CodeGenCtx(
+    cache: cache,
+    code: CBytecode(
+      allocator: newVramAllocator(),
+      procTable: initTable[string, int](),
+      callToPatch: initTable[string, seq[int]](),
+      data: @[]
+    )
   )
-  code.predeclareFunctions(source)
-  var statements = source
-  statements.loopInto:
-    if statements.stmtKind in {ProcS, FuncS}:
-      ctx.genFunc(code, statements)
-    elif statements.stmtKind in {StmtsS, BlockS, ScopeS}:
-      ctx.genStmt(code, 0, statements)
-    statements.skip()
 
-  #var byteData = newSeq[byte](code.data.len*sizeof(uint32))
-  #copyMem(addr byteData[0], addr code.data[0], code.data.len*sizeof(uint32))
-
-  var f = open("generated.cbc", fmWrite)
-  if code.data.len > 0:
-    discard writeBuffer(f, addr code.data[0], code.data.len*sizeof(uint32))
-  close(f)
+  ctx.predeclareFunctions(irCode)
+  ctx.genStmt(irCode)
   
   # The plugin API currently returns a NIF tree. Keep the source unchanged
   # while the generated program is consumed by the forthcoming backend API.
+  var success = irGenErrors.len > 0 or semErrors.len > 0
   result = createTree()
-  result.takeTree(n)
+  
+  if not success:
+    result.withTree StmtsS, n.info:
+      n.loopInto:
+        result.takeTree n
+        skip n
+
+      if irGenErrors.len > 0:
+        flushIRErrors(result)
+      elif semErrors.len > 0:
+        flushSemErrors(result)
+  else:
+    result.takeTree n
+  
+  echo success
+  if success:
+    var f = open("generated.cbc", fmWrite)
+    if ctx.code.data.len > 0:
+      discard writeBuffer(f, addr ctx.code.data[0], ctx.code.data.len * sizeof(uint32))
+    close(f)
+
   echo renderTree(result)
-
-proc noTransform(n: var NifCursor): NifBuilder =
-  result = createTree()
-  result.takeTree(n)
-
+  
 var inp = loadPluginInput()
 var c = inp
 saveTree generateBytecode(c)

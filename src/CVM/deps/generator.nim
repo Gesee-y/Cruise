@@ -10,32 +10,32 @@ type
   CMemLoc = int ## Virtual-memory address (word index).
 
   CBytecode = object
-    data:       seq[uint32]
-    allocator:  CVramAllocator
+    data:        seq[uint32]
+    allocator:   CVramAllocator
     ## Maps each proc name to its starting word index in `data`.
     ## Entries start at -1 (placeholder) and are backpatched by `genFunc`.
-    procTable:  Table[string, int]
+    procTable:   Table[string, int]
     callToPatch: Table[string, seq[int]]
-    currentPos: int
+    currentPos:  int
 
   CodeGenCtx = object
-    cache: TypeCache
-    code: CBytecode
+    cache:           TypeCache
+    code:            CBytecode
+    currentProcName: string
 
 # ################################################################################################################################ #
 # ############################################################ CONSTANTS ######################################################### #
 # ################################################################################################################################ #
 
 const
-  INT_SIZE = 4
-  FLOAT_SIZE = 4
-  CHAR_SIZE = 1
+  INT_SIZE    = 4
+  FLOAT_SIZE  = 4
+  CHAR_SIZE   = 1
   OPCODE_BITS = 8
   REGA_BITS   = 8
   REGB_BITS   = 8
-  REGA_POS    = REGB_BITS           ##  8: shift for the destination field
+  REGA_POS    = REGB_BITS            ##  8: shift for the destination field
   OPCODE_POS  = REGA_POS + REGA_BITS ## 16: shift for the opcode field
-  # TODO: Add unused byte constant
 
 # ################################################################################################################################ #
 # ########################################################## HELPER PROCS ######################################################## #
@@ -43,50 +43,70 @@ const
 
 proc opcodeFor(op: string, isFloat: bool): VMOpCode =
   case op
-  of "+": if isFloat: vocAddf else: vocAddi
-  of "-": if isFloat: vocSubf else: vocSubi
-  of "*": if isFloat: vocMulf else: vocMuli
-  of "/": if isFloat: vocDivf else: vocDivi
-  of "mod": vocMod
-  of "and": vocAnd
-  of "or": vocOr
-  of "xor": vocXor
-  of "==": if isFloat: vocEqf else: vocEqi
-  of "!=": if isFloat: vocNeqf else: vocNeqi
-  of "<": if isFloat: vocLtf else: vocLti
-  of "<=": if isFloat: vocLef else: vocLei
-  of ">": if isFloat: vocLtf else: vocLti
-  of ">=": if isFloat: vocLef else: vocLei
-  else: assert false, "Unsupported CIR binary operator: " & op
+  of "+":
+    if isFloat: return vocAddf 
+    else: return vocAddi
+  of "-":
+    if isFloat: return vocSubf 
+    else: return vocSubi
+  of "*":
+    if isFloat: return vocMulf 
+    else: return vocMuli
+  of "/":
+    if isFloat: return vocDivf 
+    else: return vocDivi
+  of "%", "mod":
+    vocMod
+  of "and":
+    vocAnd
+  of "or":
+    vocOr
+  of "xor":
+    vocXor
+  of "==":
+    if isFloat: return vocEqf 
+    else: return vocEqi
+  of "!=":
+    if isFloat: return vocNeqf 
+    else: return vocNeqi
+  of "<":
+    if isFloat: return vocLtf 
+    else: return vocLti
+  of "<=":
+    if isFloat: return vocLef 
+    else: return vocLei
+  of ">":
+    if isFloat: return vocLtf 
+    else: return vocLti
+  of ">=":
+    if isFloat: return vocLef 
+    else: return vocLei
+  else: assert false, "Failed to get infix opcode for `" & op & "`."
 
 proc prefixOpcodeFor(op: string, isFloat: bool): VMOpCode =
   case op
-  of "not": vocNot
-  of "-": if isFloat: vocNegf else: vocNegi
-  else: assert false, "Unsupported CIR unary operator: " & op
+  of "not":
+    vocNot
+  of "-":
+    if isFloat: return vocNegf 
+    else: return vocNegi
+  else: assert false, "Failed to get prefix opcode for `" & op & "`."
 
 proc isFloatType(ty: TypeInst): bool {.inline.} =
-  ## Returns true when `ty` is a floating-point primitive.
   ty.name.startsWith("float")
 
 proc genInstruction(op: VMOpCode, dst, src: CMemLoc): uint32 {.inline.} =
-  ## Encode a two-operand instruction into a single 32-bit word.
   (uint32(op) shl OPCODE_POS) or (uint32(dst) shl REGA_POS) or uint32(src)
 
 proc emitInst(ctx: var CodeGenCtx, op: VMOpCode, dst, src: CMemLoc) {.inline.} =
-  ## Append a single instruction word and advance `currentPos`.
   ctx.code.data.add(genInstruction(op, dst, src))
   inc ctx.code.currentPos
 
 proc emitWord(ctx: var CodeGenCtx, word: uint32) {.inline.} =
-  ## Append a raw 32-bit word (e.g. an immediate value or jump target).
   ctx.code.data.add(word)
   inc ctx.code.currentPos
 
 proc freeIfTemp(ctx: var CodeGenCtx, alloc: CAllocation) {.inline.} =
-  ## Free `alloc` when it is a temporary scratch allocation.
-  ## Named variable allocations (`isTemp = false`) are left untouched;
-  ## they are reclaimed automatically by the allocator's tick mechanism.
   if alloc.isTemp and alloc.size > 0:
     ctx.code.allocator.free(alloc)
 
@@ -94,97 +114,99 @@ proc freeIfTemp(ctx: var CodeGenCtx, alloc: CAllocation) {.inline.} =
 # ##################################################### VARIABLE RESOLUTION ###################################################### #
 # ################################################################################################################################ #
 
-proc lookupVarAlloc(ctx: var CodeGenCtx, l: CLiveness): CAllocation =
-  ## Retrieve the named allocation for `v` using its birth position as key.
-  ## Returns an empty CAllocation (size = 0) when the variable has no entry
-  ## in the allocator table (e.g. an external or untracked symbol).
-  let sp = lineCol(l.birth.info)
-  ctx.code.allocator.lookup(sp.line, sp.col)
-
 proc resolveSymbol(ctx: var CodeGenCtx, c: CIRNode): CAllocation =
-  ## Resolve a Symbol cursor to the CAllocation of the named variable.
-  ## Searches the scope chain upward.  Returns an empty CAllocation on failure.
-  let varName = c.name
-  result = lookupVarAlloc(code, ctx.cache.liveness.getOrDefault(varName))
+  if c.name in ctx.cache.liveness:
+    let l = ctx.cache.liveness.getOrDefault(c.name)
+    return ctx.code.allocator.lookup(l.birth.line, l.birth.col)
+  else:
+    return CAllocation()
 
 # ################################################################################################################################ #
 # ############################################################# EXPRESSIONS ###################################################### #
 # ################################################################################################################################ #
 
 proc genExpr(ctx: var CodeGenCtx, c: CIRNode): CAllocation =
-  ## Generate code that evaluates the expression at `c` and returns the
-  ## allocation holding the result.
   result = default(CAllocation)
-  case c.kind:
+  case c.kind
   of cnkInfix:
     let opName = c.args[0].name
-    let opTypeName = ctx.cache.inferType(c)
+    var dummyNode = c
+    let opTypeName = ctx.cache.inferType(dummyNode)
     let opIsFloat  = opTypeName.startsWith("float")
     let opTy = ctx.cache.getType(opTypeName)
 
-    result = code.allocator.alloc(opTy.size)
+    result = ctx.code.allocator.alloc(max(1, opTy.size))
 
-    let r1 = ctx.genExpr(code, scopeId, c.args[1])
-    let r2 = ctx.genExpr(code, scopeId, c.args[2])
+    let r1 = ctx.genExpr(c.args[1])
+    let r2 = ctx.genExpr(c.args[2])
 
-    code.emitInst(vocMov, result.pos, r1.pos)
-    code.emitInst(opcodeFor(opName, opIsFloat), result.pos, r2.pos)
+    ctx.emitInst(vocMov, result.pos, r1.pos)
+    ctx.emitInst(opcodeFor(opName, opIsFloat), result.pos, r2.pos)
 
-    code.freeIfTemp(r1)
-    code.freeIfTemp(r2)
+    ctx.freeIfTemp(r1)
+    ctx.freeIfTemp(r2)
     return
 
-  # Unary boolean not — (not X), no type annotation
   of cnkPrefix:
     let opName = c.args[0].name
-    let opTypeName = ctx.cache.inferType(c)
+    var dummyNode = c
+    let opTypeName = ctx.cache.inferType(dummyNode)
     let opIsFloat  = opTypeName.startsWith("float")
     let opTy = ctx.cache.getType(opTypeName)
-    let operand = ctx.genExpr(code, scopeId, child)
+    let operand = ctx.genExpr(c.args[1])
     
-    result = code.allocator.alloc(opTy.size)
-    code.emitInst(prefixOpcodeFor(opName, opIsFloat), result.pos, operand.pos)
-    code.freeIfTemp(operand)
+    result = ctx.code.allocator.alloc(max(1, opTy.size))
+    ctx.emitInst(prefixOpcodeFor(opName, opIsFloat), result.pos, operand.pos)
+    ctx.freeIfTemp(operand)
     return
 
-  # Field access — (dot obj field INTLIT? STRLIT?)
   of cnkDotExpr:
-    result = ctx.genExpr(n.args[0])
+    result = ctx.genExpr(c.args[0])
 
     var offset = 0
-    var basetype = ctx.cache.inferType(n.args[0])
+    var dummyArg0 = c.args[0]
+    var basetype = ctx.cache.inferType(dummyArg0)
     var currentType = basetype
-    var current = node.args[1]
+    var current = c.args[1]
     var fields: seq[string] = @[]
 
     while current.kind == cnkDotExpr:
       let f = current.args[0].name
-      let fid = ctx.cache.getType(currentType).nameToId.getOrDefault(f)
+      let fid = ctx.cache.getType(currentType).nameToId.getOrDefault(f, -1)
       current = current.args[1]
 
-      result.pos += ctx.cache.getType(currentType).fields[fid].offset
-      currentType = ctx.cache.getType(currentType).name
+      if fid >= 0:
+        offset += ctx.cache.getType(currentType).fields[fid].offset
+        currentType = ctx.cache.getType(currentType).fields[fid].ty
       fields.add(f)
     
-    fields.add(current.name)
+    let f = current.name
+    let fid = ctx.cache.getType(currentType).nameToId.getOrDefault(f, -1)
+    if fid >= 0:
+      offset += ctx.cache.getType(currentType).fields[fid].offset
+    fields.add(f)
     result.pos += offset
     result.size = ctx.cache.getType(basetype, fields).size
-    
-  # Function call — (call callee arg*)
-  of cnkCall:
-    result = ctx.code.allocator.alloc(ty.size)
-    var argsToFree: seq[CAllocation] = @[]
-    let procName = c.args[0].symText.split(".")[0]
+    result.isTemp = false
+    return
 
-    # Push arguments left-to-right onto the call stack.
-    for i in 1..<c.args.len:
-      # Use an unknown type approximation for argument types.
+  of cnkCall:
+    let procName = c.args[0].name
+    var retSize = 1
+    let procInst = ctx.cache.getType(procName)
+    if procInst.returnType != "":
+      retSize = ctx.cache.getType(procInst.returnType).size
+
+    result = ctx.code.allocator.alloc(max(1, retSize))
+    var argsToFree: seq[CAllocation] = @[]
+
+    for i in 1 ..< c.args.len:
       let argAlloc = ctx.genExpr(c.args[i])
-      code.emitInst(vocPush, argAlloc.pos, 0)
+      ctx.emitInst(vocPush, argAlloc.pos, 0)
       argsToFree.add(argAlloc)
 
     for argAlloc in argsToFree:
-      code.freeIfTemp(argAlloc)
+      ctx.freeIfTemp(argAlloc)
 
     let bopCode = toBuiltinCall(procName)
     var procPos = 0
@@ -202,156 +224,151 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode): CAllocation =
       ctx.code.callToPatch[procName] = list
     return
 
-  # Boolean literals
+  of cnkConv:
+    if c.args.len > 1:
+      return ctx.genExpr(c.args[1])
+    return default(CAllocation)
+
   of cnkBoolLit:
-    result = code.allocator.alloc(CHAR_SIZE)
-    code.emitInst(vocLoadi, result.pos, 0)
-    code.emitWord(uint32(c.boolVal))
+    result = ctx.code.allocator.alloc(CHAR_SIZE)
+    ctx.emitInst(vocLoadi, result.pos, 0)
+    ctx.emitWord(if c.boolVal: 1u32 else: 0u32)
     return
 
-  of cnkSym:
-    ## Resolve variable by birth-position key 
+  of cnkSym, cnkRSym:
     let alloc = ctx.resolveSymbol(c)
     return alloc
 
   of cnkIntLit:
-    result = code.allocator.alloc(INT_SIZE)
-    code.emitInst(vocLoadi, result.pos, 0)
-    code.emitWord(cast[uint32](c.intVal))
+    result = ctx.code.allocator.alloc(INT_SIZE)
+    ctx.emitInst(vocLoadi, result.pos, 0)
+    ctx.emitWord(cast[uint32](c.intVal))
+    return
 
   of cnkUintLit:
-    result = code.allocator.alloc(INT_SIZE)
-    code.emitInst(vocLoadi, result.pos, 0)
-    code.emitWord(cast[uint32](c.uintVal))
+    result = ctx.code.allocator.alloc(INT_SIZE)
+    ctx.emitInst(vocLoadi, result.pos, 0)
+    ctx.emitWord(cast[uint32](c.uintVal))
+    return
 
   of cnkFloatLit:
-    result = code.allocator.alloc(FLOAT_SIZE)
-    code.emitInst(vocLoadf, result.pos, 0)
-    code.emitWord(cast[uint32](c.floatVal))
+    result = ctx.code.allocator.alloc(FLOAT_SIZE)
+    ctx.emitInst(vocLoadf, result.pos, 0)
+    ctx.emitWord(cast[uint32](c.floatVal))
+    return
 
   of cnkCharLit:
-    result = code.allocator.alloc(CHAR_SIZE)
-    code.emitInst(vocLoadi, result.pos, 0)
-    code.emitWord(uint32(ord(c.charVal)))
-  else: discard "Unsupported expression `" & renderIR(c) & "`."
+    result = ctx.code.allocator.alloc(CHAR_SIZE)
+    ctx.emitInst(vocLoadi, result.pos, 0)
+    ctx.emitWord(uint32(ord(c.charVal)))
+    return
+
+  else:
+    discard
 
 # ################################################################################################################################ #
 # ############################################################## STATEMENTS ###################################################### #
 # ################################################################################################################################ #
 
 proc genVar(ctx: var CodeGenCtx, c: CIRNode) =
-  ## Generate code for a `var` or `let` declaration.
-  ## Allocates virtual memory using the variable's birth and last-use positions
-  ## so the allocator can reclaim the slot automatically.
+  let symDef = c.args[0]
+  let varName = symDef.args[0].name
+  let typeName = symDef.args[1].name
+  let ty = ctx.cache.getType(typeName)
 
-  var sym = c.args[0]
-  let ty = ctx.cache.getType(sym.args[1])
-
-  let l = ctx.cache.liveness.getOrDefault(sym.args[0].name)
-  var bp = l.birth
+  let l = ctx.cache.liveness.getOrDefault(varName)
+  let bp = l.birth
   var lline = l.dead.line
   var lcol  = l.dead.col
+  if lline == 0 and lcol == 0:
+    lline = bp.line + 1
+    lcol  = bp.col
 
-  # Named allocation: automatically freed when (lline, lcol) is passed.
   let alloc = ctx.code.allocator.alloc(max(1, ty.size), bp.line, bp.col, lline, lcol)
 
-  # Emit initializer when present.
-  let initAlloc = ctx.genExpr(c.args[1])
-  ctx.emitInst(vocMov, alloc.pos, initAlloc.pos)
-  ctx.freeIfTemp(initAlloc)
+  if c.args.len > 1 and c.args[1].kind != cnkEmpty:
+    let initAlloc = ctx.genExpr(c.args[1])
+    if initAlloc.pos != alloc.pos:
+      ctx.emitInst(vocMov, alloc.pos, initAlloc.pos)
+    ctx.freeIfTemp(initAlloc)
 
 proc genAsgn(ctx: var CodeGenCtx, c: CIRNode) =
   let lhsAlloc = ctx.genExpr(c.args[0])
   let rhs = ctx.genExpr(c.args[1])
-  ctx.emitInst(vocMov, lhsAlloc.pos, rhs.pos)
+  if lhsAlloc.size > 0 and rhs.pos != lhsAlloc.pos:
+    ctx.emitInst(vocMov, lhsAlloc.pos, rhs.pos)
   ctx.freeIfTemp(rhs)
 
 proc genIf(ctx: var CodeGenCtx, c: CIRNode) =
-  ## Generate code for `(if (elif cond body)+ (else body)?)`.
-  ## Uses two-word jump instructions: the instruction word encodes the
-  ## opcode and condition register; the following word holds the target address.
-  ## All forward jump targets are backpatched after the full if/else chain.
-  var endPatches: seq[int] = @[]   # positions of the "jump to end" target words
-  var i = 0
+  var endPatches: seq[int] = @[]
 
-  while i < ctx.args.len and c.args[i].kind == cnkElifBranch:
-    let condAlloc = ctx.genExpr(code, c.args[0])
-    ctx.emitInst(vocJmpFalse, condAlloc.pos, 0)
-    
-    let falsePatch = code.data.len
-    ctx.emitWord(0u32)
-    ctx.freeIfTemp(condAlloc)
+  for branch in c.args:
+    case branch.kind
+    of cnkElifBranch:
+      let condAlloc = ctx.genExpr(branch.args[0])
+      ctx.emitInst(vocJmpFalse, condAlloc.pos, 0)
+      let falsePatch = ctx.code.data.len
+      ctx.emitWord(0u32)
+      ctx.freeIfTemp(condAlloc)
 
-    # Generate the elif body in a fresh child scope.
-    ctx.genStmt(c.args[1])
-    ctx.emitInst(vocJmp, 0, 0)
+      ctx.genStmt(branch.args[1])
 
-    let endPatch = code.data.len
-    ctx.emitWord(0u32)
-    endPatches.add(endPatch)
+      ctx.emitInst(vocJmp, 0, 0)
+      let endPatch = ctx.code.data.len
+      ctx.emitWord(0u32)
+      endPatches.add(endPatch)
 
-    # Backpatch false-jump to land here (start of next branch / else / end).
-    ctx.code.data[falsePatch] = uint32(ctx.code.data.len)
-    inc i
+      ctx.code.data[falsePatch] = uint32(ctx.code.data.len)
 
-  # Optional else branch.
-  if i < c.args.len:
-    ctx.genStmt(c.args[^1])
+    of cnkElse:
+      ctx.genStmt(branch.args[0])
 
-  # Backpatch all end-of-if jumps.
+    else: discard
+
   let endTarget = uint32(ctx.code.data.len)
   for pos in endPatches:
     ctx.code.data[pos] = endTarget
 
 proc genWhile(ctx: var CodeGenCtx, c: CIRNode) =
-  ## Generate code for `(while cond body)`.
   let loopStart = ctx.code.data.len
   let condAlloc = ctx.genExpr(c.args[0])
 
-  # Exit the loop when condition is false.
   ctx.emitInst(vocJmpFalse, condAlloc.pos, 0)
-  let exitPatch = code.data.len
+  let exitPatch = ctx.code.data.len
   ctx.emitWord(0u32)
   ctx.freeIfTemp(condAlloc)
 
   ctx.genStmt(c.args[1])
 
-  # Jump back to condition evaluation.
   ctx.emitInst(vocJmp, 0, 0)
   ctx.emitWord(uint32(loopStart))
 
-  # Backpatch exit.
   ctx.code.data[exitPatch] = uint32(ctx.code.data.len)
 
 proc genFor(ctx: var CodeGenCtx, c: CIRNode) =
-  ## Generate code for `(for iter vars body)`.
-  ctx.genVar(c.args[0].args[0])
-  let sym = c.args[0].args[0].args[0]
-  let varName = sym.args[0].name
+  # c.args[0] = cnkSection containing cnkVarTy for the loop variable
+  # c.args[1] = cnkInfix (iterator)
+  # c.args[2] = body
+  let loopVarNode = c.args[0].args[0]
+  ctx.genVar(loopVarNode)
 
-  # 2. Parse iterator expression: (infix op start stop) or (call op start stop)
-  var isExclusive = true
-  var iter = c.args[1]
-  var hasExplicitStart = false
+  let symDef = loopVarNode.args[0]
+  let varName = symDef.args[0].name
+  let varAlloc = ctx.resolveSymbol(symDef.args[0])
 
-  var ic = firstChild(iterCur)
+  let iter = c.args[1]
   let opStr = iter.args[0].name
-  if opStr.contains("<"):
-    isExclusive = true
-  elif opStr.contains("..") or opStr.contains("\2E."):
-    isExclusive = false
-  else:
-    isExclusive = true
+  let isExclusive = opStr.contains("<")
 
-  # 3. Initialize loop variable with start value
+  # Start value
   let startAlloc = ctx.genExpr(iter.args[1])
-  ctx.emitInst(vocMov, varAlloc.pos, startAlloc.pos)
+  if startAlloc.pos != varAlloc.pos:
+    ctx.emitInst(vocMov, varAlloc.pos, startAlloc.pos)
   ctx.freeIfTemp(startAlloc)
-  
-  # 4. Evaluate upper bound (stop) once into an allocation
+
+  # Stop value
   let stopAlloc = ctx.genExpr(iter.args[2])
 
-  # 5. Loop condition check
   let loopStart = ctx.code.data.len
   let cmpOp = if isExclusive: vocLti else: vocLei
 
@@ -363,28 +380,26 @@ proc genFor(ctx: var CodeGenCtx, c: CIRNode) =
   let exitPatch = ctx.code.data.len
   ctx.emitWord(0u32)
   ctx.freeIfTemp(condAlloc)
+
+  # Body
   ctx.genStmt(c.args[2])
 
-  # 7. Step / Increment: varAlloc += 1
+  # Increment: varAlloc += 1
   let oneAlloc = ctx.code.allocator.alloc(1)
   ctx.emitInst(vocLoadi, oneAlloc.pos, 0)
   ctx.emitWord(1u32)
   ctx.emitInst(vocAddi, varAlloc.pos, oneAlloc.pos)
   ctx.freeIfTemp(oneAlloc)
 
-  # 8. Jump back to condition
+  # Jump back to condition
   ctx.emitInst(vocJmp, 0, 0)
   ctx.emitWord(uint32(loopStart))
 
-  # 9. Backpatch exit jump
+  # Backpatch exit
   ctx.code.data[exitPatch] = uint32(ctx.code.data.len)
-
-  # 10. Free stopAlloc if it was temporary
   ctx.freeIfTemp(stopAlloc)
 
 proc genRet(ctx: var CodeGenCtx, c: CIRNode) =
-  ## Generate code for `(ret .X)`.
-  ## When a return value is present it is moved into register 0 by convention.
   if c.args[0].kind != cnkEmpty:
     let retAlloc = ctx.genExpr(c.args[0])
     ctx.emitInst(vocMov, 0, retAlloc.pos)
@@ -392,128 +407,81 @@ proc genRet(ctx: var CodeGenCtx, c: CIRNode) =
   ctx.emitInst(vocRet, 0, 0)
 
 proc genDiscard(ctx: var CodeGenCtx, c: CIRNode) =
-  ## Generate code for `(discard .X)`: evaluate the expression for side effects
-  ## and immediately discard the result.
   if c.args[0].kind != cnkEmpty:
     let disAlloc = ctx.genExpr(c.args[0])
-    ctx.emitInst(vocMov, 0, disAlloc.pos)
     ctx.freeIfTemp(disAlloc)
 
 proc genCallStmt(ctx: var CodeGenCtx, c: CIRNode) =
-  ## Generate code for a call used as a statement (result discarded).
   let alloc = ctx.genExpr(c)
-  code.freeIfTemp(alloc)
+  ctx.freeIfTemp(alloc)
 
-proc genStmt(ctx: var CodeGenCtx, code: var CBytecode, scopeId: int, c: NifCursor) =
-  ## Dispatch one block of statements.
-  ## `c` must point to a `stmts` or `block` node (or DotToken for empty body).
-  for n in c.args
-    case n.kind
-    of cnkEmpty: discard   # empty placeholder
-    of StmtsS, BlockS, ScopeS:
-      ## Nested block — consume the next child scope.
-      let childScopeId = ctx.nextChildScope(scopeId)
-      ctx.genStmt(code, childScopeId, n)
-
-    of cnkVarTy:
-      ctx.genVar(n)
-
-    of cnkAsgn:
-      ctx.genAsgn(n)
-
-    of cnkIf:
-      ctx.genIf(n)
-
-    of cnkWhileStmt:
-      ctx.genWhile(n)
-
-    of cnkForStmt:
-      ctx.genFor(n)
-
-    of cnkReturnStmt:
-      ctx.genRet(n)
-
-    of cnkDiscardStmt:
-      ctx.genDiscard(n)
-
-    of cnkCall:
-      ctx.genCallStmt(n)
-
-    of cnkContinueStmt, cnkBreakStmt: discard
-
-    of cnkSection:
-      ## Tuple unpacking: treat each inner var/let individually.
-      var inner = firstChild(n)
-      for arg in c.args:
-        if inner.stmtKind in {VarS, LetS}:
-          ctx.genVar(inner)
-    skip n
-
-proc genFunc(ctx: var CodeGenCtx, code: var CBytecode, c: NifCursor) =
-  ## Generate code for a proc or func declaration.
-  assert c.stmtKind in {ProcS, FuncS},
-    "genFunc: expected proc/func, got `" & renderNode(c) & "`."
-
-  var symNode = firstChild(c)   # SymbolDef
-  if symNode.kind != SymbolDef: return
-
-  let name = symNode.symText
-  let ty   = ctx.cache.getType(name)
-  var offset = 0
-  var ownerScope = addr ctx.scopes[ty.scopeId]
+proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
+  let name = c.args[0].name
+  ctx.currentProcName = name
   
-  # For a function, the fields are it's arguments
-  for field in ty.fields:
-    # We get the scope and the variable for each arguments
-    let fid = ownerScope.variables.fetchNode(field.name)
-    let v  = addr ownerScope.variables.nodes[fid].data
+  var offset = 0
+  if c.args[1].kind == cnkParams:
+    for param in c.args[1].args:
+      let paramName = param.args[0].name
+      let paramTyName = param.args[1].name
+      let paramTy = ctx.cache.getType(paramTyName)
+      
+      let l = ctx.cache.liveness.getOrDefault(paramName)
+      let bp = l.birth
+      var lline = l.dead.line
+      var lcol  = l.dead.col
+      if lline == 0 and lcol == 0:
+        lline = bp.line + 1
+        lcol  = bp.col
+        
+      let fsize = max(1, paramTy.size)
+      let alloc = ctx.code.allocator.alloc(fsize, bp.line, bp.col, lline, lcol)
+      ctx.emitInst(vocSMov, alloc.pos, offset)
+      offset += fsize
 
-    # Getting liveness information for the allocations
-    let bp = v.liveness.birth.info
-    var lline = bp.line + 1
-    var lcol  = bp.col
-    if v.liveness.uses.len > 0:
-      let lp = v.liveness.uses[^1].info
-      lline = lp.line
-      lcol  = lp.col
+  ctx.code.procTable[name] = ctx.code.currentPos
 
-    # Allocate the variable, then emitting a move to get the effective value of the variable from the stack
-    let fsize = ctx.cache.getType(field.ty).size
-    let allc = code.allocator.alloc(fsize, bp.line, bp.col, lline, lcol)
-    code.emitInst(vocSMov, allc.pos, offset)
-
-    # Updating the offset so we can fetch the next argument
-    offset += fsize
-
-  # Record the real starting address (backpatch the placeholder set by
-  # predeclareFunctions).
-  code.procTable[name] = code.currentPos
-  ctx.currentProcName  = name
-
-  if code.callToPatch.hasKey(name):
-    let patchList = code.callToPatch.getOrDefault(name, @[])
+  if ctx.code.callToPatch.hasKey(name):
+    let patchList = ctx.code.callToPatch.getOrDefault(name, @[])
     for patchPos in patchList:
-      code.data[patchPos] = uint32(code.currentPos)
-    code.callToPatch.del(name)
+      ctx.code.data[patchPos] = uint32(ctx.code.currentPos)
+    ctx.code.callToPatch.del(name)
 
-  # Locate the body statement node among proc children dynamically
-  var cur = firstChild(c)
-  while cur.hasMore:
-    if cur.stmtKind in {StmtsS, BlockS, ScopeS}:
-      ctx.genStmt(code, ty.scopeId, cur)
-      break
-    skip cur
+  ctx.genStmt(c.args[3])
+  ctx.emitInst(vocRet, 0, 0)
 
-  # Implicit return at the end of every proc.
-  code.emitInst(vocRet, 0, 0)
+proc genStmt*(ctx: var CodeGenCtx, c: CIRNode) =
+  case c.kind
+  of cnkEmpty: discard
+  of cnkStmtList, cnkSection:
+    for n in c.args:
+      ctx.genStmt(n)
+  of cnkVarTy:
+    ctx.genVar(c)
+  of cnkAsgn:
+    ctx.genAsgn(c)
+  of cnkIfStmt:
+    ctx.genIf(c)
+  of cnkWhileStmt:
+    ctx.genWhile(c)
+  of cnkForStmt:
+    ctx.genFor(c)
+  of cnkReturnStmt:
+    ctx.genRet(c)
+  of cnkDiscardStmt:
+    ctx.genDiscard(c)
+  of cnkCall:
+    ctx.genCallStmt(c)
+  of cnkFuncDef:
+    ctx.genFunc(c)
+  of cnkContinueStmt, cnkBreakStmt:
+    discard
+  else:
+    discard
 
-proc predeclareFunctions(code: var CBytecode, root: NifCursor) =
-  ## Pre-register all top-level procs in `procTable` with a -1 placeholder.
-  ## Forward calls can then emit a reference that is backpatched by `genFunc`.
-  var n = root
-  n.loopInto:
-    if n.stmtKind in {ProcS, FuncS}:
-      var sym = firstChild(n)
-      if sym.kind == SymbolDef:
-        code.procTable[sym.symText] = -1
-    n.skip()
+proc predeclareFunctions(ctx: var CodeGenCtx, root: CIRNode) =
+  let items = if root.kind in {cnkStmtList, cnkSection}: root.args else: @[root]
+  for item in items:
+    if item.kind == cnkFuncDef:
+      let fnName = item.args[0].name
+      ctx.code.procTable[fnName] = -1

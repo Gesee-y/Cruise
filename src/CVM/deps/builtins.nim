@@ -26,8 +26,9 @@ proc registerUnaryOp(c: var TypeCache, op: string, argTy, retTy: string) =
   c.addInstance(inst)
 
 proc registerBuiltins*(c: var TypeCache) =
-  let numericTypes = ["int", "int32", "int64", "float", "float32", "uint", "uint32"]
-  let allTypes = numericTypes & ["bool"]
+  const numericTypes = ["int8", "int16", "int32", "int64", "float", "float32", "uint", "uint32"]
+  const allTypes = ["int8", "int16", "int32", "int64", "float", "float32", "uint", "uint32", "bool"]
+  const bitwiseTypes = ["int8", "int16", "int32", "int64", "uint", "uint32"]
 
   for ty in numericTypes:
     for op in ["+", "-", "*", "/", "%"]:
@@ -39,10 +40,16 @@ proc registerBuiltins*(c: var TypeCache) =
 
   for op in ["and", "or", "xor"]:
     c.registerBinaryOp(op, "bool", "bool", "bool")
-    for ty in ["int", "int32", "int64", "uint", "uint32"]:
+    for ty in bitwiseTypes:
       c.registerBinaryOp(op, ty, ty, ty)
 
   for ty in numericTypes:
     c.registerUnaryOp("-", ty, ty)
+    c.registerUnaryOp("abs", ty, ty)
+    c.registerBinaryOp("min", ty, ty, ty)
+    c.registerBinaryOp("max", ty, ty, ty)
   
   c.registerUnaryOp("not", "bool", "bool")
+  c.registerUnaryOp("sqrt", "float", "float")
+  c.registerUnaryOp("sqrt", "float32", "float32")
+  c.registerUnaryOp("sqrt", "float64", "float64")

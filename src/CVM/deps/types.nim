@@ -64,8 +64,8 @@ type
     nodes: seq[ProcOverloadNode]
 
   CLiveness* = object
-    birth: LineInfo
-    dead: LineInfo
+    birth*: LineInfo
+    dead*: LineInfo
 
   # Type cache, a global structure bookeeping informations about types
   TypeCache* = object
@@ -80,19 +80,17 @@ type
 # ######################################################################################################### #
 
 proc newProcOverloadNode(id: int, tid = -1): ProcOverloadNode =
-  result = ProcOverloadNode(id: id, tid: -1)
+  result = ProcOverloadNode(id: id, tid: tid, children: initTable[string, int]())
 proc newProcOverload(name: string): ProcOverload =
-  result = ProcOverload(name: name, nodes = @[newProcOverloadNode(0, -1)])
+  result = ProcOverload(name: name, nodes: @[newProcOverloadNode(0, -1)])
 proc addOverloadNode(p: var ProcOverload, n: int, t: TypeInst, fid, tid: int) =
   if fid >= t.fields.len:
     p.nodes[n].tid = tid
     return
 
   let ftype = t.fields[fid].ty
-  var cid = 0
-  try:
-    cid = p.nodes[n].children[ftype]
-  except:
+  var cid = p.nodes[n].children.getOrDefault(ftype, -1)
+  if cid < 0:
     cid = p.nodes.len
     p.nodes.add(newProcOverloadNode(cid))
     p.nodes[n].children[ftype] = cid
@@ -100,7 +98,7 @@ proc addOverloadNode(p: var ProcOverload, n: int, t: TypeInst, fid, tid: int) =
   p.addOverloadNode(cid, t, fid + 1, tid)
 
 proc addOverload(p: var ProcOverload, t: TypeInst, tid: int) =
-  addOverloadNode(p.nodes[0], t, 0, tid)
+  addOverloadNode(p, 0, t, 0, tid)
 
 # ######################################################################################################### #
 # ################################################# UTILS ################################################# #
@@ -206,7 +204,6 @@ proc getSubTypeInfo*(n: NifCursor): set[TypeFlag] =
     assert false, "Unable to get sub type information."
     return {}
 
-# Add a type instance to the cache
 proc addInstance(c: var TypeCache, instance: TypeInst) =
   let id = c.instances.len
   c.nameToId[instance.name] = id
@@ -214,10 +211,11 @@ proc addInstance(c: var TypeCache, instance: TypeInst) =
 
   if instance.kind == ProcType:
     try:
-      addOverload(c.functions[instance.name], instances, id)
+      addOverload(c.functions[instance.name], instance, id)
     except:
-      c.functions[instance.name] = newProcOverload(instance.name)
-      addOverload(c.functions.mGetOrDefault(instance.name), instance, id)
+      var ov = newProcOverload(instance.name)
+      addOverload(ov, instance, id)
+      c.functions[instance.name] = ov
 
 # And a field instance to a type
 proc addField(t: var TypeInst, field: TypeField) =
@@ -516,4 +514,4 @@ proc newTypeCache(): TypeCache =
   result.nameToId["string"] = result.instances.len
   result.instances.add TypeInst(kind: PrimitiveType, name: "string", size: 16)
 
-  cache.registerBuiltins()
+  result.registerBuiltins()

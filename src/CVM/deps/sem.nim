@@ -2,13 +2,18 @@
  # ############################################################ SEMANTIC PASS ########################################################### #
 # ###################################################################################################################################### #
 
-proc resolveSymbol(cache: var TypeCache, n: CIRNode) =
-  if cache.variables.getOrDefault(n.name, -1) < 0 and cache.functions.getOrDefault(n.name, -1) < 0:
-    reportSemError n.info, """Unable to resolve symbol `""" & n.name & """`. 
-      May be a symbol unaccessible from the current module or not natively supported by GPU"""
+proc inferType*(cache: var TypeCache, node: var CIRNode): string
+proc resolveNode(cache: var TypeCache, n: var CIRNode)
+proc resolveCall(cache: var TypeCache, n: var CIRNode)
 
-  try: cache.liveness[n.name].dead = n.info
-  except: discard
+proc resolveSymbol(cache: var TypeCache, n: CIRNode) =
+  if cache.variables.getOrDefault(n.name, -1) < 0 and n.name notin cache.functions:
+    reportSemError n.info, """Unable to resolve symbol `""" & n.name & """`. May be a symbol inaccessible from the current module or not natively supported by GPU"""
+
+  try:
+    cache.liveness[n.name].dead = n.info
+  except:
+    discard
 
 proc registerDefinition(cache: var TypeCache, n: CIRNode) =
   let tyName = n.args[1].name
@@ -18,30 +23,50 @@ proc registerDefinition(cache: var TypeCache, n: CIRNode) =
     return
   let typeId = cache.nameToId.getOrDefault(tyName, -1)
 
-  if cache.instances[typeId].kind in {ProcType, RefType}:
+  if typeId >= 0 and cache.instances[typeId].kind in {ProcType, RefType}:
     reportSemError n.info, "Can't declare variable of type `ref` or `proc` because pointers are unsupported."
     return
-  cache.variables[n.args[0].name] = typeId
-  cache.liveness[n.args[0].name] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
+  cache.variables[vname] = typeId
+  cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
+
+proc isWildCardType(ty: string): bool =
+  return ty == "int" or ty == "float" or ty == "uint"
+
+proc findSimilar(p: ProcOverloadNode, ty: string, info: LineInfo, pos: int): string =
+  result = ty
+  var tys: seq[string] = @[]
+  for k in p.children.keys:
+    if k.startsWith(ty):
+      tys.add k
+
+  if tys.len > 0:
+    result = tys[0]
+
+    if tys.len > 1:
+      if pos == 0: 
+        result = tys[^1]
+        return
+      let tyStr = tys.join(" | ")
+      reportSemError info, "Multiple type for call argument at `" & $pos & "`: `" & tyStr  & "`."
 
 proc inferType*(cache: var TypeCache, node: var CIRNode): string =
   result = "auto"
   case node.kind
-  of cnkIntLit: "int"
-  of cnkUintLit: "uint"
-  of cnkFloatLit: "float"
-  of cnkCharLit: "char"
-  of cnkBoolLit: "bool"
+  of cnkIntLit: return "int"
+  of cnkUintLit: return "uint"
+  of cnkFloatLit: return "float"
+  of cnkCharLit: return "char"
+  of cnkBoolLit: return "bool"
   
-  of cnkSym:
+  of cnkSym, cnkRSym:
     let typeId = cache.variables.getOrDefault(node.name, -1)
     if typeId < 0:
       reportSemError node.info, "Failed to get symbol type `" & node.name & "`."
-      return
-    cache.instances[typeId].name
+      return 
+    return cache.instances[typeId].name
       
   of cnkDotExpr:
-    result = cache.inferType(node.args[0])
+    var r = cache.inferType(node.args[0])
     var current = node.args[1]
     var fields: seq[string] = @[]
 
@@ -51,36 +76,56 @@ proc inferType*(cache: var TypeCache, node: var CIRNode): string =
       fields.add(f)
     
     fields.add(current.name)
-    result = cache.getType(result, fields).name
+    return cache.getType(r, fields).name
+
   of cnkPrefix, cnkInfix, cnkCall:
     if node.args[0].kind == cnkSym:
       resolveCall(cache, node)
     
     let tid = node.args[0].tid
-    return cache.instances[tid].returnType  
+    if tid >= 0 and tid < cache.instances.len:
+      return cache.instances[tid].returnType
+
   of cnkConv:
     return node.args[0].name
     
   else:
     reportSemError node.info, "Failed to infer type of expression ```" & renderIR(node) & "```."
+    return
 
 proc resolveProc*(c: TypeCache, n: CIRNode, argTypes: seq[string]): int =
   let name = n.args[0].name
-  result = 0
+
   if name notin c.functions:
-   reportSemError n.info, "Unknown function `" & name & "`. Maybe the function is not native to GPU or not declared in the current module."
-   return
+    reportSemError n.info, "Unknown function `" & name & "`. Maybe the function is not native to GPU or not declared in the current module."
+    return -1
   
   let overload = c.functions.getOrDefault(name)
+  if overload.nodes.len == 0:
+    return -1
+
   var currentNodeId = 0
+  result = overload.nodes[0].tid
+  var pos = 0
   
   for argTy in argTypes:
-    try:
-      currentNodeId = overload.nodes[currentNodeId].children[argTy]
+    var nextId = overload.nodes[currentNodeId].children.getOrDefault(argTy, -1)
+    if nextId < 0 and isWildCardType(argTy):
+      let ty = overload.nodes[currentNodeId].findSimilar(argTy, n.args[pos].info, pos)
+      nextId = overload.nodes[currentNodeId].children.getOrDefault(ty, -1)
+    
+    if nextId >= 0:
+      currentNodeId = nextId
       result = overload.nodes[currentNodeId].tid
     else:
-      reportSemError n.info, "Unknown function `" & name & "`. Maybe the function is not native to GPU or not declared in the current module."
-      return 0
+      if overload.nodes[0].tid >= 0:
+        return overload.nodes[0].tid
+
+      var argStr = argTypes.join(", ")
+      reportSemError n.info, "Unknown overload for function `" & name & "`. Maybe arguments of types " & argStr & " are unsupported."
+      return -1
+
+    inc pos
 
 proc resolveCall(cache: var TypeCache, n: var CIRNode) =
   let funcName = n.args[0].name
@@ -94,18 +139,25 @@ proc resolveCall(cache: var TypeCache, n: var CIRNode) =
   n.args[0] = newCIRRSym(n.args[0].info, funcName, procId)
 
 proc resolveNode(cache: var TypeCache, n: var CIRNode) =
-  case n.kind:
+  case n.kind
   of cnkSym:
     cache.resolveSymbol(n)
-  of cnkIntLit, cnkUintLit, cnkCharLit, cnkFloatLit, cnkDiscardStmt, cnkEmpty, cnkContinueStmt, cnkWritOnly,
-    cnkReadOnly: discard
+  of cnkRSym, cnkIntLit, cnkUintLit, cnkCharLit, cnkFloatLit, cnkBoolLit,
+     cnkDiscardStmt, cnkEmpty, cnkContinueStmt, cnkBreakStmt, cnkWritOnly,
+     cnkReadOnly:
+    discard
   of cnkSymDef:
     cache.registerDefinition(n)
   of cnkCall, cnkInfix, cnkPrefix:
     cache.resolveCall(n)
   of cnkDotExpr:
     cache.resolveNode(n.args[0])
+  of cnkFuncDef:
+    cache.resolveNode(n.args[1])
+    cache.resolveNode(n.args[3])
   else:
     for arg in n.args.mitems:
       cache.resolveNode(arg)
 
+proc semPass*(cache: var TypeCache, root: var CIRNode) =
+  cache.resolveNode(root)
