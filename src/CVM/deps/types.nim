@@ -63,12 +63,17 @@ type
     name: string
     nodes: seq[ProcOverloadNode]
 
+  CLiveness* = object
+    birth: LineInfo
+    dead: LineInfo
+
   # Type cache, a global structure bookeeping informations about types
   TypeCache* = object
     nameToId*: Table[string, int]
     instances*: seq[TypeInst]
     variables*: Table[string, int]
-    functions*: Table[string, ProcOverload] 
+    functions*: Table[string, ProcOverload]
+    liveness*: Table[string, CLiveness] 
 
 # ######################################################################################################### #
 # ############################################# CONSTRUCTORS ############################################## #
