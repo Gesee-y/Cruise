@@ -160,7 +160,7 @@ proc getFieldReg(ctx: var CodeGenCtx, baseReg: CAllocation, c: CIRNode): CAlloca
 # ############################################################# EXPRESSIONS ###################################################### #
 # ################################################################################################################################ #
 
-proc genExpr(ctx: var CodeGenCtx, c: CIRNode): CAllocation =
+proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAllocation)): CAllocation =
   result = default(CAllocation)
   case c.kind
   of cnkInfix:
@@ -171,13 +171,21 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode): CAllocation =
     let opTy = ctx.cache.getType(opTypeName)
     let opSize = max(1, opTy.size)
 
-    result = ctx.code.allocator.alloc(opSize)
-
     let r1 = ctx.genExpr(c.args[1])
     let r2 = ctx.genExpr(c.args[2])
 
-    ctx.emitInst(vocMov, result.pos, r1.pos, opSize)
-    ctx.emitInst(opcodeFor(opName, opIsFloat), result.pos, r2.pos, opSize)
+    if target.size >= opSize:
+      result = target
+    else:
+      result = ctx.code.allocator.alloc(opSize)
+
+    if result.pos == r1.pos:
+      ctx.emitInst(opcodeFor(opName, opIsFloat), result.pos, r2.pos, opSize)
+    elif result.pos == r2.pos and opName in ["+", "*", "and", "or", "xor", "==", "!="]:
+      ctx.emitInst(opcodeFor(opName, opIsFloat), result.pos, r1.pos, opSize)
+    else:
+      ctx.emitInst(vocMov, result.pos, r1.pos, opSize)
+      ctx.emitInst(opcodeFor(opName, opIsFloat), result.pos, r2.pos, opSize)
 
     ctx.freeIfTemp(r1)
     ctx.freeIfTemp(r2)
@@ -192,15 +200,24 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode): CAllocation =
     let opSize = max(1, opTy.size)
     let operand = ctx.genExpr(c.args[1])
     
-    result = ctx.code.allocator.alloc(opSize)
+    if target.size >= opSize:
+      result = target
+    else:
+      result = ctx.code.allocator.alloc(opSize)
+
     ctx.emitInst(prefixOpcodeFor(opName, opIsFloat), result.pos, operand.pos, opSize)
     ctx.freeIfTemp(operand)
     return
 
   of cnkDotExpr:
-    result = ctx.genExpr(c.args[0])
-    result = ctx.getFieldReg(result, c)
-
+    let base = ctx.genExpr(c.args[0])
+    let fieldAlloc = ctx.getFieldReg(base, c)
+    if target.size > 0 and target.pos != fieldAlloc.pos:
+      let wordsToCopy = max(1, min(target.size, fieldAlloc.size))
+      ctx.emitInst(vocMov, target.pos, fieldAlloc.pos, wordsToCopy)
+      result = target
+    else:
+      result = fieldAlloc
     return
 
   of cnkCall:
@@ -210,7 +227,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode): CAllocation =
     if procInst.returnType != "":
       retSize = ctx.cache.getType(procInst.returnType).size
 
-    result = ctx.code.allocator.alloc(max(1, retSize))
+    result = target
     var argsToFree: seq[CAllocation] = @[]
 
     for i in 1 ..< c.args.len:
@@ -238,40 +255,44 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode): CAllocation =
     return
 
   of cnkConv:
-    if c.args.len > 1:
-      return ctx.genExpr(c.args[1])
-    return default(CAllocation)
+    return ctx.genExpr(c.args[1], target = target)
 
   of cnkBoolLit:
-    result = ctx.code.allocator.alloc(CHAR_SIZE)
+    result = target
     ctx.emitInst(vocLoadi, result.pos, 0)
     ctx.emitWord(if c.boolVal: 1u32 else: 0u32)
     return
 
   of cnkSym, cnkRSym:
     let alloc = ctx.resolveSymbol(c)
-    return alloc
+    if target.size > 0 and target.pos != alloc.pos:
+      let wordsToCopy = max(1, min(target.size, alloc.size))
+      ctx.emitInst(vocMov, target.pos, alloc.pos, wordsToCopy)
+      result = target
+    else:
+      result = alloc
+    return
 
   of cnkIntLit:
-    result = ctx.code.allocator.alloc(INT_SIZE)
+    result = if target.size >= INT_SIZE: target else: ctx.code.allocator.alloc(INT_SIZE)
     ctx.emitInst(vocLoadi, result.pos, 0)
     ctx.emitWord(cast[uint32](c.intVal))
     return
 
   of cnkUintLit:
-    result = ctx.code.allocator.alloc(INT_SIZE)
+    result = if target.size >= INT_SIZE: target else: ctx.code.allocator.alloc(INT_SIZE)
     ctx.emitInst(vocLoadi, result.pos, 0)
     ctx.emitWord(cast[uint32](c.uintVal))
     return
 
   of cnkFloatLit:
-    result = ctx.code.allocator.alloc(FLOAT_SIZE)
+    result = if target.size >= FLOAT_SIZE: target else: ctx.code.allocator.alloc(FLOAT_SIZE)
     ctx.emitInst(vocLoadf, result.pos, 0)
     ctx.emitWord(cast[uint32](c.floatVal))
     return
 
   of cnkCharLit:
-    result = ctx.code.allocator.alloc(CHAR_SIZE)
+    result = if target.size >= CHAR_SIZE: target else: ctx.code.allocator.alloc(CHAR_SIZE)
     ctx.emitInst(vocLoadi, result.pos, 0)
     ctx.emitWord(uint32(ord(c.charVal)))
     return
@@ -280,19 +301,26 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode): CAllocation =
     let typeName = c.args[0].name
     let typeInst = ctx.cache.getType(typeName)
     let totalSize = max(1, typeInst.size)
-    result = ctx.code.allocator.alloc(totalSize)
+    if target.size >= totalSize:
+      result = target
+    else:
+      result = ctx.code.allocator.alloc(totalSize)
 
     for i in 1 ..< c.args.len:
       let kv = c.args[i]
-      if kv.kind == cnkKv and kv.args.len >= 2:
-        let fieldName = kv.args[0].name
-        let fid = typeInst.nameToId.getOrDefault(fieldName, -1)
-        let valAlloc = ctx.genExpr(kv.args[1])
-        if fid >= 0:
-          let field = typeInst.fields[fid]
-          let fsize = max(1, ctx.cache.getType(field.ty).size)
+      let fieldName = kv.args[0].name
+      let fid = typeInst.nameToId.getOrDefault(fieldName, -1)
+      if fid >= 0:
+        let field = typeInst.fields[fid]
+        let fsize = max(1, ctx.cache.getType(field.ty).size)
+        let fieldTarget = CAllocation(pos: result.pos + field.offset, size: fsize, isTemp: false)
+        let valAlloc = ctx.genExpr(kv.args[1], target = fieldTarget)
+        if valAlloc.pos != fieldTarget.pos:
           let copyWords = min(fsize, max(1, valAlloc.size))
-          ctx.emitInst(vocMov, result.pos + field.offset, valAlloc.pos, copyWords)
+          ctx.emitInst(vocMov, fieldTarget.pos, valAlloc.pos, copyWords)
+        ctx.freeIfTemp(valAlloc)
+      else:
+        let valAlloc = ctx.genExpr(kv.args[1])
         ctx.freeIfTemp(valAlloc)
     return
 
@@ -320,7 +348,7 @@ proc genVar(ctx: var CodeGenCtx, c: CIRNode) =
   let alloc = ctx.code.allocator.alloc(max(1, ty.size), bp.line, bp.col, lline, lcol)
 
   if c.args.len > 1 and c.args[1].kind != cnkEmpty:
-    let initAlloc = ctx.genExpr(c.args[1])
+    let initAlloc = ctx.genExpr(c.args[1], target = alloc)
     if initAlloc.pos != alloc.pos:
       let wordsToCopy = max(1, min(alloc.size, max(1, initAlloc.size)))
       ctx.emitInst(vocMov, alloc.pos, initAlloc.pos, wordsToCopy)
@@ -328,7 +356,7 @@ proc genVar(ctx: var CodeGenCtx, c: CIRNode) =
 
 proc genAsgn(ctx: var CodeGenCtx, c: CIRNode) =
   let lhsAlloc = ctx.genExpr(c.args[0])
-  let rhs = ctx.genExpr(c.args[1])
+  let rhs = ctx.genExpr(c.args[1], target = lhsAlloc)
   if lhsAlloc.size > 0 and rhs.pos != lhsAlloc.pos:
     let wordsToCopy = max(1, min(lhsAlloc.size, max(1, rhs.size)))
     ctx.emitInst(vocMov, lhsAlloc.pos, rhs.pos, wordsToCopy)
@@ -422,7 +450,7 @@ proc genFor(ctx: var CodeGenCtx, c: CIRNode) =
   let isExclusive = opStr.contains("<")
 
   # Start value
-  let startAlloc = ctx.genExpr(iter.args[1])
+  let startAlloc = ctx.genExpr(iter.args[1], target = varAlloc)
   if startAlloc.pos != varAlloc.pos:
     ctx.emitInst(vocMov, varAlloc.pos, startAlloc.pos)
   ctx.freeIfTemp(startAlloc)
@@ -475,8 +503,10 @@ proc genFor(ctx: var CodeGenCtx, c: CIRNode) =
 
 proc genRet(ctx: var CodeGenCtx, c: CIRNode) =
   if c.args[0].kind != cnkEmpty:
-    let retAlloc = ctx.genExpr(c.args[0])
-    ctx.emitInst(vocMov, 0, retAlloc.pos, max(1, retAlloc.size))
+    let retTarget = CAllocation(pos: 0, size: 1, isTemp: false)
+    let retAlloc = ctx.genExpr(c.args[0], target = retTarget)
+    if retAlloc.pos != 0:
+      ctx.emitInst(vocMov, 0, retAlloc.pos, max(1, retAlloc.size))
     ctx.freeIfTemp(retAlloc)
   ctx.emitInst(vocRet, 0, 0)
 
