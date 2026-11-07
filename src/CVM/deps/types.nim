@@ -15,13 +15,13 @@ import std/tables, std/strutils, std/assertions
 type
   # Describe which kind of type we are dealing with
   TypeKind* = enum
+    UnknownType # Not yet supported
     RefType # Not yet supported
     ObjectType
     PrimitiveType
     EnumType
     ProcType
-    UnknownType # Not yet supported
-
+    
   # Annotation currently seen on the type
   TypeFlag* = enum
     NilF # Not allowed in GPU kernels
@@ -52,7 +52,6 @@ type
     ## Size in virtual-memory words. Primitive shader values occupy one word.
     size*: int
     scopeId: int
-
 
   ProcOverloadNode* = object
     id: int = -1
@@ -172,12 +171,12 @@ proc getTypeName(ty: NifCursor): string =
         result = result & "." & txt[i]
   of NoType:
     if n.kind in {Symbol, SymbolDef}:
-      return n.symText.split(".")[0]
+      return n.symText
     return ""
   else:
     if n.kind == TagLit: inc n
     if n.kind in {Symbol, SymbolDef}:
-      result = n.symText.split(".")[0]
+      result = n.symText
     else:
       result = ""
 
@@ -234,7 +233,7 @@ proc declaredTypeBody(n: NifCursor): NifCursor =
 # Create a new type instance from a type definition
 proc addTypeInstance*(tyDef: NifCursor): TypeInst =
   result = TypeInst()
-  result.raw = tyDef
+  echo renderNode(tyDef)
 
   let symNode = firstChild(tyDef) # Definition of the type
   if symNode.kind == SymbolDef:
@@ -242,6 +241,8 @@ proc addTypeInstance*(tyDef: NifCursor): TypeInst =
     var node = symNode
     skip node
     skip node
+    if node.otherKind == TypevarsU: return
+    result.raw = tyDef
     skip node
     skip node
 
@@ -280,8 +281,6 @@ proc addTypeInstance*(tyDef: NifCursor): TypeInst =
 # Directly get informations about procs
 proc addProcTypeInstance*(pDef: NifCursor): TypeInst =
   result = TypeInst()
-  result.raw = pDef
-  result.kind = ProcType
 
   var symNode = firstChild(pDef) # Definition of the proc
   if symNode.kind == SymbolDef:
@@ -292,6 +291,10 @@ proc addProcTypeInstance*(pDef: NifCursor): TypeInst =
     skip symNode
     skip symNode
     skip symNode
+    if symNode.otherKind == TypevarsU: return
+    result.raw = pDef
+    result.kind = ProcType
+
     skip symNode
 
     let body = symNode
@@ -327,18 +330,17 @@ proc collectTypeDecls*(c: var TypeCache, root: NifCursor) =
   var n = root
   if n.kind != TagLit:
     return
+
   n.loopInto:
     case n.stmtKind
     of TypeS:
       let tyDef = n
       let instance = addTypeInstance(tyDef)
-      c.addInstance(instance)
+      if instance.kind != UnknownType: c.addInstance(instance)
     of ProcS, FuncS:
       let pDef = n
       let instance = addProcTypeInstance(pDef)
-      c.addInstance(instance)
-    of CommentS:
-      return
+      if instance.kind != UnknownType: c.addInstance(instance)
     else:
       discard
     collectTypeDecls(c, n)
@@ -383,21 +385,25 @@ proc propagateRefs(t: var TypeCache) =
     if inst notin visited:
       discard updateRef(t, inst, visited)
 
+proc computeInstanceLayout*(t: var TypeCache, index: int) =
+  if t.instances[index].kind != ObjectType:
+    return
+  
+  var offset = 0
+  for fieldIndex in 0..<t.instances[index].fields.len:
+    t.instances[index].fields[fieldIndex].offset = offset
+    let fieldType = t.nameToId.getOrDefault(t.instances[index].fields[fieldIndex].ty, -1)
+    if fieldType >= 0:
+      offset += max(1, t.instances[fieldType].size)
+    else:
+      inc offset
+  t.instances[index].size = max(1, offset)
+
 proc computeLayouts*(t: var TypeCache) =
   ## Assign field offsets after every declaration is known. Unknown fields keep
   ## one word so a backend can still report them without corrupting neighbours.
-  for index in 0 ..< t.instances.len:
-    if t.instances[index].kind != ObjectType:
-      continue
-    var offset = 0
-    for fieldIndex in 0 ..< t.instances[index].fields.len:
-      t.instances[index].fields[fieldIndex].offset = offset
-      let fieldType = t.nameToId.getOrDefault(t.instances[index].fields[fieldIndex].ty, -1)
-      if fieldType >= 0:
-        offset += max(1, t.instances[fieldType].size)
-      else:
-        inc offset
-    t.instances[index].size = max(1, offset)
+  for index in 0..<t.instances.len:
+    t.computeInstanceLayout(index)
 
 # ########################################################################################################################################## #
 # ################################################################### Query API ############################################################ #

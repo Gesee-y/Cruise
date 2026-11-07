@@ -18,15 +18,13 @@ include "generator.nim"
 proc generateBytecode(n: var NifCursor): NifBuilder =
   var cache = newTypeCache()
   var source = n
-  echo renderNode(n)
+  
   cache.collectTypeDecls(source)
   cache.propagateRefs()
   cache.computeLayouts()
 
   var irCode = toIR(source)
-  echo renderIR(irCode)
   cache.semPass(irCode)
-  echo "Sem Done"
 
   var ctx = CodeGenCtx(
     cache: cache,
@@ -43,15 +41,11 @@ proc generateBytecode(n: var NifCursor): NifBuilder =
   
   # The plugin API currently returns a NIF tree. Keep the source unchanged
   # while the generated program is consumed by the forthcoming backend API.
-  var success = irGenErrors.len > 0 or semErrors.len > 0
+  var success = irGenErrors.len == 0 and semErrors.len == 0
   result = createTree()
   
   if not success:
     result.withTree StmtsS, n.info:
-      n.loopInto:
-        result.takeTree n
-        skip n
-
       if irGenErrors.len > 0:
         flushIRErrors(result)
       elif semErrors.len > 0:
@@ -59,15 +53,17 @@ proc generateBytecode(n: var NifCursor): NifBuilder =
   else:
     result.takeTree n
   
-  echo success
   if success:
     var f = open("generated.cbc", fmWrite)
     if ctx.code.data.len > 0:
       discard writeBuffer(f, addr ctx.code.data[0], ctx.code.data.len * sizeof(uint32))
     close(f)
 
+proc noTransform(n: var NifCursor): NifBuilder =
+  result = createTree()
+  result.takeTree(n)
   echo renderTree(result)
-  
+
 var inp = loadPluginInput()
 var c = inp
 saveTree generateBytecode(c)

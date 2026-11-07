@@ -11,7 +11,7 @@ type
     cnkSection
     cnkDecl, cnkFuncSig, cnkFuncDef
     cnkCall
-    cnkObjConstr
+    cnkObjConstr, cnkKv
     cnkBracketExpr
     cnkDotExpr
     cnkIfStmt, cnkElifBranch
@@ -312,7 +312,7 @@ proc makeBranchIR(c: NifCursor): CIRNode =
 proc toIR(n: NifCursor): CIRNode =
   var c = n
   result = newCIRNode(n.info, cnkEmpty)
-
+  
   case c.kind:
   of Symbol, SymbolDef:
     result = newCIRSym(c.info, c.symText)
@@ -383,6 +383,18 @@ proc toIR(n: NifCursor): CIRNode =
       result.add(newCIRSym(it.info, it.symText))
       skip it # skip op
       result.add(toIR(it))
+    of OconstrX:
+      var it = c
+      result = newCIRNode(it.info, cnkObjConstr)
+      it.loopInto:
+        result.add(toIR(it))
+        skip it
+    of KvX:
+      var it = firstChild(c)
+      result = newCIRNode(c.info, cnkKv)
+      result.add(newCIRSym(it.info, it.symText))
+      skip it
+      result.add(toIR(it))
     of NoExpr:
       case c.stmtKind:
       of VarS, LetS:
@@ -411,8 +423,8 @@ proc toIR(n: NifCursor): CIRNode =
         result.add(toIR(it))
       of StmtsS, BlockS, ScopeS:
         result = newCIRNode(c.info, cnkStmtList)
-        var it = firstChild(c)
-        while it.hasMore:
+        var it = c
+        it.loopInto:
           result.add(toIR(it))
           skip it
       of ForS:
@@ -479,6 +491,7 @@ proc toIR(n: NifCursor): CIRNode =
         skip symNode
         skip symNode
         skip symNode
+        if symNode.otherKind == TypevarsU: return newCIRNode(c.info, cnkEmpty)
         skip symNode
 
         let body = symNode

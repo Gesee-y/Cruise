@@ -2,14 +2,16 @@
  # ############################################################ SEMANTIC PASS ########################################################### #
 # ###################################################################################################################################### #
 
-proc inferType*(cache: var TypeCache, node: var CIRNode): string
-proc resolveNode(cache: var TypeCache, n: var CIRNode)
-proc resolveCall(cache: var TypeCache, n: var CIRNode)
-
 proc resolveSymbol(cache: var TypeCache, n: CIRNode) =
-  if cache.variables.getOrDefault(n.name, -1) < 0 and n.name notin cache.functions:
+  let isType = n.name in cache.functions or n.name in cache.nameToId
+  if cache.variables.getOrDefault(n.name, -1) < 0 and not isType:
     reportSemError n.info, """Unable to resolve symbol `""" & n.name & """`. May be a symbol inaccessible from the current module or not natively supported by GPU"""
 
+  if isType:
+    if cache.getType(n.name).kind == RefType:
+      reportSemError n.info, "Ref types are not allowed on GPU: `" & n.name & "`."
+
+    return
   try:
     cache.liveness[n.name].dead = n.info
   except:
@@ -78,6 +80,9 @@ proc inferType*(cache: var TypeCache, node: var CIRNode): string =
     fields.add(current.name)
     return cache.getType(r, fields).name
 
+  of cnkObjConstr:
+    return node.args[0].name
+
   of cnkPrefix, cnkInfix, cnkCall:
     if node.args[0].kind == cnkSym:
       resolveCall(cache, node)
@@ -132,13 +137,13 @@ proc resolveCall(cache: var TypeCache, n: var CIRNode) =
   var argTypes: seq[string] = @[]
 
   for i in 1 ..< n.args.len:
-    cache.resolveNode(n.args[i])
+    cache.resolveNode(n.args[i], inFunc=true)
     argTypes.add(cache.inferType(n.args[i]))
 
   let procId = cache.resolveProc(n, argTypes)
   n.args[0] = newCIRRSym(n.args[0].info, funcName, procId)
 
-proc resolveNode(cache: var TypeCache, n: var CIRNode) =
+proc resolveNode(cache: var TypeCache, n: var CIRNode, inFunc = false) =
   case n.kind
   of cnkSym:
     cache.resolveSymbol(n)
@@ -149,15 +154,24 @@ proc resolveNode(cache: var TypeCache, n: var CIRNode) =
   of cnkSymDef:
     cache.registerDefinition(n)
   of cnkCall, cnkInfix, cnkPrefix:
+    if not inFunc:
+      reportSemError n.info, "Top level statements are unsupported on GPU."
     cache.resolveCall(n)
   of cnkDotExpr:
-    cache.resolveNode(n.args[0])
+    cache.resolveNode(n.args[0], inFunc = inFunc)
   of cnkFuncDef:
-    cache.resolveNode(n.args[1])
-    cache.resolveNode(n.args[3])
+    cache.resolveNode(n.args[1], inFunc = true)
+    cache.resolveNode(n.args[3], inFunc = true)
+  of cnkObjConstr:
+    if not inFunc:
+      reportSemError n.info, "Top level statements are unsupported on GPU."
+    for i in 1..<n.args.len:
+      cache.resolveNode(n.args[i].args[1], inFunc = inFunc)
   else:
+    if not inFunc and n.kind notin {cnkStmtList, cnkSection}:
+      reportSemError n.info, "Top level statements are unsupported on GPU."
     for arg in n.args.mitems:
-      cache.resolveNode(arg)
+      cache.resolveNode(arg, inFunc = inFunc)
 
 proc semPass*(cache: var TypeCache, root: var CIRNode) =
-  cache.resolveNode(root)
+  cache.resolveNode(root, inFunc=false)
