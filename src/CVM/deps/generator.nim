@@ -18,10 +18,16 @@ type
     callToPatch: Table[string, seq[int]]
     currentPos:  int
 
+  LoopContext = object
+    continueTarget:  int        ## Target word index for continue (if >= 0)
+    continuePatches: seq[int]   ## Positions to backpatch for continue jumps
+    breakPatches:    seq[int]   ## Positions to backpatch for break jumps
+
   CodeGenCtx = object
     cache:           TypeCache
     code:            CBytecode
     currentProcName: string
+    loops:           seq[LoopContext]
 
 # ################################################################################################################################ #
 # ############################################################ CONSTANTS ######################################################### #
@@ -36,6 +42,7 @@ const
   REGB_BITS   = 8
   REGA_POS    = REGB_BITS            ##  8: shift for the destination field
   OPCODE_POS  = REGA_POS + REGA_BITS ## 16: shift for the opcode field
+  SIZE_POS    = 24                   ## 24: shift for the size field (unused 8 bits)
 
 # ################################################################################################################################ #
 # ########################################################## HELPER PROCS ######################################################## #
@@ -95,11 +102,11 @@ proc prefixOpcodeFor(op: string, isFloat: bool): VMOpCode =
 proc isFloatType(ty: TypeInst): bool {.inline.} =
   ty.name.startsWith("float")
 
-proc genInstruction(op: VMOpCode, dst, src: CMemLoc): uint32 {.inline.} =
-  (uint32(op) shl OPCODE_POS) or (uint32(dst) shl REGA_POS) or uint32(src)
+proc genInstruction(op: VMOpCode, dst, src: CMemLoc, size: int = 1): uint32 {.inline.} =
+  (uint32(size and 0xFF) shl SIZE_POS) or (uint32(op) shl OPCODE_POS) or (uint32(dst and 0xFF) shl REGA_POS) or uint32(src and 0xFF)
 
-proc emitInst(ctx: var CodeGenCtx, op: VMOpCode, dst, src: CMemLoc) {.inline.} =
-  ctx.code.data.add(genInstruction(op, dst, src))
+proc emitInst(ctx: var CodeGenCtx, op: VMOpCode, dst, src: CMemLoc, size: int = 1) {.inline.} =
+  ctx.code.data.add(genInstruction(op, dst, src, size))
   inc ctx.code.currentPos
 
 proc emitWord(ctx: var CodeGenCtx, word: uint32) {.inline.} =
@@ -121,7 +128,7 @@ proc resolveSymbol(ctx: var CodeGenCtx, c: CIRNode): CAllocation =
   else:
     return CAllocation()
 
-proc getFieldReg(ctx: CodeGenCtx, baseReg: CAllocation, c: CIRNode): CAllocation =
+proc getFieldReg(ctx: var CodeGenCtx, baseReg: CAllocation, c: CIRNode): CAllocation =
   result = baseReg
   var offset = 0
   var dummyArg0 = c.args[0]
@@ -162,14 +169,15 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode): CAllocation =
     let opTypeName = ctx.cache.inferType(dummyNode)
     let opIsFloat  = opTypeName.startsWith("float")
     let opTy = ctx.cache.getType(opTypeName)
+    let opSize = max(1, opTy.size)
 
-    result = ctx.code.allocator.alloc(max(1, opTy.size))
+    result = ctx.code.allocator.alloc(opSize)
 
     let r1 = ctx.genExpr(c.args[1])
     let r2 = ctx.genExpr(c.args[2])
 
-    ctx.emitInst(vocMov, result.pos, r1.pos)
-    ctx.emitInst(opcodeFor(opName, opIsFloat), result.pos, r2.pos)
+    ctx.emitInst(vocMov, result.pos, r1.pos, opSize)
+    ctx.emitInst(opcodeFor(opName, opIsFloat), result.pos, r2.pos, opSize)
 
     ctx.freeIfTemp(r1)
     ctx.freeIfTemp(r2)
@@ -181,10 +189,11 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode): CAllocation =
     let opTypeName = ctx.cache.inferType(dummyNode)
     let opIsFloat  = opTypeName.startsWith("float")
     let opTy = ctx.cache.getType(opTypeName)
+    let opSize = max(1, opTy.size)
     let operand = ctx.genExpr(c.args[1])
     
-    result = ctx.code.allocator.alloc(max(1, opTy.size))
-    ctx.emitInst(prefixOpcodeFor(opName, opIsFloat), result.pos, operand.pos)
+    result = ctx.code.allocator.alloc(opSize)
+    ctx.emitInst(prefixOpcodeFor(opName, opIsFloat), result.pos, operand.pos, opSize)
     ctx.freeIfTemp(operand)
     return
 
@@ -267,6 +276,26 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode): CAllocation =
     ctx.emitWord(uint32(ord(c.charVal)))
     return
 
+  of cnkObjConstr:
+    let typeName = c.args[0].name
+    let typeInst = ctx.cache.getType(typeName)
+    let totalSize = max(1, typeInst.size)
+    result = ctx.code.allocator.alloc(totalSize)
+
+    for i in 1 ..< c.args.len:
+      let kv = c.args[i]
+      if kv.kind == cnkKv and kv.args.len >= 2:
+        let fieldName = kv.args[0].name
+        let fid = typeInst.nameToId.getOrDefault(fieldName, -1)
+        let valAlloc = ctx.genExpr(kv.args[1])
+        if fid >= 0:
+          let field = typeInst.fields[fid]
+          let fsize = max(1, ctx.cache.getType(field.ty).size)
+          let copyWords = min(fsize, max(1, valAlloc.size))
+          ctx.emitInst(vocMov, result.pos + field.offset, valAlloc.pos, copyWords)
+        ctx.freeIfTemp(valAlloc)
+    return
+
   else:
     discard
 
@@ -293,14 +322,16 @@ proc genVar(ctx: var CodeGenCtx, c: CIRNode) =
   if c.args.len > 1 and c.args[1].kind != cnkEmpty:
     let initAlloc = ctx.genExpr(c.args[1])
     if initAlloc.pos != alloc.pos:
-      ctx.emitInst(vocMov, alloc.pos, initAlloc.pos)
+      let wordsToCopy = max(1, min(alloc.size, max(1, initAlloc.size)))
+      ctx.emitInst(vocMov, alloc.pos, initAlloc.pos, wordsToCopy)
     ctx.freeIfTemp(initAlloc)
 
 proc genAsgn(ctx: var CodeGenCtx, c: CIRNode) =
   let lhsAlloc = ctx.genExpr(c.args[0])
   let rhs = ctx.genExpr(c.args[1])
   if lhsAlloc.size > 0 and rhs.pos != lhsAlloc.pos:
-    ctx.emitInst(vocMov, lhsAlloc.pos, rhs.pos)
+    let wordsToCopy = max(1, min(lhsAlloc.size, max(1, rhs.size)))
+    ctx.emitInst(vocMov, lhsAlloc.pos, rhs.pos, wordsToCopy)
   ctx.freeIfTemp(rhs)
 
 proc genIf(ctx: var CodeGenCtx, c: CIRNode) =
@@ -333,6 +364,25 @@ proc genIf(ctx: var CodeGenCtx, c: CIRNode) =
   for pos in endPatches:
     ctx.code.data[pos] = endTarget
 
+proc genBreak(ctx: var CodeGenCtx, c: CIRNode) =
+  if ctx.loops.len == 0:
+    return
+  ctx.emitInst(vocJmp, 0, 0)
+  let patch = ctx.code.data.len
+  ctx.emitWord(0u32)
+  ctx.loops[^1].breakPatches.add(patch)
+
+proc genContinue(ctx: var CodeGenCtx, c: CIRNode) =
+  if ctx.loops.len == 0:
+    return
+  ctx.emitInst(vocJmp, 0, 0)
+  if ctx.loops[^1].continueTarget >= 0:
+    ctx.emitWord(uint32(ctx.loops[^1].continueTarget))
+  else:
+    let patch = ctx.code.data.len
+    ctx.emitWord(0u32)
+    ctx.loops[^1].continuePatches.add(patch)
+
 proc genWhile(ctx: var CodeGenCtx, c: CIRNode) =
   let loopStart = ctx.code.data.len
   let condAlloc = ctx.genExpr(c.args[0])
@@ -342,12 +392,19 @@ proc genWhile(ctx: var CodeGenCtx, c: CIRNode) =
   ctx.emitWord(0u32)
   ctx.freeIfTemp(condAlloc)
 
+  ctx.loops.add(LoopContext(continueTarget: loopStart, continuePatches: @[], breakPatches: @[]))
+
   ctx.genStmt(c.args[1])
+
+  let loopCtx = ctx.loops.pop()
 
   ctx.emitInst(vocJmp, 0, 0)
   ctx.emitWord(uint32(loopStart))
 
-  ctx.code.data[exitPatch] = uint32(ctx.code.data.len)
+  let exitTarget = uint32(ctx.code.data.len)
+  ctx.code.data[exitPatch] = exitTarget
+  for patch in loopCtx.breakPatches:
+    ctx.code.data[patch] = exitTarget
 
 proc genFor(ctx: var CodeGenCtx, c: CIRNode) =
   # c.args[0] = cnkSection containing cnkVarTy for the loop variable
@@ -385,8 +442,17 @@ proc genFor(ctx: var CodeGenCtx, c: CIRNode) =
   ctx.emitWord(0u32)
   ctx.freeIfTemp(condAlloc)
 
+  ctx.loops.add(LoopContext(continueTarget: -1, continuePatches: @[], breakPatches: @[]))
+
   # Body
   ctx.genStmt(c.args[2])
+
+  let loopCtx = ctx.loops.pop()
+
+  # Step target: where continue jumps
+  let stepTarget = uint32(ctx.code.data.len)
+  for patch in loopCtx.continuePatches:
+    ctx.code.data[patch] = stepTarget
 
   # Increment: varAlloc += 1
   let oneAlloc = ctx.code.allocator.alloc(1)
@@ -400,13 +466,17 @@ proc genFor(ctx: var CodeGenCtx, c: CIRNode) =
   ctx.emitWord(uint32(loopStart))
 
   # Backpatch exit
-  ctx.code.data[exitPatch] = uint32(ctx.code.data.len)
+  let exitTarget = uint32(ctx.code.data.len)
+  ctx.code.data[exitPatch] = exitTarget
+  for patch in loopCtx.breakPatches:
+    ctx.code.data[patch] = exitTarget
+
   ctx.freeIfTemp(stopAlloc)
 
 proc genRet(ctx: var CodeGenCtx, c: CIRNode) =
   if c.args[0].kind != cnkEmpty:
     let retAlloc = ctx.genExpr(c.args[0])
-    ctx.emitInst(vocMov, 0, retAlloc.pos)
+    ctx.emitInst(vocMov, 0, retAlloc.pos, max(1, retAlloc.size))
     ctx.freeIfTemp(retAlloc)
   ctx.emitInst(vocRet, 0, 0)
 
@@ -422,6 +492,7 @@ proc genCallStmt(ctx: var CodeGenCtx, c: CIRNode) =
 proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
   let name = c.args[0].name
   ctx.currentProcName = name
+  ctx.loops = @[]
   
   var offset = 0
   if c.args[1].kind == cnkParams:
@@ -440,7 +511,7 @@ proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
         
       let fsize = max(1, paramTy.size)
       let alloc = ctx.code.allocator.alloc(fsize, bp.line, bp.col, lline, lcol)
-      ctx.emitInst(vocSMov, alloc.pos, offset)
+      ctx.emitInst(vocSMov, alloc.pos, offset, fsize)
       offset += fsize
 
   ctx.code.procTable[name] = ctx.code.currentPos
@@ -478,8 +549,13 @@ proc genStmt*(ctx: var CodeGenCtx, c: CIRNode) =
     ctx.genCallStmt(c)
   of cnkFuncDef:
     ctx.genFunc(c)
-  of cnkContinueStmt, cnkBreakStmt:
-    discard
+  of cnkBreakStmt:
+    ctx.genBreak(c)
+  of cnkContinueStmt:
+    ctx.genContinue(c)
+  of cnkObjConstr:
+    let alloc = ctx.genExpr(c)
+    ctx.freeIfTemp(alloc)
   else:
     discard
 

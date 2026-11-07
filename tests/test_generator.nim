@@ -25,5 +25,3 @@ proc testSimpleArg(x: int) =
   var b = x + 20
   var c = a + b
   var d = c * 2
-
-testSimple()

@@ -162,6 +162,12 @@ proc resolveNode(cache: var TypeCache, n: var CIRNode, inFunc = false) =
   of cnkFuncDef:
     cache.resolveNode(n.args[1], inFunc = true)
     cache.resolveNode(n.args[3], inFunc = true)
+  of cnkForStmt:
+    cache.resolveNode(n.args[0], inFunc = inFunc)
+    if n.args[1].args.len >= 3:
+      cache.resolveNode(n.args[1].args[1], inFunc = inFunc)
+      cache.resolveNode(n.args[1].args[2], inFunc = inFunc)
+    cache.resolveNode(n.args[2], inFunc = inFunc)
   of cnkObjConstr:
     if not inFunc:
       reportSemError n.info, "Top level statements are unsupported on GPU."
