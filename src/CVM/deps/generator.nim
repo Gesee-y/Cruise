@@ -310,18 +310,15 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
       let kv = c.args[i]
       let fieldName = kv.args[0].name
       let fid = typeInst.nameToId.getOrDefault(fieldName, -1)
-      if fid >= 0:
-        let field = typeInst.fields[fid]
-        let fsize = max(1, ctx.cache.getType(field.ty).size)
-        let fieldTarget = CAllocation(pos: result.pos + field.offset, size: fsize, isTemp: false)
-        let valAlloc = ctx.genExpr(kv.args[1], target = fieldTarget)
-        if valAlloc.pos != fieldTarget.pos:
-          let copyWords = min(fsize, max(1, valAlloc.size))
-          ctx.emitInst(vocMov, fieldTarget.pos, valAlloc.pos, copyWords)
-        ctx.freeIfTemp(valAlloc)
-      else:
-        let valAlloc = ctx.genExpr(kv.args[1])
-        ctx.freeIfTemp(valAlloc)
+      let field = typeInst.fields[fid]
+      let fsize = max(1, ctx.cache.getType(field.ty).size)
+      let fieldTarget = CAllocation(pos: result.pos + field.offset, size: fsize, isTemp: false)
+      let valAlloc = ctx.genExpr(kv.args[1], target = fieldTarget)
+      if valAlloc.pos != fieldTarget.pos:
+        let copyWords = min(fsize, max(1, valAlloc.size))
+        ctx.emitInst(vocMov, fieldTarget.pos, valAlloc.pos, copyWords)
+      ctx.freeIfTemp(valAlloc)
+  
     return
 
   else:
@@ -346,13 +343,11 @@ proc genVar(ctx: var CodeGenCtx, c: CIRNode) =
     lcol  = bp.col
 
   let alloc = ctx.code.allocator.alloc(max(1, ty.size), bp.line, bp.col, lline, lcol)
-
-  if c.args.len > 1 and c.args[1].kind != cnkEmpty:
-    let initAlloc = ctx.genExpr(c.args[1], target = alloc)
-    if initAlloc.pos != alloc.pos:
-      let wordsToCopy = max(1, min(alloc.size, max(1, initAlloc.size)))
-      ctx.emitInst(vocMov, alloc.pos, initAlloc.pos, wordsToCopy)
-    ctx.freeIfTemp(initAlloc)
+  let initAlloc = ctx.genExpr(c.args[1], target = alloc)
+  if initAlloc.pos != alloc.pos:
+    let wordsToCopy = max(1, min(alloc.size, max(1, initAlloc.size)))
+    ctx.emitInst(vocMov, alloc.pos, initAlloc.pos, wordsToCopy)
+  ctx.freeIfTemp(initAlloc)
 
 proc genAsgn(ctx: var CodeGenCtx, c: CIRNode) =
   let lhsAlloc = ctx.genExpr(c.args[0])
