@@ -121,6 +121,34 @@ proc resolveSymbol(ctx: var CodeGenCtx, c: CIRNode): CAllocation =
   else:
     return CAllocation()
 
+proc getFieldReg(ctx: CodeGenCtx, baseReg: CAllocation, c: CIRNode): CAllocation =
+  result = baseReg
+  var offset = 0
+  var dummyArg0 = c.args[0]
+  var basetype = ctx.cache.inferType(dummyArg0)
+  var currentType = basetype
+  var current = c.args[1]
+  var fields: seq[string] = @[]
+
+  while current.kind == cnkDotExpr:
+    let f = current.args[0].name
+    let fid = ctx.cache.getType(currentType).nameToId.getOrDefault(f, -1)
+    current = current.args[1]
+
+    if fid >= 0:
+      offset += ctx.cache.getType(currentType).fields[fid].offset
+      currentType = ctx.cache.getType(currentType).fields[fid].ty
+    fields.add(f)
+  
+  let f = current.name
+  let fid = ctx.cache.getType(currentType).nameToId.getOrDefault(f, -1)
+  if fid >= 0:
+    offset += ctx.cache.getType(currentType).fields[fid].offset
+  fields.add(f)
+  result.pos += offset
+  result.size = ctx.cache.getType(basetype, fields).size
+  result.isTemp = false
+
 # ################################################################################################################################ #
 # ############################################################# EXPRESSIONS ###################################################### #
 # ################################################################################################################################ #
@@ -162,32 +190,8 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode): CAllocation =
 
   of cnkDotExpr:
     result = ctx.genExpr(c.args[0])
+    result = ctx.getFieldReg(result, c)
 
-    var offset = 0
-    var dummyArg0 = c.args[0]
-    var basetype = ctx.cache.inferType(dummyArg0)
-    var currentType = basetype
-    var current = c.args[1]
-    var fields: seq[string] = @[]
-
-    while current.kind == cnkDotExpr:
-      let f = current.args[0].name
-      let fid = ctx.cache.getType(currentType).nameToId.getOrDefault(f, -1)
-      current = current.args[1]
-
-      if fid >= 0:
-        offset += ctx.cache.getType(currentType).fields[fid].offset
-        currentType = ctx.cache.getType(currentType).fields[fid].ty
-      fields.add(f)
-    
-    let f = current.name
-    let fid = ctx.cache.getType(currentType).nameToId.getOrDefault(f, -1)
-    if fid >= 0:
-      offset += ctx.cache.getType(currentType).fields[fid].offset
-    fields.add(f)
-    result.pos += offset
-    result.size = ctx.cache.getType(basetype, fields).size
-    result.isTemp = false
     return
 
   of cnkCall:
