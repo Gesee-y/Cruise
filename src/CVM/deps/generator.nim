@@ -264,13 +264,60 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
     return
 
   of cnkSym, cnkRSym:
-    let alloc = ctx.resolveSymbol(c)
-    if target.size > 0 and target.pos != alloc.pos:
-      let wordsToCopy = max(1, min(target.size, alloc.size))
-      ctx.emitInst(vocMov, target.pos, alloc.pos, wordsToCopy)
-      result = target
+    let localAlloc = ctx.resolveSymbol(c)
+    if localAlloc.size > 0:
+      if target.size > 0 and target.pos != localAlloc.pos:
+        let wordsToCopy = max(1, min(target.size, localAlloc.size))
+        ctx.emitInst(vocMov, target.pos, localAlloc.pos, wordsToCopy)
+        result = target
+      else:
+        result = localAlloc
+      return
+
+    # Uniforms: load via vocLoadUni
+    if c.name in ctx.cache.shaderParams.uniformToId:
+      let uOffset = ctx.cache.shaderParams.uniformToId.getOrDefault(c.name, 0)
+      let tyId = ctx.cache.variables.getOrDefault(c.name, -1)
+      let uSize = if tyId >= 0: max(1, ctx.cache.instances[tyId].size) else: 1
+      result = if target.size >= uSize: target else: ctx.code.allocator.alloc(uSize)
+      ctx.emitInst(vocLoadUni, result.pos, uOffset, uSize)
+      return
+
+    # Global index fallback if not bound to a local register
+    if c.name == ctx.cache.shaderParams.globalIndex.name:
+      let gSize = ctx.cache.instances[ctx.cache.shaderParams.globalIndex.tid].size
+      result = if target.size >= gSize: target else: ctx.code.allocator.alloc(gSize)
+      ctx.emitInst(vocLoadGI, result.pos, 0, gSize)
+      return
+
+    result = localAlloc
+    return
+
+  of cnkArrAt:
+    var dummyNode = c.args[0]
+    let containerTypeName = ctx.cache.inferType(dummyNode)
+    let containerTy = ctx.cache.getType(containerTypeName)
+    let elemTypeName = containerTy.returnType
+    let elemSize = max(1, ctx.cache.getType(elemTypeName).size)
+
+    let indexAlloc = ctx.genExpr(c.args[1])
+    let dest = if target.size >= elemSize: target else: ctx.code.allocator.alloc(elemSize)
+
+    if c.args[0].name in ctx.cache.shaderParams.ssboToId:
+      let bufId = ctx.cache.shaderParams.ssboToId.getOrDefault(c.args[0].name, 0)
+      ctx.emitInst(vocLoadBuf, dest.pos, bufId, elemSize)
+      ctx.emitInst(vocNoOp, indexAlloc.pos, 0)
     else:
-      result = alloc
+      let arrAlloc = ctx.genExpr(c.args[0])
+      ctx.emitInst(vocLoadAt, dest.pos, arrAlloc.pos, elemSize)
+      ctx.emitInst(vocNoOp, indexAlloc.pos, 0)
+      ctx.freeIfTemp(arrAlloc)
+
+    ctx.freeIfTemp(indexAlloc)
+    return dest
+
+  of cnkArrAsgnAt:
+    ctx.genArrAsgn(c)
     return
 
   of cnkIntLit:
@@ -514,6 +561,29 @@ proc genCallStmt(ctx: var CodeGenCtx, c: CIRNode) =
   let alloc = ctx.genExpr(c)
   ctx.freeIfTemp(alloc)
 
+proc genArrAsgn(ctx: var CodeGenCtx, c: CIRNode) =
+  var dummyNode = c.args[0]
+  let containerTypeName = ctx.cache.inferType(dummyNode)
+  let containerTy = ctx.cache.getType(containerTypeName)
+  let elemTypeName = containerTy.returnType
+  let elemSize = if elemTypeName != "": max(1, ctx.cache.getType(elemTypeName).size) else: 1
+
+  let indexAlloc = ctx.genExpr(c.args[1])
+  let valAlloc = ctx.genExpr(c.args[2])
+
+  if c.args[0].kind in {cnkSym, cnkRSym} and c.args[0].name in ctx.cache.shaderParams.ssboToId:
+    let bufId = ctx.cache.shaderParams.ssboToId.getOrDefault(c.args[0].name, 0)
+    ctx.emitInst(vocStoreBuf, valAlloc.pos, bufId, elemSize)
+    ctx.emitInst(vocNoOp, indexAlloc.pos, 0)
+  else:
+    let arrAlloc = ctx.genExpr(c.args[0])
+    ctx.emitInst(vocStoreAt, valAlloc.pos, arrAlloc.pos, elemSize)
+    ctx.emitInst(vocNoOp, indexAlloc.pos, 0)
+    ctx.freeIfTemp(arrAlloc)
+
+  ctx.freeIfTemp(valAlloc)
+  ctx.freeIfTemp(indexAlloc)
+
 proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
   let name = c.args[0].name
   ctx.currentProcName = name
@@ -522,22 +592,42 @@ proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
   var offset = 0
   if c.args[1].kind == cnkParams:
     for param in c.args[1].args:
-      let paramName = param.args[0].name
-      let paramTyName = param.args[1].name
-      let paramTy = ctx.cache.getType(paramTyName)
-      
-      let l = ctx.cache.liveness.getOrDefault(paramName)
-      let bp = l.birth
-      var lline = l.dead.line
-      var lcol  = l.dead.col
-      if lline == 0 and lcol == 0:
-        lline = bp.line + 1
-        lcol  = bp.col
+      if param.kind == cnkSSBO:
+        # SSBO parameters are bound as buffers, not passed on stack or loaded into registers
+        continue
+      elif param.kind == cnkGlobalIndex:
+        let paramName = param.args[0].name
+        let paramTyName = param.args[1].name
+        let paramTy = ctx.cache.getType(paramTyName)
         
-      let fsize = max(1, paramTy.size)
-      let alloc = ctx.code.allocator.alloc(fsize, bp.line, bp.col, lline, lcol)
-      ctx.emitInst(vocSMov, alloc.pos, offset, fsize)
-      offset += fsize
+        let l = ctx.cache.liveness.getOrDefault(paramName)
+        let bp = l.birth
+        var lline = l.dead.line
+        var lcol  = l.dead.col
+        if lline == 0 and lcol == 0:
+          lline = bp.line + 1
+          lcol  = bp.col
+          
+        let fsize = max(1, paramTy.size)
+        let alloc = ctx.code.allocator.alloc(fsize, bp.line, bp.col, lline, lcol)
+        ctx.emitInst(vocLoadGI, alloc.pos, 0, fsize)
+      else:
+        let paramName = param.args[0].name
+        let paramTyName = param.args[1].name
+        let paramTy = ctx.cache.getType(paramTyName)
+        
+        let l = ctx.cache.liveness.getOrDefault(paramName)
+        let bp = l.birth
+        var lline = l.dead.line
+        var lcol  = l.dead.col
+        if lline == 0 and lcol == 0:
+          lline = bp.line + 1
+          lcol  = bp.col
+          
+        let fsize = max(1, paramTy.size)
+        let alloc = ctx.code.allocator.alloc(fsize, bp.line, bp.col, lline, lcol)
+        ctx.emitInst(vocSMov, alloc.pos, offset, fsize)
+        offset += fsize
 
   ctx.code.procTable[name] = ctx.code.currentPos
 
@@ -556,10 +646,15 @@ proc genStmt*(ctx: var CodeGenCtx, c: CIRNode) =
   of cnkStmtList, cnkSection:
     for n in c.args:
       ctx.genStmt(n)
+  of cnkUniform:
+    # Uniform declarations are handled by shader params; no code emitted
+    discard
   of cnkVarTy:
     ctx.genVar(c)
   of cnkAsgn:
     ctx.genAsgn(c)
+  of cnkArrAsgnAt:
+    ctx.genArrAsgn(c)
   of cnkIfStmt:
     ctx.genIf(c)
   of cnkWhileStmt:

@@ -60,6 +60,7 @@ proc registerGlobalIndex(cache: var TypeCache, n: CIRNode) =
   if cache.isValidDefinition(n):
     let typeId = cache.nameToId.getOrDefault(tyName, -1)
     cache.variables[vname] = typeId
+    cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
     cache.addGlobalIndex(vname, typeId)
 
 proc isWildCardType(ty: string): bool =

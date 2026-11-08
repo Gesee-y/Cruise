@@ -333,13 +333,21 @@ proc fetchGPUPragma(c: NifCursor): set[GPUPragma] =
   var n = c
 
   n.loopInto:
-    let pragmaName = firstChild(n).symText
-    if pragmaName.startsWith("globalIndex"):
-      result.incl(gpGlobalIndex)
-    elif pragmaName.startsWith("uniform"):
-      result.incl(gpUniform)
-    elif pragmaName.startsWith("ssbo"):
-      result.incl(gpSSBO)
+    var pragmaName = ""
+    if n.kind in {Symbol, SymbolDef}:
+      pragmaName = n.symText
+    else:
+      let fc = firstChild(n)
+      if fc.kind in {Symbol, SymbolDef}:
+        pragmaName = fc.symText
+
+    if pragmaName.len > 0:
+      if pragmaName.startsWith("globalIndex"):
+        result.incl(gpGlobalIndex)
+      elif pragmaName.startsWith("uniform"):
+        result.incl(gpUniform)
+      elif pragmaName.startsWith("ssbo"):
+        result.incl(gpSSBO)
 
     skip n
 
@@ -546,13 +554,15 @@ proc toIR(n: NifCursor): CIRNode =
         if symNode.otherKind == TypevarsU: return newCIRNode(c.info, cnkEmpty)
         if symNode.kind != DotToken:
           # Check to avoid generating IR for system.nim code
-          if firstChild(symNode).symText.split(".")[^1].startsWith(SYSTEM_MODULE): return newCIRNode(c.info, cnkEmpty)
+          let fc = firstChild(symNode)
+          if fc.kind in {Symbol, SymbolDef} and fc.symText.split(".")[^1].startsWith(SYSTEM_MODULE): return newCIRNode(c.info, cnkEmpty)
         skip symNode
 
         let body = symNode
         if body.otherKind == ParamsU:
           var fieldCursor = firstChild(body)
           var p = newCIRNode(body.info, cnkParams)
+          var hasGlobalIndex = false
 
           while fieldCursor.hasMore:
             if fieldCursor.exprKind != DotX:
@@ -564,7 +574,6 @@ proc toIR(n: NifCursor): CIRNode =
               let pragmas = field
 
               if pragmas.kind != DotToken:
-                var hasGlobalIndex = false
                 let flags = pragmas.fetchGPUPragma()
                 if flags.len > 0 and not isMainEntry:
                   reportIRError pragmas.info, "Only the `main` function can have GPU pragmas on it's arguments."

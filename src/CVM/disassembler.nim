@@ -62,6 +62,30 @@ proc disassemble*(code: openArray[uint32]) =
       echo &"{addrStr} | {hexStr}   | {opStr}"
       pc += 1
 
+    of vocLoadGI, vocNoOp:
+      echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}"
+      pc += 1
+
+    of vocLoadUni:
+      echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, U{src}"
+      pc += 1
+
+    of vocLoadBuf:
+      echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, B{src}"
+      pc += 1
+
+    of vocStoreBuf:
+      echo &"{addrStr} | {hexStr}   | {opStr:<12} B{src}, R{dst}"
+      pc += 1
+
+    of vocLoadAt:
+      echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, [R{src}]"
+      pc += 1
+
+    of vocStoreAt:
+      echo &"{addrStr} | {hexStr}   | {opStr:<12} [R{src}], R{dst}"
+      pc += 1
+
     # Instructions standard à deux opérandes (R_dst, R_src)
     else:
       echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src}"

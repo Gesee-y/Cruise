@@ -75,11 +75,11 @@ type
     tid: int
 
   ShaderParameters* = object
-    uniforms: seq[ShaderUniform]
-    ssbos: seq[ShaderSSBO]
-    uniformToId: Table[string, int]
-    ssboToId: Table[string, int]
-    globalIndex: tuple[name: string, tid: int]
+    uniforms*: seq[ShaderUniform]
+    ssbos*: seq[ShaderSSBO]
+    uniformToId*: Table[string, int]
+    ssboToId*: Table[string, int]
+    globalIndex*: tuple[name: string, tid: int]
 
   # Type cache, a global structure bookeeping informations about types
   TypeCache* = object
@@ -88,7 +88,7 @@ type
     variables*: Table[string, int]
     functions*: Table[string, ProcOverload]
     liveness*: Table[string, CLiveness]
-    shaderParams: ShaderParameters 
+    shaderParams*: ShaderParameters 
 
 # ######################################################################################################### #
 # ############################################# CONSTRUCTORS ############################################## #
@@ -340,7 +340,8 @@ proc addProcTypeInstance*(pDef: NifCursor): TypeInst =
     if symNode.otherKind == TypevarsU: return
     if symNode.kind != DotToken:
       # Check to avoid generating IR for system.nim code
-      if firstChild(symNode).symText.split(".")[^1].startsWith(SYSTEM_MODULE): return
+      let fc = firstChild(symNode)
+      if fc.kind in {Symbol, SymbolDef} and fc.symText.split(".")[^1].startsWith(SYSTEM_MODULE): return
     result.raw = pDef
     result.kind = ProcType
 

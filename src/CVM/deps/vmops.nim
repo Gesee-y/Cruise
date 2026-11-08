@@ -63,6 +63,15 @@ type
     
     vocSMov    = 36  ## A move from a value on the stack to a register
 
+    # Memory model (uniforms, buffers, GPU indexing)
+    vocLoadUni  = 37  ## dst = uniforms[src]
+    vocLoadBuf  = 38  ## dst = ssbo[src][index] (followed by vocNoOp index)
+    vocStoreBuf = 39  ## ssbo[src][index] = dst (followed by vocNoOp index)
+    vocLoadAt   = 40  ## dst = src[index] (followed by vocNoOp index)
+    vocStoreAt  = 41  ## src[index] = dst (followed by vocNoOp index)
+    vocLoadGI   = 42  ## dst = globalIndex
+    vocNoOp     = 43  ## No operation / index operand carrier
+
   # Builtins deliberately have a stable, compact ID space: calls occupy one
   # bytecode word and do not need a name lookup at runtime.
   BuiltinOp* = enum

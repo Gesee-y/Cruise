@@ -6,7 +6,7 @@
 # To run these tests, simply execute `nimble test`.
 
 #import std/[syncio, math]
-import ../src/CVM/disassembler
+import ../../src/CVM/disassembler
 #{.plugin: "internals/deps/scopes_compile_plugin.nim".}
 
 proc main =
