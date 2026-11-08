@@ -183,6 +183,8 @@ proc resolveNode(cache: var TypeCache, n: var CIRNode, inFunc = false) =
   case n.kind
   of cnkSym:
     cache.resolveSymbol(n)
+  of cnkShaderName:
+    cache.programName = n.args[0].name
   of cnkRSym, cnkIntLit, cnkUintLit, cnkCharLit, cnkFloatLit, cnkBoolLit,
      cnkDiscardStmt, cnkEmpty, cnkContinueStmt, cnkBreakStmt, cnkWritOnly,
      cnkReadOnly:

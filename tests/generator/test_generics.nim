@@ -2,6 +2,7 @@ import std/[syncio, math/common]
 import ../../src/CVM/bytecode
 
 translateToBytecode()
+setShaderName("test_generics")
 
 type
   Obj[T: SomeInteger] = object
@@ -16,4 +17,3 @@ proc testGenArg[T: SomeInteger and Arithmetic](o: Obj[T]) =
 
 proc main() =
   testGenArg(Obj[int](x: 0))
-  

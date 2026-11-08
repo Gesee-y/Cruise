@@ -4,6 +4,7 @@ import std/syncio
 import ../../src/CVM/bytecode
 
 translateToBytecode()
+setShaderName("test_uniform")
 
 var u {.uniform.} : int = 0
 

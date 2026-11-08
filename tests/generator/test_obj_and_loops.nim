@@ -2,6 +2,7 @@ import std/syncio
 import ../../src/CVM/bytecode
 
 translateToBytecode()
+setShaderName("test_obj_and_loops")
 
 type
   Vec3 = object

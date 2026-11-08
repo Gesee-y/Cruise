@@ -10,7 +10,7 @@ const SYSTEM_MODULE = "sysvq"
 type
   CIRNodeKind* = enum
     cnkNone
-    cnkStmtList
+    cnkStmtList, cnkShaderName
     cnkSection
     cnkDecl, cnkFuncSig, cnkFuncDef
     cnkCall
@@ -295,6 +295,11 @@ proc makeCallIR(c: NifCursor): CIRNode =
     result = newCIRNode(c.info, cnkArrAsgnAt)
   elif it.symText.startsWith("[]"):
     result = newCIRNode(c.info, cnkArrAt)
+  elif it.symText.startsWith("setShaderName"):
+    result = newCIRNode(c.info, cnkShaderName)
+    skip it
+    result.add newCIRSym(it.info, it.stringValue)
+    return 
   else:
     result.add(newCIRSym(it.info, it.symText))
   skip it
@@ -369,6 +374,8 @@ proc toIR(n: NifCursor): CIRNode =
   of LineInfoLit: return
   of TagLit:
     case c.exprKind:
+    of ExprX:
+      result = toIR(firstChild(c))
     of DotX, DdotX:
       result = newCIRNode(c.info, cnkDotExpr)
       var it = firstChild(c)

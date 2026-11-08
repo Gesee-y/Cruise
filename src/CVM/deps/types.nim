@@ -83,6 +83,7 @@ type
 
   # Type cache, a global structure bookeeping informations about types
   TypeCache* = object
+    programName: string
     nameToId*: Table[string, int]
     instances*: seq[TypeInst]
     variables*: Table[string, int]
@@ -534,7 +535,7 @@ include "builtins.nim"
 
 # Instantiate a new `TypeCache` with primitive types already registered
 proc newTypeCache(): TypeCache =
-  result = TypeCache()
+  result = TypeCache(programName: "generated")
   result.nameToId["auto"] = result.instances.len
   result.instances.add TypeInst(kind: UnknownType, name: "auto", size: 0)
   result.nameToId["int"] = result.instances.len

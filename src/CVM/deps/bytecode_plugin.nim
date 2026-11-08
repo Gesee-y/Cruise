@@ -15,6 +15,9 @@ include "ir.nim"
 include "sem.nim"
 include "generator.nim"
 
+proc getShaderName(n: NifCursor): string =
+  result = "generated"
+
 proc generateBytecode(n: var NifCursor): NifBuilder =
   var cache = newTypeCache()
   result = createTree()
@@ -55,7 +58,7 @@ proc generateBytecode(n: var NifCursor): NifBuilder =
   result.takeTree n
   
   if success:
-    var f = open("generated.cbc", fmWrite)
+    var f = open(cache.programName & ".cbc", fmWrite)
     if ctx.code.data.len > 0:
       discard writeBuffer(f, addr ctx.code.data[0], ctx.code.data.len * sizeof(uint32))
     close(f)
