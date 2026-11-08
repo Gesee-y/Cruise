@@ -25,7 +25,7 @@ translateToBytecode()
 
 const N {.uniform.}: int
 
-proc mainKernel(i {.globalIndex.}: int, a {.ssbo.}: seq[int], b {.ssbo.}: seq[int], c {.ssbo.}: var seq[int]):
+proc main(i {.globalIndex.}: int, a {.ssbo.}: seq[int], b {.ssbo.}: seq[int], c {.ssbo.}: var seq[int]):
   if i < N:
     c[i] = a[i] + b[i]
 ```
