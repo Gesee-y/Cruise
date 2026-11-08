@@ -1,6 +1,6 @@
-  ########################################################################################################
- ############################################# TYPE INFORMATIONS ########################################
-########################################################################################################
+  # ###################################################################################################### #
+ # ############################################ TYPE INFORMATIONS ####################################### #
+# ###################################################################################################### #
 
 #
 # Here we implement a cache for type declared in the current module scope.
@@ -21,6 +21,8 @@ type
     PrimitiveType
     EnumType
     ProcType
+    GenericContainerType
+    ContainerType
     
   # Annotation currently seen on the type
   TypeFlag* = enum
@@ -66,13 +68,27 @@ type
     birth*: LineInfo
     dead*: LineInfo
 
+  ShaderUniform* = object
+    tid: int
+
+  ShaderSSBO* = object
+    tid: int
+
+  ShaderParameters* = object
+    uniforms: seq[ShaderUniform]
+    ssbos: seq[ShaderSSBO]
+    uniformToId: Table[string, int]
+    ssboToId: Table[string, int]
+    globalIndex: tuple[name: string, tid: int]
+
   # Type cache, a global structure bookeeping informations about types
   TypeCache* = object
     nameToId*: Table[string, int]
     instances*: seq[TypeInst]
     variables*: Table[string, int]
     functions*: Table[string, ProcOverload]
-    liveness*: Table[string, CLiveness] 
+    liveness*: Table[string, CLiveness]
+    shaderParams: ShaderParameters 
 
 # ######################################################################################################### #
 # ############################################# CONSTRUCTORS ############################################## #
@@ -216,6 +232,19 @@ proc addInstance(c: var TypeCache, instance: TypeInst) =
       addOverload(ov, instance, id)
       c.functions[instance.name] = ov
 
+proc addUniform(c: var TypeCache, name: string, tid: int) =
+  let id = c.shaderParams.uniforms.len
+  c.shaderParams.uniformToId[name] = id
+  c.shaderParams.uniforms.add(ShaderUniform(tid: tid))
+
+proc addSSBO(c: var TypeCache, name: string, tid: int) =
+  let id = c.shaderParams.ssbos.len
+  c.shaderParams.ssboToId[name] = id
+  c.shaderParams.ssbos.add(ShaderSSBO(tid: tid))
+
+proc addGlobalIndex(c: var TypeCache, name: string, tid: int) =
+  c.shaderParams.globalIndex = (name, tid)
+
 # And a field instance to a type
 proc addField(t: var TypeInst, field: TypeField) =
   let id = t.fields.len
@@ -230,10 +259,23 @@ proc declaredTypeBody(n: NifCursor): NifCursor =
   skip result # typevars/body prefix
   skip result
 
+proc genContainerType(tyDef: NifCursor): TypeInst =
+  result = TypeInst()
+  let symNode = firstChild(tyDef) # Definition of the type
+  if symNode.kind == SymbolDef:
+    let name = symNode.symText # Text is preferred to symID as it allows more control
+    var node = symNode
+    skip node
+    skip node
+    if node.kind != DotToken:
+      var c = firstChild(node)
+      var ty = c
+      skip ty
+      result = TypeInst(kind: ContainerType, name: name, returnType: ty.getTypeName, size: 1)
+
 # Create a new type instance from a type definition
 proc addTypeInstance*(tyDef: NifCursor): TypeInst =
   result = TypeInst()
-  echo renderNode(tyDef)
 
   let symNode = firstChild(tyDef) # Definition of the type
   if symNode.kind == SymbolDef:
@@ -242,6 +284,10 @@ proc addTypeInstance*(tyDef: NifCursor): TypeInst =
     skip node
     skip node
     if node.otherKind == TypevarsU: return
+    if node.kind != DotToken:
+      # Check to avoid generating IR for system.nim code
+      if firstChild(node).symText.split(".")[^1].startsWith(SYSTEM_MODULE): return
+        
     result.raw = tyDef
     skip node
     skip node
@@ -292,6 +338,9 @@ proc addProcTypeInstance*(pDef: NifCursor): TypeInst =
     skip symNode
     skip symNode
     if symNode.otherKind == TypevarsU: return
+    if symNode.kind != DotToken:
+      # Check to avoid generating IR for system.nim code
+      if firstChild(symNode).symText.split(".")[^1].startsWith(SYSTEM_MODULE): return
     result.raw = pDef
     result.kind = ProcType
 
@@ -335,7 +384,8 @@ proc collectTypeDecls*(c: var TypeCache, root: NifCursor) =
     case n.stmtKind
     of TypeS:
       let tyDef = n
-      let instance = addTypeInstance(tyDef)
+      let name = firstChild(tyDef).symText
+      let instance = if c.isGenericContainerType(name): genContainerType(tyDef) else: addTypeInstance(tyDef)
       if instance.kind != UnknownType: c.addInstance(instance)
     of ProcS, FuncS:
       let pDef = n
@@ -409,6 +459,12 @@ proc computeLayouts*(t: var TypeCache) =
 # ################################################################### Query API ############################################################ #
 # ########################################################################################################################################## #
 
+proc isGenericContainerType*(cache: TypeCache, name: string): bool =
+  let n = name.split(".")[0]
+  let tid = cache.nameToId.getOrDefault(n, -1)
+  if tid < 0: return false
+  return cache.instances[tid].kind == GenericContainerType
+  
 proc getType*(c: TypeCache, root: TypeInst, additional: seq[string]): TypeInst =
   # Fetch the concrete type following a given path
   var inst = root
@@ -519,5 +575,9 @@ proc newTypeCache(): TypeCache =
 
   result.nameToId["string"] = result.instances.len
   result.instances.add TypeInst(kind: PrimitiveType, name: "string", size: 16)
+
+  # Container types that returns a particular element type
+  result.nameToId["seq"] = result.instances.len
+  result.instances.add TypeInst(kind: GenericContainerType, name: "seq", size:1)
 
   result.registerBuiltins()

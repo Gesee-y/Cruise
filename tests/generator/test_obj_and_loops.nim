@@ -1,5 +1,5 @@
 import std/syncio
-import ../src/CVM/bytecode
+import ../../src/CVM/bytecode
 
 translateToBytecode()
 

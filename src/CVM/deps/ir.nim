@@ -4,6 +4,9 @@
 
 import std/[strutils, sequtils]
 
+const MAIN_ENTRY_NAME = "main"
+const SYSTEM_MODULE = "sysvq"
+
 type
   CIRNodeKind* = enum
     cnkNone
@@ -28,6 +31,7 @@ type
     cnkBoolLit
     cnkInfix
     cnkPrefix
+    cnkArrAt, cnkArrAsgnAt
     cnkAsgn
     cnkParams
     cnkBreakStmt
@@ -45,8 +49,15 @@ type
     cnkStmtListExpr
     cnkEmpty
     cnkDiscardStmt
-    cnkWritOnly, cnkReadOnly
+    cnkWritOnly, cnkReadOnly, cnkSSBO
     cnkVarTy, cnkGlobalIndex, cnkLocalIndex, cnkLocalSize
+
+  GPUPragma* = enum
+    gpUniform
+    gpUniformRead
+    gpUniformWrite
+    gpSSBO
+    gpGlobalIndex
 
   CIRNode* = object
     ## A single node in the Cruise IR tree.
@@ -136,6 +147,10 @@ proc renderIR*(node: CIRNode, indent: int = 0): string =
       result.add(renderIR(node.args[0], 0))
     if node.args.len > 1:
       result.add(" = " & renderIR(node.args[1], 0))
+  of cnkArrAt:
+    result = renderIR(node.args[0]) & "[" & renderIR(node.args[1]) & "]"
+  of cnkArrAsgnAt:
+    result = ind & renderIR(node.args[0]) & "[" & renderIR(node.args[1]) & "] = " & renderIR(node.args[2])
   of cnkAsgn:
     result = ind
     if node.args.len >= 2:
@@ -276,7 +291,12 @@ proc toPrefixOp(c: NifCursor): string =
 proc makeCallIR(c: NifCursor): CIRNode =
   result = newCIRNode(c.info, cnkCall)
   var it = firstChild(c)
-  result.add(newCIRSym(it.info, it.symText))
+  if it.symText.startsWith("[]="):
+    result = newCIRNode(c.info, cnkArrAsgnAt)
+  elif it.symText.startsWith("[]"):
+    result = newCIRNode(c.info, cnkArrAt)
+  else:
+    result.add(newCIRSym(it.info, it.symText))
   skip it
 
   while it.hasMore:
@@ -308,6 +328,20 @@ proc makeBranchIR(c: NifCursor): CIRNode =
       skip n
   else: assert false, "Unknown op"
 
+proc fetchGPUPragma(c: NifCursor): set[GPUPragma] =
+  result = {}
+  var n = c
+
+  n.loopInto:
+    let pragmaName = firstChild(n).symText
+    if pragmaName.startsWith("globalIndex"):
+      result.incl(gpGlobalIndex)
+    elif pragmaName.startsWith("uniform"):
+      result.incl(gpUniform)
+    elif pragmaName.startsWith("ssbo"):
+      result.incl(gpSSBO)
+
+    skip n
 
 proc toIR(n: NifCursor): CIRNode =
   var c = n
@@ -397,15 +431,29 @@ proc toIR(n: NifCursor): CIRNode =
       result.add(toIR(it))
     of NoExpr:
       case c.stmtKind:
-      of VarS, LetS:
+      of VarS, LetS, GvarS, GletS:
         result = newCIRNode(c.info, cnkVarTy)
+        let isGlobal = c.stmtKind in {GletS, GvarS}
         let symNode = firstChild(n)
         var sd = newCIRNode(symNode.info, cnkSymDef)
         var typ = symNode
         skip typ
         skip typ
+        let pragmas = typ
         skip typ
         var name = symNode.symText
+
+        if pragmas.kind != DotToken:
+          let flags = pragmas.fetchGPUPragma()
+          if flags.len > 0 and not isGlobal:
+            reportIRError pragmas.info, "Can't use GPU pragmas on a local variable."
+          else:
+            if gpUniform in flags:
+              result = newCIRNode(c.info, cnkUniform)
+            elif gpSSBO in flags:
+              result = newCIRNode(c.info, cnkSSBO)
+            elif gpGlobalIndex in flags:
+              result = newCIRNode(c.info, cnkGlobalIndex)
 
         sd.add(newCIRSym(symNode.info, name))
         sd.add(newCIRSym(typ.info, typ.getTypeName))
@@ -485,6 +533,10 @@ proc toIR(n: NifCursor): CIRNode =
         result = newCIRNode(c.info, cnkFuncDef)
         var symNode = firstChild(c) # Definition of the proc
         let name = symNode.symText
+
+        let isMainEntry = name.startsWith(MAIN_ENTRY_NAME)
+        if isMainEntry and name.split(".")[1][0] > '0':
+          reportIRError c.info, "Can't have multiple `main` entry point for GPU program."
         result.add(newCIRSym(symNode.info, name))
 
         # Skip directly to parameters
@@ -492,6 +544,9 @@ proc toIR(n: NifCursor): CIRNode =
         skip symNode
         skip symNode
         if symNode.otherKind == TypevarsU: return newCIRNode(c.info, cnkEmpty)
+        if symNode.kind != DotToken:
+          # Check to avoid generating IR for system.nim code
+          if firstChild(symNode).symText.split(".")[^1].startsWith(SYSTEM_MODULE): return newCIRNode(c.info, cnkEmpty)
         skip symNode
 
         let body = symNode
@@ -506,6 +561,24 @@ proc toIR(n: NifCursor): CIRNode =
               let fieldName = field
               skip field
               skip field
+              let pragmas = field
+
+              if pragmas.kind != DotToken:
+                var hasGlobalIndex = false
+                let flags = pragmas.fetchGPUPragma()
+                if flags.len > 0 and not isMainEntry:
+                  reportIRError pragmas.info, "Only the `main` function can have GPU pragmas on it's arguments."
+                else: 
+                  if gpUniform in flags:
+                    reportIRError pragmas.info, "Can't mark a parameter as uniform."
+                  if gpSSBO in flags:
+                    f = newCIRNode(c.info, cnkSSBO)
+                  if gpGlobalIndex in flags:
+                    if not hasGlobalIndex: 
+                      f = newCIRNode(c.info, cnkGlobalIndex)
+                      hasGlobalIndex = true
+                    else:
+                      reportIRError pragmas.info, "Can't have multiple global index"
               skip field # pragmas
               let fieldType = field
               let fieldTyName = fieldType.getTypeName

@@ -17,19 +17,50 @@ proc resolveSymbol(cache: var TypeCache, n: CIRNode) =
   except:
     discard
 
-proc registerDefinition(cache: var TypeCache, n: CIRNode) =
+proc isValidDefinition(cache: var TypeCache, n: CIRNode): bool =
+  result = true
   let tyName = n.args[1].name
   let vname = n.args[0].name
   if tyName notin cache.nameToId:
-    reportSemError n.info, "Unknown type `" & tyName & "` for variable `" & vname  & "`. Maybe the type is not native to GPU or undeclared in the current module."
-    return
+    reportSemError n.info, "Unknown type `" & tyName & "` for variable/uniform `" & vname  & "`. Maybe the type is not native to GPU or undeclared in the current module."
+    return false
   let typeId = cache.nameToId.getOrDefault(tyName, -1)
 
   if typeId >= 0 and cache.instances[typeId].kind in {ProcType, RefType}:
     reportSemError n.info, "Can't declare variable of type `ref` or `proc` because pointers are unsupported."
-    return
-  cache.variables[vname] = typeId
-  cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
+    return false
+
+proc registerDefinition(cache: var TypeCache, n: CIRNode) =
+  let tyName = n.args[1].name
+  let vname = n.args[0].name
+  if cache.isValidDefinition(n):
+    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    cache.variables[vname] = typeId
+    cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
+
+proc registerUniform(cache: var TypeCache, n: CIRNode) =
+  let tyName = n.args[0].args[1].name
+  let vname = n.args[0].args[0].name
+  if cache.isValidDefinition(n.args[0]):
+    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    cache.variables[vname] = typeId
+    cache.addUniform(vname, typeId)
+
+proc registerSSBO(cache: var TypeCache, n: CIRNode) =
+  let tyName = n.args[1].name
+  let vname = n.args[0].name
+  if cache.isValidDefinition(n):
+    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    cache.variables[vname] = typeId
+    cache.addSSBO(vname, typeId)
+
+proc registerGlobalIndex(cache: var TypeCache, n: CIRNode) =
+  let tyName = n.args[1].name
+  let vname = n.args[0].name
+  if cache.isValidDefinition(n):
+    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    cache.variables[vname] = typeId
+    cache.addGlobalIndex(vname, typeId)
 
 proc isWildCardType(ty: string): bool =
   return ty == "int" or ty == "float" or ty == "uint"
@@ -82,6 +113,10 @@ proc inferType*(cache: var TypeCache, node: var CIRNode): string =
 
   of cnkObjConstr:
     return node.args[0].name
+
+  of cnkArrAt:
+    let t = cache.inferType(node.args[0])
+    return cache.getType(t).returnType
 
   of cnkPrefix, cnkInfix, cnkCall:
     if node.args[0].kind == cnkSym:
@@ -153,6 +188,12 @@ proc resolveNode(cache: var TypeCache, n: var CIRNode, inFunc = false) =
     discard
   of cnkSymDef:
     cache.registerDefinition(n)
+  of cnkUniform:
+    cache.registerUniform(n)
+  of cnkSSBO:
+    cache.registerSSBO(n)
+  of cnkGlobalIndex:
+    cache.registerGlobalIndex(n)
   of cnkCall, cnkInfix, cnkPrefix:
     if not inFunc:
       reportSemError n.info, "Top level statements are unsupported on GPU."

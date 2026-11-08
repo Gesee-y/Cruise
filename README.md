@@ -23,8 +23,10 @@ import CVM
 
 translateToBytecode()
 
-proc mainKernel(i: GlobalIndex, a: seq[int], b: seq[int], c: var seq[int], n: int):
-  if i < n:
+const N {.uniform.}: int
+
+proc mainKernel(i {.globalIndex.}: int, a {.ssbo.}: seq[int], b {.ssbo.}: seq[int], c {.ssbo.}: var seq[int]):
+  if i < N:
     c[i] = a[i] + b[i]
 ```
 
@@ -82,10 +84,10 @@ Being able to use Nim for everything without writing a single line of shader cod
 - Easy hot-reload (just reread the bytecode) making dev time faster
 - Can handle your graphic program while the real shader compile in the background
 - Has a constant pressure on register (since the VM is the only program)
-- Thread divergence only happens if the original code would have diverged because each threa runs the same bytecode
+- Thread divergence only happens if the original code would have diverged because each thread runs the same bytecode
 - VM memory efficiently fits in GPU cache
 
 ## Cons
 
 - Way slower than a native GPU program.
-- Still ongoing (optimize the bytecode further, run on more shader langs, etc etc)
+- Still ongoing (handling more GPU construct, run on more shader langs, etc etc)
