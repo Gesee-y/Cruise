@@ -27,12 +27,12 @@ proc initCpuVm*(globalId: int = 0, uniforms: seq[uint32] = @[], buffers: seq[poi
   result.stack = @[]
   result.halted = false
 
-proc setUniform*[T](vm: var CpuVm, offset: int, val: T) =
-  let neededWords = (offset + sizeof(T) + 3) div 4
-  if vm.uniform.len < neededWords:
-    vm.uniform.setLen(neededWords)
+proc setUniform*[T](vm: var CpuVm, uniformId: int, val: T) =
+  let wordCount = (sizeof(T) + sizeof(uint32) - 1) div sizeof(uint32)
+  if vm.uniform.len < uniformId + wordCount:
+    vm.uniform.setLen(uniformId + wordCount)
   var tmp = val
-  copyMem(addr vm.uniform[offset], addr tmp, sizeof(T))
+  copyMem(addr vm.uniform[uniformId], addr tmp, sizeof(T))
 
 proc setUniforms*(vm: var CpuVm, uniforms: seq[uint32]) =
   vm.uniform = uniforms
@@ -309,11 +309,11 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       inc vm.pc
       var noopOp: VMOpCode
       var idxReg, dummySrc: uint8
-      var dummySize: int
-      decodeWord(nextW, noopOp, idxReg, dummySrc, dummySize)
-      let index = vm.readMemInt(int(idxReg), 4)
+      var idxSize: int
+      decodeWord(nextW, noopOp, idxReg, dummySrc, idxSize)
+      let index = vm.readMemInt(int(idxReg), idxSize)
       let basePtr = cast[uint](vm.buffers[bufId])
-      let elemPtr = cast[pointer](basePtr + uint(index * size))
+      let elemPtr = cast[pointer](basePtr + uint(index * int64(size)))
       copyMem(addr vm.memory[dst], elemPtr, size)
 
     of vocStoreBuf:
@@ -322,11 +322,11 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       inc vm.pc
       var noopOp: VMOpCode
       var idxReg, dummySrc: uint8
-      var dummySize: int
-      decodeWord(nextW, noopOp, idxReg, dummySrc, dummySize)
-      let index = vm.readMemInt(int(idxReg), 4)
+      var idxSize: int
+      decodeWord(nextW, noopOp, idxReg, dummySrc, idxSize)
+      let index = vm.readMemInt(int(idxReg), idxSize)
       let basePtr = cast[uint](vm.buffers[bufId])
-      let elemPtr = cast[pointer](basePtr + uint(index * size))
+      let elemPtr = cast[pointer](basePtr + uint(index * int64(size)))
       copyMem(elemPtr, unsafeAddr vm.memory[dst], size)
 
     of vocLoadAt:
