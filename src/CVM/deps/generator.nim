@@ -168,10 +168,10 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
     let opName = c.args[0].name
     var dummyNode = c
     let opTypeName = ctx.cache.inferType(dummyNode)
-    let opIsFloat  = opTypeName.startsWith("float")
     let isCmp = opName in ["<", "<=", ">", ">=", "==", "!="]
-    var cc = c
-    let operandTyName = if isCmp: ctx.cache.inferType(cc.args[1]) else: opTypeName
+    var cc = c.args[1]
+    let operandTyName = if isCmp: ctx.cache.inferType(cc) else: opTypeName
+    let opIsFloat  = operandTyName.startsWith("float")
     let operandTy = ctx.cache.getType(operandTyName)
     let opSize = max(1, operandTy.size)
 
@@ -236,7 +236,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
 
     for i in 1 ..< c.args.len:
       let argAlloc = ctx.genExpr(c.args[i])
-      ctx.emitInst(vocPush, argAlloc.pos, 0)
+      ctx.emitInst(vocPush, argAlloc.pos, 0, argAlloc.size)
       argsToFree.add(argAlloc)
 
     for argAlloc in argsToFree:
