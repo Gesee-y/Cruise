@@ -56,7 +56,7 @@ proc generateBytecode(n: var NifCursor): NifBuilder =
   ctx.emitWord(cast[uint32](-1i32))
   ctx.genStmt(irCode)
   if ctx.entryPoint > 0: 
-    ctx.code.data[1] = ctx.entryPoint 
+    ctx.code.data[1] = uint32(ctx.entryPoint) 
   # The plugin API currently returns a NIF tree. Keep the source unchanged
   # while the generated program is consumed by the forthcoming backend API.
   result.takeTree n
