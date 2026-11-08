@@ -177,6 +177,11 @@ proc getTypeName(ty: NifCursor): string =
       result = "int" & $(n.firstChild.intValue)
     else:
       result = "int"
+  of FT:
+    if n.firstChild.kind == FloatLit:
+      result = "float" & $(n.firstChild.floatValue)
+    else:
+      result = "float"
   of BoolT:
     result = "bool"
   of RefT:
