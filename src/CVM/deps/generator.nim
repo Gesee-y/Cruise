@@ -169,8 +169,11 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
     var dummyNode = c
     let opTypeName = ctx.cache.inferType(dummyNode)
     let opIsFloat  = opTypeName.startsWith("float")
-    let opTy = ctx.cache.getType(opTypeName)
-    let opSize = max(1, opTy.size)
+    let isCmp = opName in ["<", "<=", ">", ">=", "==", "!="]
+    var cc = c
+    let operandTyName = if isCmp: ctx.cache.inferType(cc.args[1]) else: opTypeName
+    let operandTy = ctx.cache.getType(operandTyName)
+    let opSize = max(1, operandTy.size)
 
     let r1 = ctx.genExpr(c.args[1])
     let r2 = ctx.genExpr(c.args[2])
@@ -307,11 +310,11 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
     if c.args[0].name in ctx.cache.shaderParams.ssboToId:
       let bufId = ctx.cache.shaderParams.ssboToId.getOrDefault(c.args[0].name, 0)
       ctx.emitInst(vocLoadBuf, dest.pos, bufId, elemSize)
-      ctx.emitInst(vocNoOp, indexAlloc.pos, 0)
+      ctx.emitInst(vocNoOp, indexAlloc.pos, 0, max(1, indexAlloc.size))
     else:
       let arrAlloc = ctx.genExpr(c.args[0])
       ctx.emitInst(vocLoadAt, dest.pos, arrAlloc.pos, elemSize)
-      ctx.emitInst(vocNoOp, indexAlloc.pos, 0)
+      ctx.emitInst(vocNoOp, indexAlloc.pos, 0, max(1, indexAlloc.size))
       ctx.freeIfTemp(arrAlloc)
 
     ctx.freeIfTemp(indexAlloc)
@@ -579,11 +582,11 @@ proc genArrAsgn(ctx: var CodeGenCtx, c: CIRNode) =
   if c.args[0].kind in {cnkSym, cnkRSym} and c.args[0].name in ctx.cache.shaderParams.ssboToId:
     let bufId = ctx.cache.shaderParams.ssboToId.getOrDefault(c.args[0].name, 0)
     ctx.emitInst(vocStoreBuf, valAlloc.pos, bufId, elemSize)
-    ctx.emitInst(vocNoOp, indexAlloc.pos, 0)
+    ctx.emitInst(vocNoOp, indexAlloc.pos, 0, max(1, indexAlloc.size))
   else:
     let arrAlloc = ctx.genExpr(c.args[0])
     ctx.emitInst(vocStoreAt, valAlloc.pos, arrAlloc.pos, elemSize)
-    ctx.emitInst(vocNoOp, indexAlloc.pos, 0)
+    ctx.emitInst(vocNoOp, indexAlloc.pos, 0, max(1, indexAlloc.size))
     ctx.freeIfTemp(arrAlloc)
 
   ctx.freeIfTemp(valAlloc)
