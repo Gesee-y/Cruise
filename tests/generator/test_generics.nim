@@ -13,6 +13,7 @@ proc testGenArg[T: SomeInteger and Arithmetic](o: Obj[T]) =
   var b = x + 20
   var c = a + b
   var d = c * 2
-  echo d.int
 
-testGenArg(Obj[int](x: 0))
+proc main() =
+  testGenArg(Obj[int](x: 0))
+  

@@ -390,11 +390,12 @@ proc genVar(ctx: var CodeGenCtx, c: CIRNode) =
     lcol  = bp.col
 
   let alloc = ctx.code.allocator.alloc(max(1, ty.size), bp.line, bp.col, lline, lcol)
-  let initAlloc = ctx.genExpr(c.args[1], target = alloc)
-  if initAlloc.pos != alloc.pos:
-    let wordsToCopy = max(1, min(alloc.size, max(1, initAlloc.size)))
-    ctx.emitInst(vocMov, alloc.pos, initAlloc.pos, wordsToCopy)
-  ctx.freeIfTemp(initAlloc)
+  if c.args.len > 1:
+    let initAlloc = ctx.genExpr(c.args[1], target = alloc)
+    if initAlloc.pos != alloc.pos:
+      let wordsToCopy = max(1, min(alloc.size, max(1, initAlloc.size)))
+      ctx.emitInst(vocMov, alloc.pos, initAlloc.pos, wordsToCopy)
+    ctx.freeIfTemp(initAlloc)
 
 proc genAsgn(ctx: var CodeGenCtx, c: CIRNode) =
   let lhsAlloc = ctx.genExpr(c.args[0])
@@ -406,8 +407,9 @@ proc genAsgn(ctx: var CodeGenCtx, c: CIRNode) =
 
 proc genIf(ctx: var CodeGenCtx, c: CIRNode) =
   var endPatches: seq[int] = @[]
+  let hasElse = c.args.len > 0 and c.args[^1].kind == cnkElse
 
-  for branch in c.args:
+  for i, branch in c.args:
     case branch.kind
     of cnkElifBranch:
       let condAlloc = ctx.genExpr(branch.args[0])
@@ -418,10 +420,12 @@ proc genIf(ctx: var CodeGenCtx, c: CIRNode) =
 
       ctx.genStmt(branch.args[1])
 
-      ctx.emitInst(vocJmp, 0, 0)
-      let endPatch = ctx.code.data.len
-      ctx.emitWord(0u32)
-      endPatches.add(endPatch)
+      let isLast = (i == c.args.len - 1) and not hasElse
+      if not isLast:
+        ctx.emitInst(vocJmp, 0, 0)
+        let endPatch = ctx.code.data.len
+        ctx.emitWord(0u32)
+        endPatches.add(endPatch)
 
       ctx.code.data[falsePatch] = uint32(ctx.code.data.len)
 
@@ -588,6 +592,7 @@ proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
   let name = c.args[0].name
   ctx.currentProcName = name
   ctx.loops = @[]
+  ctx.code.procTable[name] = ctx.code.currentPos
   
   var offset = 0
   if c.args[1].kind == cnkParams:
@@ -628,8 +633,6 @@ proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
         let alloc = ctx.code.allocator.alloc(fsize, bp.line, bp.col, lline, lcol)
         ctx.emitInst(vocSMov, alloc.pos, offset, fsize)
         offset += fsize
-
-  ctx.code.procTable[name] = ctx.code.currentPos
 
   if ctx.code.callToPatch.hasKey(name):
     let patchList = ctx.code.callToPatch.getOrDefault(name, @[])

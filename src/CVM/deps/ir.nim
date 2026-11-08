@@ -309,9 +309,8 @@ proc makeBranchIR(c: NifCursor): CIRNode =
   case it.otherKind:
   of ElifU:
     result = newCIRNode(it.info, cnkElifBranch)
-    var elifChild = firstChild(it)
-    let condCur = firstChild(elifChild) 
-    var bodyCur = elifChild
+    var condCur = firstChild(it)
+    var bodyCur = condCur
     skip bodyCur
 
     result.add(toIR(condCur))
