@@ -10,24 +10,25 @@ type
   CMemLoc = int ## Virtual-memory address (word index).
 
   CBytecode = object
-    data:        seq[uint32]
-    allocator:   CVramAllocator
+    data: seq[uint32]
+    allocator: CVramAllocator
     ## Maps each proc name to its starting word index in `data`.
     ## Entries start at -1 (placeholder) and are backpatched by `genFunc`.
-    procTable:   Table[string, int]
+    procTable: Table[string, int]
     callToPatch: Table[string, seq[int]]
-    currentPos:  int
+    currentPos: int
 
   LoopContext = object
-    continueTarget:  int        ## Target word index for continue (if >= 0)
+    continueTarget: int        ## Target word index for continue (if >= 0)
     continuePatches: seq[int]   ## Positions to backpatch for continue jumps
-    breakPatches:    seq[int]   ## Positions to backpatch for break jumps
+    breakPatches: seq[int]   ## Positions to backpatch for break jumps
 
   CodeGenCtx = object
-    cache:           TypeCache
-    code:            CBytecode
+    cache: TypeCache
+    code: CBytecode
+    entryPoint: int
     currentProcName: string
-    loops:           seq[LoopContext]
+    loops: seq[LoopContext]
 
 # ################################################################################################################################ #
 # ############################################################ CONSTANTS ######################################################### #
@@ -590,6 +591,8 @@ proc genArrAsgn(ctx: var CodeGenCtx, c: CIRNode) =
 
 proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
   let name = c.args[0].name
+  if name.split(".")[0] == MAIN_ENTRY_NAME:
+    ctx.entryPoint = ctx.code.currentPos
   ctx.currentProcName = name
   ctx.loops = @[]
   ctx.code.procTable[name] = ctx.code.currentPos
