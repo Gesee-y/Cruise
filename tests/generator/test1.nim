@@ -10,7 +10,7 @@ import ../../src/CVM/disassembler
 #{.plugin: "internals/deps/scopes_compile_plugin.nim".}
 
 proc main =
-  var f = open("test_vector_add.cbc", fmRead)
+  var f = open("test_fma_opt_probe.cbc", fmRead)
   var data = newSeq[uint32](256)
   discard f.readBuffer(addr data[0], 1024)
 

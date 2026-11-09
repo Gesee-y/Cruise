@@ -57,6 +57,17 @@ proc disassemble*(code: openArray[uint32]) =
         echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED TARGET>"
         pc += 1
 
+    of vocMaddf:
+      if pc + 1 < code.len:
+        let packedSources = code[pc + 1]
+        let rhsReg = packedSources and 0xFF'u32
+        let addReg = (packedSources shr 8) and 0xFF'u32
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src} * R{rhsReg} + R{addReg}"
+        pc += 2
+      else:
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED SOURCES>"
+        pc += 1
+
     # Halte / Fin d'exécution
     of vocHalt:
       echo &"{addrStr} | {hexStr}   | {opStr}"

@@ -1,4 +1,6 @@
 memo
 nimcache
+tests/vm
+src/CVM/vms
 *.cbc
 *.exe
