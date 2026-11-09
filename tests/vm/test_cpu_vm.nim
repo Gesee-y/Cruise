@@ -294,6 +294,9 @@ proc testBuiltinOpcodes() =
 
   var foundAbs, foundAbsInt, foundMin, foundMinInt = false
   var foundMax, foundMaxInt, foundSqrt, foundRsqrt, foundCall = false
+  var foundAddCi, foundSubCi, foundMulCi = false
+  var foundAddCf, foundSubCf, foundMulCf = false
+  var mulCiCount, mulCfCount = 0
   var pc = 0
   while pc < program.len:
     var op: VMOpCode
@@ -309,13 +312,26 @@ proc testBuiltinOpcodes() =
     of vocMaxi: foundMaxInt = true
     of vocSqrtf: foundSqrt = true
     of vocRsqrtf: foundRsqrt = true
+    of vocAddCi: foundAddCi = true
+    of vocSubCi: foundSubCi = true
+    of vocMulCi:
+      foundMulCi = true
+      inc mulCiCount
+    of vocAddCf: foundAddCf = true
+    of vocSubCf: foundSubCf = true
+    of vocMulCf:
+      foundMulCf = true
+      inc mulCfCount
     of vocCall: foundCall = true
     else: discard
     inc pc
     case op
     of vocLoadi, vocLoadf, vocCall, vocJmp, vocJmpFalse, vocMaddf, vocMaddi,
-       vocLoadBuf, vocStoreBuf, vocLoadAt, vocStoreAt:
+       vocLoadBuf, vocStoreBuf, vocLoadAt, vocStoreAt,
+       vocAddCi, vocSubCi, vocMulCi, vocAddCf, vocSubCf, vocMulCf:
       inc pc
+      if op in {vocAddCi, vocSubCi, vocMulCi, vocAddCf, vocSubCf, vocMulCf} and size > 4:
+        inc pc
     else:
       discard
 
@@ -327,6 +343,12 @@ proc testBuiltinOpcodes() =
   assert foundMaxInt, "integer max should use a dedicated opcode"
   assert foundSqrt, "sqrt should use a dedicated opcode"
   assert foundRsqrt, "1 / sqrt(x) should rewrite to rsqrt"
+  assert foundAddCi and foundSubCi and foundMulCi,
+    "Integer operations with constants should use immediate opcodes"
+  assert foundAddCf and foundSubCf and foundMulCf,
+    "Float operations with constants should use immediate opcodes"
+  assert mulCiCount == 1 and mulCfCount == 1,
+    "Multiplication by one should be removed on either side"
   assert not foundCall, "Builtin calls should not emit generic vocCall instructions"
 
   var a = @[-4.0'f32, 9.0'f32, -1.0'f32, 2.25'f32]
@@ -347,10 +369,13 @@ proc testBuiltinOpcodes() =
 
   for i in 0 ..< a.len:
     let expected = abs(a[i]) + min(a[i], b[i]) + max(a[i], b[i]) +
-                   sqrt(abs(b[i])) + 1.0'f32 / sqrt(abs(a[i]))
+                   sqrt(abs(b[i])) + 1.0'f32 / sqrt(abs(a[i])) +
+                   a[i] / sqrt(abs(b[i])) + (a[i] + 2.0'f32) +
+                   (b[i] - 1.0'f32) + (a[i] * 2.0'f32) + b[i] + a[i]
     assert abs(c[i] - expected) < 0.0001'f32,
       "Builtin result at index " & $i & ": expected " & $expected & " got " & $c[i]
-    let expectedInt = abs(ia[i]) + min(ia[i], ib[i]) + max(ia[i], ib[i])
+    let expectedInt = abs(ia[i]) + min(ia[i], ib[i]) + max(ia[i], ib[i]) +
+                      (ia[i] + 3) + (ib[i] - 2) + (ia[i] * 2) + ib[i] + ia[i]
     assert ic[i] == expectedInt,
       "Integer builtin result at index " & $i & ": expected " & $expectedInt & " got " & $ic[i]
   echo "  -> abs/min/max/sqrt/rsqrt opcodes and results verified"

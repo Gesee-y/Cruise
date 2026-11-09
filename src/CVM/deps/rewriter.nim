@@ -18,7 +18,8 @@ type
 
   PatternGuardKind = enum
     pgNone
-    pgOneOverSqrt
+    pgMultiplyByOne
+    pgDivideBySqrt
 
   # This represent the path to a term going from a parent `Term`
   TermPath = seq[int]
@@ -105,17 +106,33 @@ proc isOne(node: CIRNode): bool =
     node.args.len > 1 and node.args[^1].isOne
   else: false
 
-proc isOneOverSqrt(node: CIRNode): bool =
-  node.args.len == 3 and node.args[1].isOne
+proc isMultiplyByOne(node: CIRNode): bool =
+  node.args.len == 3 and (node.args[1].isOne or node.args[2].isOne)
 
-proc rewriteRsqrt(node: CIRNode): CIRNode =
-  result = newCIRNode(node.info, cnkRsqrt)
-  result.add(node.args[2].args[1])
+proc rewriteMultiplyByOne(node: CIRNode): CIRNode =
+  if node.args[1].isOne: node.args[2] else: node.args[1]
+
+proc rewriteDivideBySqrt(node: CIRNode): CIRNode =
+  let root = node.args[2]
+  var rsqrt = newCIRNode(root.info, cnkRsqrt)
+  rsqrt.add(root.args[1])
+
+  result = newCIRNode(node.info, cnkInfix)
+  result.add(newCIRRSym(node.args[0].info, "*", node.args[0].tid))
+  result.add(node.args[1])
+  result.add(rsqrt)
 
 proc newRewriterEngine(): RewriterEngine =
   result = RewriterEngine()
   let any = anyTerm()
   let product = operationTerm(cnkInfix, "*", @[any, any])
+
+  # Multiplication by one does not need a VM operation.
+  result.addPattern(cnkInfix, Pattern(
+    term: product,
+    rewriter: rewriteMultiplyByOne,
+    guard: pgMultiplyByOne
+  ))
 
   # a * b + c -> fma(a, b, c), including the commuted c + a * b form.
   result.addPattern(cnkInfix, Pattern(
@@ -158,14 +175,14 @@ proc newRewriterEngine(): RewriterEngine =
     rewriter: removeDoublePrefix
   ))
 
-  # 1 / sqrt(x) -> rsqrt(x), a native GPU operation on common hardware.
+  # a / sqrt(x) -> a * rsqrt(x), a native GPU operation on common hardware.
   result.addPattern(cnkInfix, Pattern(
     term: operationTerm(cnkInfix, "/", @[
       any,
       operationTerm(cnkCall, "sqrt", @[any])
     ]),
-    rewriter: rewriteRsqrt,
-    guard: pgOneOverSqrt
+    rewriter: rewriteDivideBySqrt,
+    guard: pgDivideBySqrt
   ))
 
 # Check that a CIR node match a given term
@@ -212,8 +229,12 @@ proc matchPattern*(node: CIRNode, pattern: Pattern): bool =
 
   case pattern.guard
   of pgNone: discard
-  of pgOneOverSqrt:
-    if not node.isOneOverSqrt:
+  of pgMultiplyByOne:
+    if not node.isMultiplyByOne:
+      return false
+  of pgDivideBySqrt:
+    if node.args.len != 3 or node.args[2].kind != cnkCall or
+       node.args[2].args.len < 2 or node.args[2].args[0].name != "sqrt":
       return false
 
   for rule in pattern.rules:

@@ -195,6 +195,36 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
     of vocRsqrtf:
       vm.writeMemFloat(int(dst), size, 1.0 / sqrt(vm.readMemFloat(int(src), size)))
 
+    of vocAddCi, vocSubCi, vocMulCi:
+      var immediate = uint64(program[vm.pc])
+      inc vm.pc
+      if size > 4:
+        immediate = immediate or (uint64(program[vm.pc]) shl 32)
+        inc vm.pc
+      let value = vm.readMemUInt(int(dst), size)
+      case op
+      of vocAddCi: vm.writeMemUInt(int(dst), size, value + immediate)
+      of vocSubCi: vm.writeMemUInt(int(dst), size, value - immediate)
+      of vocMulCi: vm.writeMemUInt(int(dst), size, value * immediate)
+      else: discard
+
+    of vocAddCf, vocSubCf, vocMulCf:
+      var immediate: float64
+      let low = program[vm.pc]
+      inc vm.pc
+      if size > 4:
+        let high = program[vm.pc]
+        inc vm.pc
+        immediate = cast[float64](uint64(low) or (uint64(high) shl 32))
+      else:
+        immediate = float64(cast[float32](low))
+      let value = vm.readMemFloat(int(dst), size)
+      case op
+      of vocAddCf: vm.writeMemFloat(int(dst), size, value + immediate)
+      of vocSubCf: vm.writeMemFloat(int(dst), size, value - immediate)
+      of vocMulCf: vm.writeMemFloat(int(dst), size, value * immediate)
+      else: discard
+
     of vocAddi:
       if size == 8:
         cast[ptr int64](addr vm.memory[dst])[] += cast[ptr int64](unsafeAddr vm.memory[src])[]

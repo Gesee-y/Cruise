@@ -91,6 +91,16 @@ proc opcodeFor(op: string, isFloat: bool): VMOpCode =
     else: return vocLei
   else: assert false, "Failed to get infix opcode for `" & op & "`."
 
+proc immediateOpcodeFor(op: string, isFloat: bool): VMOpCode =
+  case op
+  of "+":
+    if isFloat: vocAddCf else: vocAddCi
+  of "-":
+    if isFloat: vocSubCf else: vocSubCi
+  of "*":
+    if isFloat: vocMulCf else: vocMulCi
+  else: assert false, "No immediate opcode for `" & op & "`."
+
 proc prefixOpcodeFor(op: string, isFloat: bool): VMOpCode =
   case op
   of "not":
@@ -113,6 +123,40 @@ proc emitInst(ctx: var CodeGenCtx, op: VMOpCode, dst, src: CMemLoc, size: int = 
 proc emitWord(ctx: var CodeGenCtx, word: uint32) {.inline.} =
   ctx.code.data.add(word)
   inc ctx.code.currentPos
+
+proc unwrapLiteral(node: CIRNode): CIRNode =
+  result = node
+  while result.kind in {cnkConv, cnkCast} and result.args.len > 0:
+    result = result.args[^1]
+
+proc isImmediateLiteral(node: CIRNode): bool =
+  unwrapLiteral(node).isLit
+
+proc immediateBits(node: CIRNode, isFloat: bool, size: int): uint64 =
+  let literal = unwrapLiteral(node)
+  if isFloat:
+    var value: float64
+    case literal.kind
+    of cnkIntLit: value = float64(literal.intVal)
+    of cnkUintLit: value = float64(literal.uintVal)
+    of cnkFloatLit: value = float64(literal.floatVal)
+    else: assert false, "Expected numeric immediate literal"
+    if size <= 4:
+      return uint64(cast[uint32](float32(value)))
+    return cast[uint64](value)
+
+  case literal.kind
+  of cnkIntLit: cast[uint64](int64(literal.intVal))
+  of cnkUintLit: uint64(literal.uintVal)
+  of cnkFloatLit: cast[uint64](int64(literal.floatVal))
+  else: assert false, "Expected numeric immediate literal"
+
+proc emitImmediate(ctx: var CodeGenCtx, op: VMOpCode, dst: CMemLoc,
+                   value: uint64, size: int) =
+  ctx.emitInst(op, dst, 0, size)
+  ctx.emitWord(uint32(value and 0xFFFF_FFFF'u64))
+  if size > 4:
+    ctx.emitWord(uint32(value shr 32))
 
 proc freeIfTemp(ctx: var CodeGenCtx, alloc: CAllocation) {.inline.} =
   if alloc.isTemp and alloc.size > 0:
@@ -195,8 +239,26 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
     let operandTy = ctx.cache.getType(operandTyName)
     let opSize = max(1, operandTy.size)
 
-    let r1 = ctx.genExpr(c.args[1])
-    let r2 = ctx.genExpr(c.args[2])
+    var lhsNode = c.args[1]
+    var rhsNode = c.args[2]
+    # Addition and multiplication are commutative, so put a literal on the
+    # immediate side regardless of which operand it appeared on.
+    if opName in ["+", "*"] and lhsNode.isImmediateLiteral and
+       not rhsNode.isImmediateLiteral:
+      swap(lhsNode, rhsNode)
+
+    if opName in ["+", "-", "*"] and rhsNode.isImmediateLiteral:
+      let lhs = ctx.genExpr(lhsNode)
+      result = if target.size >= opSize: target else: ctx.code.allocator.alloc(opSize)
+      if result.pos != lhs.pos:
+        ctx.emitInst(vocMov, result.pos, lhs.pos, opSize)
+      let imm = immediateBits(rhsNode, opIsFloat, opSize)
+      ctx.emitImmediate(immediateOpcodeFor(opName, opIsFloat), result.pos, imm, opSize)
+      ctx.freeIfTemp(lhs)
+      return
+
+    let r1 = ctx.genExpr(lhsNode)
+    let r2 = ctx.genExpr(rhsNode)
 
     if target.size >= opSize:
       result = target

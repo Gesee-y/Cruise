@@ -84,3 +84,9 @@ type
     vocMaxu    = 54  ## dst = max(dst, src), unsigned integer
     vocSqrtf   = 55  ## dst = sqrt(src), float
     vocRsqrtf  = 56  ## dst = 1 / sqrt(src), float
+    vocAddCi   = 57  ## dst += signed/unsigned immediate (next word, or two for size 8)
+    vocSubCi   = 58  ## dst -= signed/unsigned immediate
+    vocMulCi   = 59  ## dst *= signed/unsigned immediate
+    vocAddCf   = 60  ## dst += float immediate
+    vocSubCf   = 61  ## dst -= float immediate
+    vocMulCf   = 62  ## dst *= float immediate
