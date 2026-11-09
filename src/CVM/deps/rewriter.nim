@@ -76,7 +76,7 @@ type
     term: Term
     rules: seq[TermRule]
     priority: int
-    returnKind: int
+    returnKind: CIRNodeKind
     returnArgsPos: seq[RewriteNode]
 
   # The rewrite engine
@@ -109,16 +109,14 @@ proc fetchNode(node: CIRNode, path: TermPath): CIRNode =
   return current[]
 
 proc matchEqRule(node: CIRNode, rule: TermRule): bool =
-  if rule.nodes.len < 1: return true
+  if rule.nodes.len < 2: return true
   
   result = true
-  let lnode = fetchNode(node, rule.nodes[0])
+  var first = fetchNode(node, rule.nodes[0])
   for i in 1..<rule.nodes.len:
-    let rnode = fetchNode(node, rule.nodes[i])
-    result = lnode == rnode
-    if not result: break
-
-    lnode = rnode
+    if not first == fetchNode(node, rule.nodes[i]):
+      result = false
+      break
 
 proc matchRule(node: CIRNode, rule: TermRule): bool =
   case rule.kind
@@ -142,25 +140,24 @@ proc applySubstitution(node: CIRNode, s: Substitute): CIRNode =
 
 proc applyPrefix(op: string, root, node: CIRNode): CIRNode =
   if op == "not":
-    case left.kind:
+    case node.kind:
     of cnkIntLit:
       return CIRNode(kind: cnkIntLit, src: node.info, intVal: not node.intVal)
     of cnkUintLit:
       return CIRNode(kind: cnkUintLit, src: node.info, uintVal: not node.uintVal)
     of cnkBoolLit:
-      return CIRNode(kind: cnkUintLit, boolVal: not node.boolVal)
+      return CIRNode(kind: cnkUintLit, src: node.info, boolVal: not node.boolVal)
     of cnkFloatLit:
       assert false, "Can't use `not` on float during rewrite."
-      return CIRNode(kind: cnkFloatLit, floatVal: node.floatVal)
     else: discard
   elif op == "-":
-    case left.kind:
+    case node.kind:
     of cnkIntLit:
-      return CIRNode(kind: cnkIntLit, intVal: -node.intVal)
+      return CIRNode(kind: cnkIntLit, src: node.info, intVal: -node.intVal)
     of cnkUintLit:
       assert false, "Can't negate uint during rewrite."
     of cnkFloatLit:
-      return CIRNode(kind: cnkFloatLit, floatVal: -node.floatVal)
+      return CIRNode(kind: cnkFloatLit, src: node.info, floatVal: -node.floatVal)
     else: discard
 
   return root
@@ -169,29 +166,29 @@ proc applyInfix(op: string, root, left, right: CIRNode): CIRNode =
   if op == "+":
     case left.kind:
     of cnkIntLit:
-      return newCIRNode(kind: cnkIntLit, intVal: left.intVal + right.intVal)
+      return CIRNode(kind: cnkIntLit, src: root.info, intVal: left.intVal + right.intVal)
     of cnkUintLit:
-      return newCIRNode(kind: cnkUintLit, uintVal: left.uintVal + right.uintVal)
-    of cnkFloatLit:
-      return newCIRNode(kind: cnkFloatLit, floatVal: left.floatVal + right.floatVal)
+      return CIRNode(kind: cnkUintLit, src: root.info, uintVal: left.uintVal + right.uintVal)
+    of cnkFloatLit: 
+      return CIRNode(kind: cnkFloatLit, src: root.info, floatVal: left.floatVal + right.floatVal)
     else: discard
   elif op == "-":
     case left.kind:
     of cnkIntLit:
-      return newCIRNode(kind: cnkIntLit, intVal: left.intVal - right.intVal)
+      return CIRNode(kind: cnkIntLit, src: root.info, intVal: left.intVal - right.intVal)
     of cnkUintLit:
-      return newCIRNode(kind: cnkUintLit, uintVal: left.uintVal - right.uintVal)
+      return CIRNode(kind: cnkUintLit, src: root.info, uintVal: left.uintVal - right.uintVal)
     of cnkFloatLit:
-      return newCIRNode(kind: cnkFloatLit, floatVal: left.floatVal - right.floatVal)
+      return CIRNode(kind: cnkFloatLit, src: root.info, floatVal: left.floatVal - right.floatVal)
     else: discard
   elif op == "*":
     case left.kind:
     of cnkIntLit:
-      return newCIRNode(kind: cnkIntLit, intVal: left.intVal * right.intVal)
+      return CIRNode(kind: cnkIntLit, src: root.info, intVal: left.intVal * right.intVal)
     of cnkUintLit:
-      return newCIRNode(kind: cnkUintLit, uintVal: left.uintVal * right.uintVal)
+      return CIRNode(kind: cnkUintLit, src: root.info, uintVal: left.uintVal * right.uintVal)
     of cnkFloatLit:
-      return newCIRNode(kind: cnkFloatLit, floatVal: left.floatVal * right.floatVal)
+      return CIRNode(kind: cnkFloatLit, src: root.info, floatVal: left.floatVal * right.floatVal)
     else: discard
 
   return root
@@ -201,8 +198,8 @@ proc constructNewNode(node: CIRNode, rn: RewriteNode): CIRNode =
   of rnkIdentity: return node
   of rnkSubstitute: applySubstitution(node, rn.substitute)
   of rnkInfix:
-    var left = fetchNode(node, rn.args[0])
-    var right = fetchNode(node, rn.args[1])
+    var left = constructNewNode(node, rn.args[0])
+    var right = constructNewNode(node, rn.args[1])
 
     assert left.kind == right.kind
     assert left.kind in {cnkIntLit, cnkUintLit, cnkFloatLit}
@@ -210,7 +207,7 @@ proc constructNewNode(node: CIRNode, rn: RewriteNode): CIRNode =
 
     return applyInfix(rn.op, node, left, right)
   of rnkPrefix:
-    var left = fetchNode(node, rn.args[0])
+    var left = constructNewNode(node, rn.args[0])
 
     assert left.kind in {cnkIntLit, cnkUintLit, cnkFloatLit, cnkBoolLit}
     assert rn.op in ["-", "not"]

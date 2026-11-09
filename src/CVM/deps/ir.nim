@@ -105,6 +105,29 @@ proc name*(c: CIRNode): string =
     result = c.n
   else:
     result = ""
+proc `==`*(a, b: CIRNode): bool =
+  if a.kind != b.kind: return false
+  case a.kind:
+  of cnkSym, cnkRSym:
+    return a.name == b.name
+  of cnkIntLit:
+    return a.intVal == b.intVal
+  of cnkUintLit:
+    return a.uintVal == b.uintVal
+  of cnkFloatLit:
+    return a.floatVal == b.floatVal
+  of cnkCharLit:
+    return a.charVal == b.charVal
+  of cnkBoolLit:
+    return a.boolVal == b.boolVal
+  of cnkDiscardStmt, cnkEmpty, cnkContinueStmt, cnkWritOnly,
+    cnkReadOnly: return true
+  else:
+    for i in 0..<a.args.len:
+      let res = a.args[i] == b.args[i]
+      if not res: return res
+
+    return true
 
 proc renderIR*(node: CIRNode, indent: int = 0): string =
   let ind = repeat("  ", indent)
