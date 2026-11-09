@@ -22,15 +22,16 @@ In the program to run on the VM, let's name it `mainKernel.nim`:
 import CVM
 
 translateToBytecode()
+setShaderName("myShader")
 
-const N {.uniform.}: int
+var N {.uniform.}: int = 0
 
 proc main(i {.globalIndex.}: int, a {.ssbo.}: seq[int], b {.ssbo.}: seq[int], c {.ssbo.}: var seq[int]):
   if i < N:
     c[i] = a[i] + b[i]
 ```
 
-This will generate a `mainKernel.cbc` file, which contains the bytecode of the program.
+This will generate a `myShader.cbc` file, which contains the bytecode of the program.
 
 Then in the program running it:
 
@@ -38,7 +39,7 @@ Then in the program running it:
 import CVM
 
 proc main:
-  let data = loadBytecode("path/to/mainKernel.cbc")
+  let data = loadBytecode("path/to/myShader.cbc")
   var c: seq[int] = @[0, 0, 0]
   runVM(OpenCL, data, (@[1, 2, 3], @[4, 5, 6], c, 3)) # First argument is the bytecode, the remaining are the arguments
 ```
