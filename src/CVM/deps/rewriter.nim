@@ -56,59 +56,86 @@ type
  # ########################################################### FUNCTIONS ################################################################ #
 # ###################################################################################################################################### #
 
+proc anyTerm(): Term =
+  Term(ty: cnkNone, kind: tkDontCare)
+
+proc operationTerm(kind: CIRNodeKind, op: string,
+                   operands: seq[Term]): Term =
+  var args = @[anyTerm()]
+  for operand in operands:
+    args.add(operand)
+  Term(ty: kind, name: op, kind: tkCompound, args: args)
+
+proc rewriteNegatedOperand(node: CIRNode): CIRNode =
+  let rootOp = node.args[0].name
+  var op = if rootOp == "+": "-" else: "+"
+  var lhs = node.args[1]
+  var rhs = node.args[2]
+
+  if rhs.kind == cnkPrefix:
+    rhs = rhs.args[1]
+  else:
+    # (+) is commutative, so (-a) + b can also become b - a.
+    op = "-"
+    lhs = node.args[2]
+    rhs = node.args[1].args[1]
+
+  result = newCIRNode(node.info, cnkInfix)
+  if node.args[0].kind == cnkRSym:
+    result.add(newCIRRSym(node.args[0].info, op, node.args[0].tid))
+  else:
+    result.add(newCIRSym(node.args[0].info, op))
+  result.add(lhs)
+  result.add(rhs)
+
+proc removeDoublePrefix(node: CIRNode): CIRNode =
+  node.args[1].args[1]
+
 proc newRewriterEngine(): RewriterEngine =
   result = RewriterEngine()
+  let any = anyTerm()
+  let product = operationTerm(cnkInfix, "*", @[any, any])
 
-  # a * b + c -> fma(a, b, c).
-  let any = Term(ty: cnkNone, kind: tkDontCare)
-  let product = Term(
-    ty: cnkInfix,
-    name: "*",
-    kind: tkCompound,
-    args: @[
-      any,
-      any,
-      any
-    ]
-  )
-  let fmaPattern = Pattern(
-    term: Term(
-      ty: cnkInfix,
-      name: "+",
-      kind: tkCompound,
-      args: @[
-        any,
-        product,
-        any
-      ]
-    ),
+  # a * b + c -> fma(a, b, c), including the commuted c + a * b form.
+  result.addPattern(cnkInfix, Pattern(
+    term: operationTerm(cnkInfix, "+", @[product, any]),
     rewriter: proc(node: CIRNode): CIRNode =
       result = newCIRNode(node.info, cnkFma)
       result.add(node.args[1].args[1])
       result.add(node.args[1].args[2])
       result.add(node.args[2])
-  )
-
-  # a + b * c -> fma(b, c, a).
-  let fmaPattern2 = Pattern(
-    term: Term(
-      ty: cnkInfix,
-      name: "+",
-      kind: tkCompound,
-      args: @[
-        product,
-        any,
-        any
-      ]
-    ),
+  ))
+  result.addPattern(cnkInfix, Pattern(
+    term: operationTerm(cnkInfix, "+", @[any, product]),
     rewriter: proc(node: CIRNode): CIRNode =
       result = newCIRNode(node.info, cnkFma)
       result.add(node.args[2].args[1])
       result.add(node.args[2].args[2])
       result.add(node.args[1])
-  )
-  result.addPattern(cnkInfix, fmaPattern)
-  result.addPattern(cnkInfix, fmaPattern2)
+  ))
+
+  # a + (-b) -> a - b; a - (-b) -> a + b; (-a) + b -> b - a.
+  let neg = operationTerm(cnkPrefix, "-", @[any])
+  result.addPattern(cnkInfix, Pattern(
+    term: operationTerm(cnkInfix, "+", @[any, neg]),
+    rewriter: rewriteNegatedOperand
+  ))
+  result.addPattern(cnkInfix, Pattern(
+    term: operationTerm(cnkInfix, "-", @[any, neg]),
+    rewriter: rewriteNegatedOperand
+  ))
+  result.addPattern(cnkInfix, Pattern(
+    term: operationTerm(cnkInfix, "+", @[neg, any]),
+    rewriter: rewriteNegatedOperand
+  ))
+
+  # -(-x) -> x.
+  result.addPattern(cnkPrefix, Pattern(
+    term: operationTerm(cnkPrefix, "-", @[
+      operationTerm(cnkPrefix, "-", @[any])
+    ]),
+    rewriter: removeDoublePrefix
+  ))
 
 # Check that a CIR node match a given term
 proc matchTerm*(node: CIRNode, term: Term): bool =

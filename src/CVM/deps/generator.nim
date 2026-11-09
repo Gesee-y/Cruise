@@ -207,15 +207,9 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
     let addend = ctx.genExpr(c.args[2])
     result = if target.size >= opSize: target else: ctx.code.allocator.alloc(opSize)
 
-    if isFloat:
-      ctx.emitInst(vocMaddf, result.pos, lhs.pos, opSize)
-      ctx.emitWord(uint32(rhs.pos and 0xFF) or (uint32(addend.pos and 0xFF) shl 8))
-    else:
-      # Keep integer expressions correct even though the fused instruction is
-      # only defined for floating-point values.
-      ctx.emitInst(vocMov, result.pos, lhs.pos, opSize)
-      ctx.emitInst(vocMuli, result.pos, rhs.pos, opSize)
-      ctx.emitInst(vocAddi, result.pos, addend.pos, opSize)
+    ctx.emitInst(if isFloat: vocMaddf else: vocMaddi,
+                 result.pos, lhs.pos, opSize)
+    ctx.emitWord(uint32(rhs.pos and 0xFF) or (uint32(addend.pos and 0xFF) shl 8))
 
     if result.pos != target.pos:
       ctx.emitInst(vocMov, target.pos, result.pos, opSize)

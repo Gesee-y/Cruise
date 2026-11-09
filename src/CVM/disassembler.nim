@@ -57,7 +57,7 @@ proc disassemble*(code: openArray[uint32]) =
         echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED TARGET>"
         pc += 1
 
-    of vocMaddf:
+    of vocMaddf, vocMaddi:
       if pc + 1 < code.len:
         let packedSources = code[pc + 1]
         let rhsReg = packedSources and 0xFF'u32

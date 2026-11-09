@@ -210,6 +210,20 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         let addend = vm.readMemFloat(addReg, size)
         vm.writeMemFloat(int(dst), size, product + addend)
 
+    of vocMaddi:
+      let packedSources = program[vm.pc]
+      inc vm.pc
+      let mulReg = int(src)
+      let rhsReg = int(packedSources and 0xFF'u32)
+      let addReg = int((packedSources shr 8) and 0xFF'u32)
+      let product = vm.readMemInt(mulReg, size) * vm.readMemInt(rhsReg, size)
+      # Preserve the intermediate-width truncation of separate multiply/add
+      # instructions for int8 and int16 values.
+      vm.writeMemInt(int(dst), size, product)
+      let truncatedProduct = vm.readMemInt(int(dst), size)
+      let addend = vm.readMemInt(addReg, size)
+      vm.writeMemInt(int(dst), size, truncatedProduct + addend)
+
     of vocDivf:
       if size == 4:
         cast[ptr float32](addr vm.memory[dst])[] /= cast[ptr float32](unsafeAddr vm.memory[src])[]

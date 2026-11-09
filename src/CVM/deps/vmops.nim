@@ -72,6 +72,7 @@ type
     vocLoadGI   = 42  ## dst = globalIndex
     vocNoOp     = 43  ## No operation / index operand carrier
     vocMaddf    = 44  ## dst = src * rhsReg + addReg; two packed source registers follow
+    vocMaddi    = 45  ## Integer dst = src * rhsReg + addReg; two packed source registers follow
 
   # Builtins deliberately have a stable, compact ID space: calls occupy one
   # bytecode word and do not need a name lookup at runtime.

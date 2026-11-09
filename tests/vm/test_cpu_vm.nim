@@ -1,7 +1,6 @@
 import std/[syncio, assertions]
 import ../../src/CVM/deps/vmops
 import ../../src/CVM/vms/cpu
-import ../../src/CVM/disassembler
 
 proc encodeInst(op: VMOpCode, dst, src: int, size: int = 1): uint32 =
   (uint32(size and 0xFF) shl 24) or (uint32(ord(op) and 0xFF) shl 16) or (uint32(dst and 0xFF) shl 8) or uint32(src and 0xFF)
@@ -40,6 +39,34 @@ proc testFloatArithmetic() =
   let res = cast[ptr float32](addr vm.memory[0])[]
   assert abs(res - 7.0'f32) < 0.0001, "Expected 7.0, got " & $res
   echo "  -> OK (3.5 * 2.0 = 7.0)"
+
+proc testIntegerFma() =
+  echo "[TEST] Integer fused multiply-add..."
+  var vm = initCpuVm()
+  let program = @[
+    encodeInst(vocLoadi, 0, 0, 4), 2'u32,
+    encodeInst(vocLoadi, 4, 0, 4), 3'u32,
+    encodeInst(vocLoadi, 8, 0, 4), 4'u32,
+    encodeInst(vocMaddi, 12, 0, 4), 4'u32 or (8'u32 shl 8),
+    encodeInst(vocHalt, 0, 0, 0)
+  ]
+  vm.runVM(program)
+  let result = cast[ptr int32](addr vm.memory[12])[]
+  assert result == 10, "Expected integer FMA result 10, got " & $result
+
+  # Exercise the narrow integer path as well.
+  var vm8 = initCpuVm()
+  let program8 = @[
+    encodeInst(vocLoadi, 0, 0, 1), cast[uint32](-10'i32),
+    encodeInst(vocLoadi, 1, 0, 1), 3'u32,
+    encodeInst(vocLoadi, 2, 0, 1), 1'u32,
+    encodeInst(vocMaddi, 3, 0, 1), 1'u32 or (2'u32 shl 8),
+    encodeInst(vocHalt, 0, 0, 0)
+  ]
+  vm8.runVM(program8)
+  let narrowResult = cast[ptr int8](addr vm8.memory[3])[]
+  assert narrowResult == -29, "Expected int8 FMA result -29, got " & $narrowResult
+  echo "  -> int32 and int8 results preserved"
 
 proc testLoopsAndBranches() =
   echo "[TEST] Loops and Conditional Jumps..."
@@ -212,22 +239,30 @@ proc testFmaGeneratedBytecode() =
   # Decode instruction boundaries so an immediate/branch target cannot be
   # mistaken for the FMA opcode.
   var pc = 0
-  var foundFma = false
+  var fmaCount = 0
+  var foundIntegerFma = false
+  var foundNegate = false
   while pc < program.len:
     var op: VMOpCode
     var dst, src: uint8
     var size: int
     decodeWord(program[pc], op, dst, src, size)
     if op == vocMaddf:
-      foundFma = true
+      inc fmaCount
+    elif op == vocMaddi:
+      foundIntegerFma = true
+    elif op in {vocNegi, vocNegf}:
+      foundNegate = true
     inc pc
     case op
-    of vocLoadi, vocLoadf, vocCall, vocJmp, vocJmpFalse, vocMaddf,
+    of vocLoadi, vocLoadf, vocCall, vocJmp, vocJmpFalse, vocMaddf, vocMaddi,
        vocLoadBuf, vocStoreBuf, vocLoadAt, vocStoreAt:
       inc pc
     else:
       discard
-  assert foundFma, "FMA pattern did not emit vocMaddf"
+  assert fmaCount >= 2, "Both FMA operand orders should emit vocMaddf"
+  assert foundIntegerFma, "Integer FMA pattern did not emit vocMaddi"
+  assert not foundNegate, "Negation rewrite left a redundant negate instruction"
 
   const N = 4
   var a = @[1.5'f32, 2.0'f32, -3.0'f32, 4.25'f32]
@@ -242,15 +277,16 @@ proc testFmaGeneratedBytecode() =
     vm.runVM(program)
 
   for i in 0 ..< N:
-    let expected = a[i] * b[i] + a[i]
+    let expected = 2 * a[i] * b[i] + 4 * a[i] + b[i]
     assert abs(c[i] - expected) < 0.0001'f32,
-      "FMA result at index " & $i & ": expected " & $expected & " got " & $c[i]
-  echo "  -> vocMaddf emitted and results match a * b + a"
+      "FMA/rewrite result at index " & $i & ": expected " & $expected & " got " & $c[i]
+  echo "  -> FMA and negation rewrites match expected results"
 
 proc main() =
   echo "==================== CPU VM TEST SUITE ===================="
   testBasicArithmetic()
   testFloatArithmetic()
+  testIntegerFma()
   testLoopsAndBranches()
   testProcedureCall()
   testMemoryModel()
