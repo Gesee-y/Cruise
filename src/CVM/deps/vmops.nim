@@ -73,20 +73,14 @@ type
     vocNoOp     = 43  ## No operation / index operand carrier
     vocMaddf    = 44  ## dst = src * rhsReg + addReg; two packed source registers follow
     vocMaddi    = 45  ## Integer dst = src * rhsReg + addReg; two packed source registers follow
-
-  # Builtins deliberately have a stable, compact ID space: calls occupy one
-  # bytecode word and do not need a name lookup at runtime.
-  BuiltinOp* = enum
-    boCustom = 0
-    boAbs    = 1
-    boMin    = 2
-    boMax    = 3
-    boSqrt   = 4
-
-proc toBuiltinCall(op: string): BuiltinOp =
-  case op
-  of "abs": boAbs
-  of "min": boMin
-  of "max": boMax
-  of "sqrt": boSqrt
-  else: boCustom
+    vocAbsi    = 46  ## dst = abs(src), signed integer
+    vocAbsf    = 47  ## dst = abs(src), float
+    vocAbsu    = 48  ## dst = src, unsigned abs identity
+    vocMini    = 49  ## dst = min(dst, src), signed integer
+    vocMaxi    = 50  ## dst = max(dst, src), signed integer
+    vocMinf    = 51  ## dst = min(dst, src), float
+    vocMaxf    = 52  ## dst = max(dst, src), float
+    vocMinu    = 53  ## dst = min(dst, src), unsigned integer
+    vocMaxu    = 54  ## dst = max(dst, src), unsigned integer
+    vocSqrtf   = 55  ## dst = sqrt(src), float
+    vocRsqrtf  = 56  ## dst = 1 / sqrt(src), float

@@ -118,6 +118,26 @@ proc freeIfTemp(ctx: var CodeGenCtx, alloc: CAllocation) {.inline.} =
   if alloc.isTemp and alloc.size > 0:
     ctx.code.allocator.free(alloc)
 
+proc builtinOpcode(name, typeName: string): VMOpCode =
+  let isFloat = typeName.startsWith("float")
+  let isUnsigned = typeName.startsWith("uint")
+  case name
+  of "abs":
+    if isFloat: vocAbsf
+    elif isUnsigned: vocAbsu
+    else: vocAbsi
+  of "min":
+    if isFloat: vocMinf
+    elif isUnsigned: vocMinu
+    else: vocMini
+  of "max":
+    if isFloat: vocMaxf
+    elif isUnsigned: vocMaxu
+    else: vocMaxi
+  of "sqrt": vocSqrtf
+  of "rsqrt": vocRsqrtf
+  else: assert false, "Unsupported builtin opcode: " & name
+
 # ################################################################################################################################ #
 # ##################################################### VARIABLE RESOLUTION ###################################################### #
 # ################################################################################################################################ #
@@ -221,6 +241,16 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
     ctx.freeIfTemp(addend)
     return
 
+  of cnkRsqrt:
+    var argNode = c.args[0]
+    let typeName = ctx.cache.inferType(argNode)
+    let size = max(1, ctx.cache.getType(typeName).size)
+    let arg = ctx.genExpr(c.args[0])
+    result = if target.size >= size: target else: ctx.code.allocator.alloc(size)
+    ctx.emitInst(vocRsqrtf, result.pos, arg.pos, size)
+    ctx.freeIfTemp(arg)
+    return
+
   of cnkPrefix:
     let opName = c.args[0].name
     var dummyNode = c
@@ -252,10 +282,39 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
 
   of cnkCall:
     let procName = c.args[0].name
-    var retSize = 1
-    let procInst = ctx.cache.getType(procName)
-    if procInst.returnType != "":
-      retSize = ctx.cache.getType(procInst.returnType).size
+    if procName in ["abs", "sqrt", "rsqrt"]:
+      var argNode = c.args[1]
+      let typeName = ctx.cache.inferType(argNode)
+      let size = max(1, ctx.cache.getType(typeName).size)
+      let arg = ctx.genExpr(c.args[1])
+      result = if target.size >= size: target else: ctx.code.allocator.alloc(size)
+      let op = builtinOpcode(procName, typeName)
+      if op == vocAbsu:
+        if result.pos != arg.pos:
+          ctx.emitInst(vocMov, result.pos, arg.pos, size)
+      else:
+        ctx.emitInst(op, result.pos, arg.pos, size)
+      ctx.freeIfTemp(arg)
+      return
+
+    if procName in ["min", "max"]:
+      var leftNode = c.args[1]
+      let typeName = ctx.cache.inferType(leftNode)
+      let size = max(1, ctx.cache.getType(typeName).size)
+      let left = ctx.genExpr(c.args[1])
+      let right = ctx.genExpr(c.args[2])
+      result = if target.size >= size: target else: ctx.code.allocator.alloc(size)
+      let op = builtinOpcode(procName, typeName)
+      if result.pos == left.pos:
+        ctx.emitInst(op, result.pos, right.pos, size)
+      elif result.pos == right.pos:
+        ctx.emitInst(op, result.pos, left.pos, size)
+      else:
+        ctx.emitInst(vocMov, result.pos, left.pos, size)
+        ctx.emitInst(op, result.pos, right.pos, size)
+      ctx.freeIfTemp(left)
+      ctx.freeIfTemp(right)
+      return
 
     result = target
     var argsToFree: seq[CAllocation] = @[]
@@ -268,17 +327,13 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
     for argAlloc in argsToFree:
       ctx.freeIfTemp(argAlloc)
 
-    let bopCode = toBuiltinCall(procName)
-    var procPos = 0
-    
-    if bopCode == boCustom:
-      procPos = ctx.code.procTable.getOrDefault(procName, -1)
+    let procPos = ctx.code.procTable.getOrDefault(procName, -1)
 
-    ctx.emitInst(vocCall, bopCode.int, result.pos)
+    ctx.emitInst(vocCall, 0, result.pos)
     let patchPos = ctx.code.data.len
     ctx.emitWord(if procPos >= 0: uint32(procPos) else: 0u32)
 
-    if bopCode == boCustom and procPos < 0:
+    if procPos < 0:
       var list = ctx.code.callToPatch.getOrDefault(procName, @[])
       list.add(patchPos)
       ctx.code.callToPatch[procName] = list

@@ -16,6 +16,10 @@ type
   TermRuleKind = enum
     trkEq
 
+  PatternGuardKind = enum
+    pgNone
+    pgOneOverSqrt
+
   # This represent the path to a term going from a parent `Term`
   TermPath = seq[int]
 
@@ -47,6 +51,7 @@ type
     rules: seq[TermRule]
     priority: int
     rewriter: Rewriter
+    guard: PatternGuardKind
 
   # The rewrite engine
   RewriterEngine* = object
@@ -90,6 +95,22 @@ proc rewriteNegatedOperand(node: CIRNode): CIRNode =
 
 proc removeDoublePrefix(node: CIRNode): CIRNode =
   node.args[1].args[1]
+
+proc isOne(node: CIRNode): bool =
+  case node.kind
+  of cnkIntLit: node.intVal == 1
+  of cnkUintLit: node.uintVal == 1'u
+  of cnkFloatLit: node.floatVal == 1.0
+  of cnkConv, cnkCast:
+    node.args.len > 1 and node.args[^1].isOne
+  else: false
+
+proc isOneOverSqrt(node: CIRNode): bool =
+  node.args.len == 3 and node.args[1].isOne
+
+proc rewriteRsqrt(node: CIRNode): CIRNode =
+  result = newCIRNode(node.info, cnkRsqrt)
+  result.add(node.args[2].args[1])
 
 proc newRewriterEngine(): RewriterEngine =
   result = RewriterEngine()
@@ -137,6 +158,16 @@ proc newRewriterEngine(): RewriterEngine =
     rewriter: removeDoublePrefix
   ))
 
+  # 1 / sqrt(x) -> rsqrt(x), a native GPU operation on common hardware.
+  result.addPattern(cnkInfix, Pattern(
+    term: operationTerm(cnkInfix, "/", @[
+      any,
+      operationTerm(cnkCall, "sqrt", @[any])
+    ]),
+    rewriter: rewriteRsqrt,
+    guard: pgOneOverSqrt
+  ))
+
 # Check that a CIR node match a given term
 proc matchTerm*(node: CIRNode, term: Term): bool =
   case term.kind:
@@ -178,6 +209,12 @@ proc matchRule*(node: CIRNode, rule: TermRule): bool =
 proc matchPattern*(node: CIRNode, pattern: Pattern): bool =
   result = node.matchTerm(pattern.term)
   if not result: return
+
+  case pattern.guard
+  of pgNone: discard
+  of pgOneOverSqrt:
+    if not node.isOneOverSqrt:
+      return false
 
   for rule in pattern.rules:
     result = node.matchRule(rule)

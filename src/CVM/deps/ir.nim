@@ -31,6 +31,7 @@ type
     cnkBoolLit
     cnkInfix
     cnkFma
+    cnkRsqrt
     cnkPrefix
     cnkArrAt, cnkArrAsgnAt
     cnkAsgn
@@ -205,6 +206,11 @@ proc renderIR*(node: CIRNode, indent: int = 0): string =
                renderIR(node.args[1]) & ", " & renderIR(node.args[2]) & ")"
     else:
       result = "fma(?)"
+  of cnkRsqrt:
+    if node.args.len == 1:
+      result = "rsqrt(" & renderIR(node.args[0]) & ")"
+    else:
+      result = "rsqrt(?)"
   of cnkPrefix:
     if node.args.len >= 2:
       let op = renderIR(node.args[0], 0)

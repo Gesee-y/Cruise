@@ -1,4 +1,4 @@
-import std/[syncio, assertions]
+import std/[syncio, assertions, math]
 import ../../src/CVM/deps/vmops
 import ../../src/CVM/vms/cpu
 
@@ -282,6 +282,79 @@ proc testFmaGeneratedBytecode() =
       "FMA/rewrite result at index " & $i & ": expected " & $expected & " got " & $c[i]
   echo "  -> FMA and negation rewrites match expected results"
 
+proc testBuiltinOpcodes() =
+  echo "[TEST] Builtin math opcodes..."
+  var f = open("test_builtin.cbc", fmRead)
+  var program: seq[uint32] = @[]
+  var word: uint32
+  while f.readBuffer(addr word, sizeof(uint32)) == sizeof(uint32):
+    program.add(word)
+  close(f)
+  assert program.len > 0, "test_builtin.cbc is empty"
+
+  var foundAbs, foundAbsInt, foundMin, foundMinInt = false
+  var foundMax, foundMaxInt, foundSqrt, foundRsqrt, foundCall = false
+  var pc = 0
+  while pc < program.len:
+    var op: VMOpCode
+    var dst, src: uint8
+    var size: int
+    decodeWord(program[pc], op, dst, src, size)
+    case op
+    of vocAbsf: foundAbs = true
+    of vocAbsi: foundAbsInt = true
+    of vocMinf: foundMin = true
+    of vocMini: foundMinInt = true
+    of vocMaxf: foundMax = true
+    of vocMaxi: foundMaxInt = true
+    of vocSqrtf: foundSqrt = true
+    of vocRsqrtf: foundRsqrt = true
+    of vocCall: foundCall = true
+    else: discard
+    inc pc
+    case op
+    of vocLoadi, vocLoadf, vocCall, vocJmp, vocJmpFalse, vocMaddf, vocMaddi,
+       vocLoadBuf, vocStoreBuf, vocLoadAt, vocStoreAt:
+      inc pc
+    else:
+      discard
+
+  assert foundAbs, "abs should use a dedicated opcode"
+  assert foundAbsInt, "integer abs should use a dedicated opcode"
+  assert foundMin, "min should use a dedicated opcode"
+  assert foundMinInt, "integer min should use a dedicated opcode"
+  assert foundMax, "max should use a dedicated opcode"
+  assert foundMaxInt, "integer max should use a dedicated opcode"
+  assert foundSqrt, "sqrt should use a dedicated opcode"
+  assert foundRsqrt, "1 / sqrt(x) should rewrite to rsqrt"
+  assert not foundCall, "Builtin calls should not emit generic vocCall instructions"
+
+  var a = @[-4.0'f32, 9.0'f32, -1.0'f32, 2.25'f32]
+  var b = @[1.0'f32, -16.0'f32, 4.0'f32, -1.0'f32]
+  var c = newSeq[float32](a.len)
+  var ia = @[-7'i64, 2'i64, -1'i64, 8'i64]
+  var ib = @[3'i64, -4'i64, 5'i64, -2'i64]
+  var ic = newSeq[int64](ia.len)
+  for gid in 0 ..< a.len:
+    var vm = initCpuVm(globalId = gid)
+    vm.setBuffer(0, cast[pointer](addr a[0]))
+    vm.setBuffer(1, cast[pointer](addr b[0]))
+    vm.setBuffer(2, cast[pointer](addr c[0]))
+    vm.setBuffer(3, cast[pointer](addr ia[0]))
+    vm.setBuffer(4, cast[pointer](addr ib[0]))
+    vm.setBuffer(5, cast[pointer](addr ic[0]))
+    vm.runVM(program)
+
+  for i in 0 ..< a.len:
+    let expected = abs(a[i]) + min(a[i], b[i]) + max(a[i], b[i]) +
+                   sqrt(abs(b[i])) + 1.0'f32 / sqrt(abs(a[i]))
+    assert abs(c[i] - expected) < 0.0001'f32,
+      "Builtin result at index " & $i & ": expected " & $expected & " got " & $c[i]
+    let expectedInt = abs(ia[i]) + min(ia[i], ib[i]) + max(ia[i], ib[i])
+    assert ic[i] == expectedInt,
+      "Integer builtin result at index " & $i & ": expected " & $expectedInt & " got " & $ic[i]
+  echo "  -> abs/min/max/sqrt/rsqrt opcodes and results verified"
+
 proc main() =
   echo "==================== CPU VM TEST SUITE ===================="
   testBasicArithmetic()
@@ -293,6 +366,7 @@ proc main() =
   testGeneratedObjAndLoopsBytecode()
   testVectorAddShader()
   testFmaGeneratedBytecode()
+  testBuiltinOpcodes()
   echo "================ ALL TESTS PASSED SUCCESSFULLY ================"
 
 main()
