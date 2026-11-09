@@ -13,6 +13,7 @@ include "../allocator.nim"
 include "vmops.nim"
 include "ir.nim"
 include "sem.nim"
+include "rewriter.nim"
 include "generator.nim"
 
 proc getShaderName(n: NifCursor): string =

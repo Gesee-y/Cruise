@@ -30,6 +30,7 @@ type
     cnkFloatLit
     cnkBoolLit
     cnkInfix
+    cnkFma
     cnkPrefix
     cnkArrAt, cnkArrAsgnAt
     cnkAsgn
@@ -198,6 +199,12 @@ proc renderIR*(node: CIRNode, indent: int = 0): string =
       result = "(" & op & " " & arg & ")"
     else:
       result = ""
+  of cnkFma:
+    if node.args.len == 3:
+      result = "fma(" & renderIR(node.args[0]) & ", " &
+               renderIR(node.args[1]) & ", " & renderIR(node.args[2]) & ")"
+    else:
+      result = "fma(?)"
   of cnkPrefix:
     if node.args.len >= 2:
       let op = renderIR(node.args[0], 0)

@@ -195,6 +195,38 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
     ctx.freeIfTemp(r2)
     return
 
+  of cnkFma:
+    var lhsNode = c.args[0]
+    let tyName = ctx.cache.inferType(lhsNode)
+    let ty = ctx.cache.getType(tyName)
+    let opSize = max(1, ty.size)
+    let isFloat = tyName.startsWith("float")
+
+    let lhs = ctx.genExpr(c.args[0])
+    let rhs = ctx.genExpr(c.args[1])
+    let addend = ctx.genExpr(c.args[2])
+    result = if target.size >= opSize: target else: ctx.code.allocator.alloc(opSize)
+
+    if isFloat:
+      ctx.emitInst(vocMaddf, result.pos, lhs.pos, opSize)
+      ctx.emitWord(uint32(rhs.pos and 0xFF) or (uint32(addend.pos and 0xFF) shl 8))
+    else:
+      # Keep integer expressions correct even though the fused instruction is
+      # only defined for floating-point values.
+      ctx.emitInst(vocMov, result.pos, lhs.pos, opSize)
+      ctx.emitInst(vocMuli, result.pos, rhs.pos, opSize)
+      ctx.emitInst(vocAddi, result.pos, addend.pos, opSize)
+
+    if result.pos != target.pos:
+      ctx.emitInst(vocMov, target.pos, result.pos, opSize)
+      ctx.code.allocator.free(result)
+      result = target
+
+    ctx.freeIfTemp(lhs)
+    ctx.freeIfTemp(rhs)
+    ctx.freeIfTemp(addend)
+    return
+
   of cnkPrefix:
     let opName = c.args[0].name
     var dummyNode = c

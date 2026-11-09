@@ -199,6 +199,54 @@ proc testVectorAddShader() =
   for i in 0 ..< N:
     echo "     c[" & $i & "] = " & $a[i] & " + " & $b[i] & " = " & $c[i]
 
+proc testFmaGeneratedBytecode() =
+  echo "[TEST] FMA rewrite from test_fma_opt_probe.nim..."
+  var f = open("test_fma_opt_probe.cbc", fmRead)
+  var program: seq[uint32] = @[]
+  var word: uint32
+  while f.readBuffer(addr word, sizeof(uint32)) == sizeof(uint32):
+    program.add(word)
+  close(f)
+  assert program.len > 0, "test_fma_opt_probe.cbc is empty"
+
+  # Decode instruction boundaries so an immediate/branch target cannot be
+  # mistaken for the FMA opcode.
+  var pc = 0
+  var foundFma = false
+  while pc < program.len:
+    var op: VMOpCode
+    var dst, src: uint8
+    var size: int
+    decodeWord(program[pc], op, dst, src, size)
+    if op == vocMaddf:
+      foundFma = true
+    inc pc
+    case op
+    of vocLoadi, vocLoadf, vocCall, vocJmp, vocJmpFalse, vocMaddf,
+       vocLoadBuf, vocStoreBuf, vocLoadAt, vocStoreAt:
+      inc pc
+    else:
+      discard
+  assert foundFma, "FMA pattern did not emit vocMaddf"
+
+  const N = 4
+  var a = @[1.5'f32, 2.0'f32, -3.0'f32, 4.25'f32]
+  var b = @[2.0'f32, 3.5'f32, 0.5'f32, -2.0'f32]
+  var c = newSeq[float32](N)
+  for gid in 0 ..< N:
+    var vm = initCpuVm(globalId = gid)
+    vm.setUniform(0, N)
+    vm.setBuffer(0, cast[pointer](addr a[0]))
+    vm.setBuffer(1, cast[pointer](addr b[0]))
+    vm.setBuffer(2, cast[pointer](addr c[0]))
+    vm.runVM(program)
+
+  for i in 0 ..< N:
+    let expected = a[i] * b[i] + a[i]
+    assert abs(c[i] - expected) < 0.0001'f32,
+      "FMA result at index " & $i & ": expected " & $expected & " got " & $c[i]
+  echo "  -> vocMaddf emitted and results match a * b + a"
+
 proc main() =
   echo "==================== CPU VM TEST SUITE ===================="
   testBasicArithmetic()
@@ -208,6 +256,7 @@ proc main() =
   testMemoryModel()
   testGeneratedObjAndLoopsBytecode()
   testVectorAddShader()
+  testFmaGeneratedBytecode()
   echo "================ ALL TESTS PASSED SUCCESSFULLY ================"
 
 main()

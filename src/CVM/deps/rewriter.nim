@@ -31,10 +31,8 @@ type
   Term = object
     ty: CIRNodeKind
     name: string
-    case kind: TermKind
-    of tkDontCare, tkLeaf: discard
-    of tkCompound:
-      args: seq[Term]
+    kind: TermKind
+    args: seq[Term]
 
   Rewriter* = proc (node: CIRNode): CIRNode
 
@@ -60,6 +58,57 @@ type
 
 proc newRewriterEngine(): RewriterEngine =
   result = RewriterEngine()
+
+  # a * b + c -> fma(a, b, c).
+  let any = Term(ty: cnkNone, kind: tkDontCare)
+  let product = Term(
+    ty: cnkInfix,
+    name: "*",
+    kind: tkCompound,
+    args: @[
+      any,
+      any,
+      any
+    ]
+  )
+  let fmaPattern = Pattern(
+    term: Term(
+      ty: cnkInfix,
+      name: "+",
+      kind: tkCompound,
+      args: @[
+        any,
+        product,
+        any
+      ]
+    ),
+    rewriter: proc(node: CIRNode): CIRNode =
+      result = newCIRNode(node.info, cnkFma)
+      result.add(node.args[1].args[1])
+      result.add(node.args[1].args[2])
+      result.add(node.args[2])
+  )
+
+  # a + b * c -> fma(b, c, a).
+  let fmaPattern2 = Pattern(
+    term: Term(
+      ty: cnkInfix,
+      name: "+",
+      kind: tkCompound,
+      args: @[
+        product,
+        any,
+        any
+      ]
+    ),
+    rewriter: proc(node: CIRNode): CIRNode =
+      result = newCIRNode(node.info, cnkFma)
+      result.add(node.args[2].args[1])
+      result.add(node.args[2].args[2])
+      result.add(node.args[1])
+  )
+  result.addPattern(cnkInfix, fmaPattern)
+  result.addPattern(cnkInfix, fmaPattern2)
 
 # Check that a CIR node match a given term
 proc matchTerm*(node: CIRNode, term: Term): bool =
@@ -90,7 +139,7 @@ proc matchEqRule(node: CIRNode, rule: TermRule): bool =
   result = true
   var first = fetchNode(node, rule.nodes[0])
   for i in 1..<rule.nodes.len:
-    if not first == fetchNode(node, rule.nodes[i]):
+    if first != fetchNode(node, rule.nodes[i]):
       result = false
       break
 
