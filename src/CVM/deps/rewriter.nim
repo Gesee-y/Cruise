@@ -103,3 +103,11 @@ proc matchPattern*(node: CIRNode, pattern: Pattern): bool =
 
 proc rewriteNode*(p: Pattern, node: CIRNode): CIRNode =
   result = p.rewriter(node)
+
+proc rewriteIfMatch*(re: RewriterEngine, node: var CIRNode) =
+  for pattern in re.patterns[node.kind]:
+    if node.matchPattern(pattern):
+      node = pattern.rewriteNode(node)
+
+proc addPattern*(re: var RewriterEngine, kind: CIRNodeKind, p: Pattern) =
+  re.patterns[kind].add(p)
