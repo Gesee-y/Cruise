@@ -58,6 +58,9 @@ type
  # ########################################################### FUNCTIONS ################################################################ #
 # ###################################################################################################################################### #
 
+proc newRewriterEngine(): RewriterEngine =
+  result = RewriterEngine()
+
 # Check that a CIR node match a given term
 proc matchTerm*(node: CIRNode, term: Term): bool =
   case term.kind:
