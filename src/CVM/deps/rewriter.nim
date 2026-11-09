@@ -30,6 +30,7 @@ type
   # So each term represent a constraint of each of the children of the IR node
   Term = object
     ty: CIRNodeKind
+    name: string
     case kind: TermKind
     of tkDontCare, tkLeaf: discard
     of tkCompound:
@@ -64,6 +65,8 @@ proc matchTerm*(node: CIRNode, term: Term): bool =
   of tkLeaf: return node.kind == term.ty
   of tkCompound:
     if node.kind != term.ty: return false
+    if term.name != "":
+      if term.name != node.args[0].name: return false
     var r = true
     var i = 0
     while r and i < term.args.len:
@@ -101,13 +104,26 @@ proc matchPattern*(node: CIRNode, pattern: Pattern): bool =
     result = node.matchRule(rule)
     if not result: break
 
-proc rewriteNode*(p: Pattern, node: CIRNode): CIRNode =
-  result = p.rewriter(node)
-
-proc rewriteIfMatch*(re: RewriterEngine, node: var CIRNode) =
+proc rewriteIfMatch*(re: RewriterEngine, node: var CIRNode): bool =
   for pattern in re.patterns[node.kind]:
     if node.matchPattern(pattern):
-      node = pattern.rewriteNode(node)
+      node = pattern.rewriter(node)
+      return true
+
+  return false
 
 proc addPattern*(re: var RewriterEngine, kind: CIRNodeKind, p: Pattern) =
   re.patterns[kind].add(p)
+
+proc rewriteNode*(re: RewriterEngine, node: var CIRNode) =
+  if node.isLeaf: return
+  if re.rewriteIfMatch(node):
+    re.rewriteNode(node)
+    return
+
+  for n in node.args.mitems:
+    re.rewriteNode(n)
+
+proc rewritePass*(re: RewriterEngine, root: var CIRNode) =
+  re.rewriteNode(root)
+

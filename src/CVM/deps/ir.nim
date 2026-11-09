@@ -105,6 +105,12 @@ proc name*(c: CIRNode): string =
     result = c.n
   else:
     result = ""
+proc isSymbol*(c: CIRNode): bool =
+  return c.kind in {cnkSym, cnkRSym}
+proc isLit*(c: CIRNode): bool =
+  return c.kind in {cnkIntLit, cnkUintLit, cnkBoolLit, cnkCharLit, cnkFloatLit}
+proc isLeaf*(c: CIRNode): bool =
+  return c.isSymbol or c.isLit or c.kind in {cnkDiscardStmt, cnkEmpty, cnkContinueStmt, cnkWritOnly, cnkReadOnly}
 proc `==`*(a, b: CIRNode): bool =
   if a.kind != b.kind: return false
   case a.kind:
