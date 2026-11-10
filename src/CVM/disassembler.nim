@@ -46,6 +46,23 @@ proc disassemble*(code: openArray[uint32]) =
         echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED IMM>"
         pc += 1
 
+    # Arithmetic immediates carry one word (up to 32 bits) or two words (64 bits).
+    of vocAddCi, vocSubCi, vocMulCi, vocAddCf, vocSubCf, vocMulCf:
+      if pc + 1 < code.len:
+        var imm = uint64(code[pc + 1])
+        pc += 2
+        if size > 4 and pc < code.len:
+          imm = imm or (uint64(code[pc]) shl 32)
+          inc pc
+          echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, #0x{imm.toHex(16)}"
+        elif size > 4:
+          echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED IMM64>"
+        else:
+          echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, #0x{imm.toHex(8)}"
+      else:
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED IMM>"
+        pc += 1
+
     # Instructions de saut / appel dont la cible est dans le mot suivant
     of vocJmp, vocJmpFalse, vocCall:
       if pc + 1 < code.len:
@@ -57,7 +74,7 @@ proc disassemble*(code: openArray[uint32]) =
         echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED TARGET>"
         pc += 1
 
-    of vocMaddf:
+    of vocMaddf, vocMaddi:
       if pc + 1 < code.len:
         let packedSources = code[pc + 1]
         let rhsReg = packedSources and 0xFF'u32

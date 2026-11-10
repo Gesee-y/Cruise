@@ -30,6 +30,8 @@ type
     cnkFloatLit
     cnkBoolLit
     cnkInfix
+    cnkFma
+    cnkRsqrt
     cnkPrefix
     cnkArrAt, cnkArrAsgnAt
     cnkAsgn
@@ -105,6 +107,35 @@ proc name*(c: CIRNode): string =
     result = c.n
   else:
     result = ""
+proc isSymbol*(c: CIRNode): bool =
+  return c.kind in {cnkSym, cnkRSym}
+proc isLit*(c: CIRNode): bool =
+  return c.kind in {cnkIntLit, cnkUintLit, cnkBoolLit, cnkCharLit, cnkFloatLit}
+proc isLeaf*(c: CIRNode): bool =
+  return c.isSymbol or c.isLit or c.kind in {cnkDiscardStmt, cnkEmpty, cnkContinueStmt, cnkWritOnly, cnkReadOnly}
+proc `==`*(a, b: CIRNode): bool =
+  if a.kind != b.kind: return false
+  case a.kind:
+  of cnkSym, cnkRSym:
+    return a.name == b.name
+  of cnkIntLit:
+    return a.intVal == b.intVal
+  of cnkUintLit:
+    return a.uintVal == b.uintVal
+  of cnkFloatLit:
+    return a.floatVal == b.floatVal
+  of cnkCharLit:
+    return a.charVal == b.charVal
+  of cnkBoolLit:
+    return a.boolVal == b.boolVal
+  of cnkDiscardStmt, cnkEmpty, cnkContinueStmt, cnkWritOnly,
+    cnkReadOnly: return true
+  else:
+    for i in 0..<a.args.len:
+      let res = a.args[i] == b.args[i]
+      if not res: return res
+
+    return true
 
 proc renderIR*(node: CIRNode, indent: int = 0): string =
   let ind = repeat("  ", indent)
@@ -169,6 +200,17 @@ proc renderIR*(node: CIRNode, indent: int = 0): string =
       result = "(" & op & " " & arg & ")"
     else:
       result = ""
+  of cnkFma:
+    if node.args.len == 3:
+      result = "fma(" & renderIR(node.args[0]) & ", " &
+               renderIR(node.args[1]) & ", " & renderIR(node.args[2]) & ")"
+    else:
+      result = "fma(?)"
+  of cnkRsqrt:
+    if node.args.len == 1:
+      result = "rsqrt(" & renderIR(node.args[0]) & ")"
+    else:
+      result = "rsqrt(?)"
   of cnkPrefix:
     if node.args.len >= 2:
       let op = renderIR(node.args[0], 0)

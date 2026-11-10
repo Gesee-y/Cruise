@@ -71,6 +71,27 @@ template writeMemInt(vm: var CpuVm, address: int, size: int, val: int64) =
     var tmp = val
     copyMem(addr vm.memory[address], addr tmp, min(size, 8))
 
+template readMemUInt(vm: CpuVm, address: int, size: int): uint64 =
+  case size
+  of 8: cast[ptr uint64](unsafeAddr vm.memory[address])[]
+  of 4: uint64(cast[ptr uint32](unsafeAddr vm.memory[address])[])
+  of 2: uint64(cast[ptr uint16](unsafeAddr vm.memory[address])[])
+  of 1: uint64(vm.memory[address])
+  else:
+    var tmp: uint64 = 0
+    copyMem(addr tmp, unsafeAddr vm.memory[address], min(size, 8))
+    tmp
+
+template writeMemUInt(vm: var CpuVm, address: int, size: int, val: uint64) =
+  case size
+  of 8: cast[ptr uint64](addr vm.memory[address])[] = val
+  of 4: cast[ptr uint32](addr vm.memory[address])[] = uint32(val)
+  of 2: cast[ptr uint16](addr vm.memory[address])[] = uint16(val)
+  of 1: vm.memory[address] = uint8(val)
+  else:
+    var tmp = val
+    copyMem(addr vm.memory[address], addr tmp, min(size, 8))
+
 template readMemFloat(vm: CpuVm, address: int, size: int): float64 =
   if size == 8:
     cast[ptr float64](unsafeAddr vm.memory[address])[]
@@ -127,6 +148,82 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         vm.memory[dst] = vm.memory[src]
       else:
         copyMem(addr vm.memory[dst], unsafeAddr vm.memory[src], size)
+
+    of vocAbsi:
+      vm.writeMemInt(int(dst), size, abs(vm.readMemInt(int(src), size)))
+
+    of vocAbsf:
+      vm.writeMemFloat(int(dst), size, abs(vm.readMemFloat(int(src), size)))
+
+    of vocAbsu:
+      if dst != src:
+        copyMem(addr vm.memory[dst], unsafeAddr vm.memory[src], size)
+
+    of vocMini:
+      let a = vm.readMemInt(int(dst), size)
+      let b = vm.readMemInt(int(src), size)
+      vm.writeMemInt(int(dst), size, if a < b: a else: b)
+
+    of vocMaxi:
+      let a = vm.readMemInt(int(dst), size)
+      let b = vm.readMemInt(int(src), size)
+      vm.writeMemInt(int(dst), size, if a > b: a else: b)
+
+    of vocMinf:
+      let a = vm.readMemFloat(int(dst), size)
+      let b = vm.readMemFloat(int(src), size)
+      vm.writeMemFloat(int(dst), size, if a < b: a else: b)
+
+    of vocMaxf:
+      let a = vm.readMemFloat(int(dst), size)
+      let b = vm.readMemFloat(int(src), size)
+      vm.writeMemFloat(int(dst), size, if a > b: a else: b)
+
+    of vocMinu:
+      let a = vm.readMemUInt(int(dst), size)
+      let b = vm.readMemUInt(int(src), size)
+      vm.writeMemUInt(int(dst), size, if a < b: a else: b)
+
+    of vocMaxu:
+      let a = vm.readMemUInt(int(dst), size)
+      let b = vm.readMemUInt(int(src), size)
+      vm.writeMemUInt(int(dst), size, if a > b: a else: b)
+
+    of vocSqrtf:
+      vm.writeMemFloat(int(dst), size, sqrt(vm.readMemFloat(int(src), size)))
+
+    of vocRsqrtf:
+      vm.writeMemFloat(int(dst), size, 1.0 / sqrt(vm.readMemFloat(int(src), size)))
+
+    of vocAddCi, vocSubCi, vocMulCi:
+      var immediate = uint64(program[vm.pc])
+      inc vm.pc
+      if size > 4:
+        immediate = immediate or (uint64(program[vm.pc]) shl 32)
+        inc vm.pc
+      let value = vm.readMemUInt(int(dst), size)
+      case op
+      of vocAddCi: vm.writeMemUInt(int(dst), size, value + immediate)
+      of vocSubCi: vm.writeMemUInt(int(dst), size, value - immediate)
+      of vocMulCi: vm.writeMemUInt(int(dst), size, value * immediate)
+      else: discard
+
+    of vocAddCf, vocSubCf, vocMulCf:
+      var immediate: float64
+      let low = program[vm.pc]
+      inc vm.pc
+      if size > 4:
+        let high = program[vm.pc]
+        inc vm.pc
+        immediate = cast[float64](uint64(low) or (uint64(high) shl 32))
+      else:
+        immediate = float64(cast[float32](low))
+      let value = vm.readMemFloat(int(dst), size)
+      case op
+      of vocAddCf: vm.writeMemFloat(int(dst), size, value + immediate)
+      of vocSubCf: vm.writeMemFloat(int(dst), size, value - immediate)
+      of vocMulCf: vm.writeMemFloat(int(dst), size, value * immediate)
+      else: discard
 
     of vocAddi:
       if size == 8:
@@ -209,6 +306,20 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         let product = vm.readMemFloat(mulReg, size) * vm.readMemFloat(rhsReg, size)
         let addend = vm.readMemFloat(addReg, size)
         vm.writeMemFloat(int(dst), size, product + addend)
+
+    of vocMaddi:
+      let packedSources = program[vm.pc]
+      inc vm.pc
+      let mulReg = int(src)
+      let rhsReg = int(packedSources and 0xFF'u32)
+      let addReg = int((packedSources shr 8) and 0xFF'u32)
+      let product = vm.readMemInt(mulReg, size) * vm.readMemInt(rhsReg, size)
+      # Preserve the intermediate-width truncation of separate multiply/add
+      # instructions for int8 and int16 values.
+      vm.writeMemInt(int(dst), size, product)
+      let truncatedProduct = vm.readMemInt(int(dst), size)
+      let addend = vm.readMemInt(addReg, size)
+      vm.writeMemInt(int(dst), size, truncatedProduct + addend)
 
     of vocDivf:
       if size == 4:
@@ -325,23 +436,10 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         vm.pc = int(target)
 
     of vocCall:
-      let bop = BuiltinOp(dst)
       let target = program[vm.pc]
       inc vm.pc
-      case bop
-      of boCustom:
-        vm.callStack.add(vm.pc)
-        vm.pc = int(target)
-      of boAbs:
-        let val = vm.readMemInt(int(src), size)
-        vm.writeMemInt(int(src), size, abs(val))
-      of boMin:
-        discard
-      of boMax:
-        discard
-      of boSqrt:
-        let val = vm.readMemFloat(int(src), size)
-        vm.writeMemFloat(int(src), size, sqrt(val))
+      vm.callStack.add(vm.pc)
+      vm.pc = int(target)
 
     of vocRet:
       if vm.callStack.len > 0:

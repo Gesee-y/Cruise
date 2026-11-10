@@ -129,13 +129,19 @@ proc inferType*(cache: var TypeCache, node: var CIRNode): string =
 
   of cnkConv:
     return node.args[0].name
+
+  of cnkFma, cnkRsqrt:
+    var operand = node.args[0]
+    return cache.inferType(operand)
     
   else:
     reportSemError node.info, "Failed to infer type of expression ```" & renderIR(node) & "```."
     return
 
 proc resolveProc*(c: TypeCache, n: CIRNode, argTypes: seq[string]): int =
-  let name = n.args[0].name
+  let fullName = n.args[0].name
+  let shortName = fullName.split(".")[0]
+  let name = if shortName in c.functions: shortName else: fullName
 
   if name notin c.functions:
     reportSemError n.info, "Unknown function `" & name & "`. Maybe the function is not native to GPU or not declared in the current module."
@@ -169,7 +175,9 @@ proc resolveProc*(c: TypeCache, n: CIRNode, argTypes: seq[string]): int =
     inc pos
 
 proc resolveCall(cache: var TypeCache, n: var CIRNode) =
-  let funcName = n.args[0].name
+  let fullName = n.args[0].name
+  let shortName = fullName.split(".")[0]
+  let funcName = if shortName in cache.functions: shortName else: fullName
   var argTypes: seq[string] = @[]
 
   for i in 1 ..< n.args.len:

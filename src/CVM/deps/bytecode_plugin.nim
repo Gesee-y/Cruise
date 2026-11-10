@@ -13,6 +13,7 @@ include "../allocator.nim"
 include "vmops.nim"
 include "ir.nim"
 include "sem.nim"
+include "rewriter.nim"
 include "generator.nim"
 
 proc getShaderName(n: NifCursor): string =
@@ -41,6 +42,9 @@ proc generateBytecode(n: var NifCursor): NifBuilder =
     result.withTree StmtsS, n.info:
       flushSemErrors(result)
     return
+
+  var re = newRewriterEngine()
+  re.rewritePass(irCode)
 
   var ctx = CodeGenCtx(
     cache: cache,

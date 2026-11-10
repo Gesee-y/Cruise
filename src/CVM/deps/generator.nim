@@ -91,6 +91,16 @@ proc opcodeFor(op: string, isFloat: bool): VMOpCode =
     else: return vocLei
   else: assert false, "Failed to get infix opcode for `" & op & "`."
 
+proc immediateOpcodeFor(op: string, isFloat: bool): VMOpCode =
+  case op
+  of "+":
+    if isFloat: vocAddCf else: vocAddCi
+  of "-":
+    if isFloat: vocSubCf else: vocSubCi
+  of "*":
+    if isFloat: vocMulCf else: vocMulCi
+  else: assert false, "No immediate opcode for `" & op & "`."
+
 proc prefixOpcodeFor(op: string, isFloat: bool): VMOpCode =
   case op
   of "not":
@@ -114,9 +124,63 @@ proc emitWord(ctx: var CodeGenCtx, word: uint32) {.inline.} =
   ctx.code.data.add(word)
   inc ctx.code.currentPos
 
+proc unwrapLiteral(node: CIRNode): CIRNode =
+  result = node
+  while result.kind in {cnkConv, cnkCast} and result.args.len > 0:
+    result = result.args[^1]
+
+proc isImmediateLiteral(node: CIRNode): bool =
+  unwrapLiteral(node).isLit
+
+proc immediateBits(node: CIRNode, isFloat: bool, size: int): uint64 =
+  let literal = unwrapLiteral(node)
+  if isFloat:
+    var value: float64
+    case literal.kind
+    of cnkIntLit: value = float64(literal.intVal)
+    of cnkUintLit: value = float64(literal.uintVal)
+    of cnkFloatLit: value = float64(literal.floatVal)
+    else: assert false, "Expected numeric immediate literal"
+    if size <= 4:
+      return uint64(cast[uint32](float32(value)))
+    return cast[uint64](value)
+
+  case literal.kind
+  of cnkIntLit: cast[uint64](int64(literal.intVal))
+  of cnkUintLit: uint64(literal.uintVal)
+  of cnkFloatLit: cast[uint64](int64(literal.floatVal))
+  else: assert false, "Expected numeric immediate literal"
+
+proc emitImmediate(ctx: var CodeGenCtx, op: VMOpCode, dst: CMemLoc,
+                   value: uint64, size: int) =
+  ctx.emitInst(op, dst, 0, size)
+  ctx.emitWord(uint32(value and 0xFFFF_FFFF'u64))
+  if size > 4:
+    ctx.emitWord(uint32(value shr 32))
+
 proc freeIfTemp(ctx: var CodeGenCtx, alloc: CAllocation) {.inline.} =
   if alloc.isTemp and alloc.size > 0:
     ctx.code.allocator.free(alloc)
+
+proc builtinOpcode(name, typeName: string): VMOpCode =
+  let isFloat = typeName.startsWith("float")
+  let isUnsigned = typeName.startsWith("uint")
+  case name
+  of "abs":
+    if isFloat: vocAbsf
+    elif isUnsigned: vocAbsu
+    else: vocAbsi
+  of "min":
+    if isFloat: vocMinf
+    elif isUnsigned: vocMinu
+    else: vocMini
+  of "max":
+    if isFloat: vocMaxf
+    elif isUnsigned: vocMaxu
+    else: vocMaxi
+  of "sqrt": vocSqrtf
+  of "rsqrt": vocRsqrtf
+  else: assert false, "Unsupported builtin opcode: " & name
 
 # ################################################################################################################################ #
 # ##################################################### VARIABLE RESOLUTION ###################################################### #
@@ -161,7 +225,7 @@ proc getFieldReg(ctx: var CodeGenCtx, baseReg: CAllocation, c: CIRNode): CAlloca
 # ############################################################# EXPRESSIONS ###################################################### #
 # ################################################################################################################################ #
 
-proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAllocation)): CAllocation =
+proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(pos: -1)): CAllocation =
   result = default(CAllocation)
   case c.kind
   of cnkInfix:
@@ -175,8 +239,26 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
     let operandTy = ctx.cache.getType(operandTyName)
     let opSize = max(1, operandTy.size)
 
-    let r1 = ctx.genExpr(c.args[1])
-    let r2 = ctx.genExpr(c.args[2])
+    var lhsNode = c.args[1]
+    var rhsNode = c.args[2]
+    # Addition and multiplication are commutative, so put a literal on the
+    # immediate side regardless of which operand it appeared on.
+    if opName in ["+", "*"] and lhsNode.isImmediateLiteral and
+       not rhsNode.isImmediateLiteral:
+      swap(lhsNode, rhsNode)
+
+    if opName in ["+", "-", "*"] and rhsNode.isImmediateLiteral:
+      let lhs = ctx.genExpr(lhsNode)
+      result = if target.size >= opSize: target else: ctx.code.allocator.alloc(opSize)
+      if result.pos != lhs.pos:
+        ctx.emitInst(vocMov, result.pos, lhs.pos, opSize)
+      let imm = immediateBits(rhsNode, opIsFloat, opSize)
+      ctx.emitImmediate(immediateOpcodeFor(opName, opIsFloat), result.pos, imm, opSize)
+      ctx.freeIfTemp(lhs)
+      return
+
+    let r1 = ctx.genExpr(lhsNode)
+    let r2 = ctx.genExpr(rhsNode)
 
     if target.size >= opSize:
       result = target
@@ -193,6 +275,42 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
 
     ctx.freeIfTemp(r1)
     ctx.freeIfTemp(r2)
+    return
+
+  of cnkFma:
+    var lhsNode = c.args[0]
+    let tyName = ctx.cache.inferType(lhsNode)
+    let ty = ctx.cache.getType(tyName)
+    let opSize = max(1, ty.size)
+    let isFloat = tyName.startsWith("float")
+
+    let lhs = ctx.genExpr(c.args[0])
+    let rhs = ctx.genExpr(c.args[1])
+    let addend = ctx.genExpr(c.args[2])
+    result = if target.size >= opSize: target else: ctx.code.allocator.alloc(opSize)
+
+    ctx.emitInst(if isFloat: vocMaddf else: vocMaddi,
+                 result.pos, lhs.pos, opSize)
+    ctx.emitWord(uint32(rhs.pos and 0xFF) or (uint32(addend.pos and 0xFF) shl 8))
+
+    if result.pos != target.pos:
+      ctx.emitInst(vocMov, target.pos, result.pos, opSize)
+      ctx.code.allocator.free(result)
+      result = target
+
+    ctx.freeIfTemp(lhs)
+    ctx.freeIfTemp(rhs)
+    ctx.freeIfTemp(addend)
+    return
+
+  of cnkRsqrt:
+    var argNode = c.args[0]
+    let typeName = ctx.cache.inferType(argNode)
+    let size = max(1, ctx.cache.getType(typeName).size)
+    let arg = ctx.genExpr(c.args[0])
+    result = if target.size >= size: target else: ctx.code.allocator.alloc(size)
+    ctx.emitInst(vocRsqrtf, result.pos, arg.pos, size)
+    ctx.freeIfTemp(arg)
     return
 
   of cnkPrefix:
@@ -226,10 +344,39 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
 
   of cnkCall:
     let procName = c.args[0].name
-    var retSize = 1
-    let procInst = ctx.cache.getType(procName)
-    if procInst.returnType != "":
-      retSize = ctx.cache.getType(procInst.returnType).size
+    if procName in ["abs", "sqrt", "rsqrt"]:
+      var argNode = c.args[1]
+      let typeName = ctx.cache.inferType(argNode)
+      let size = max(1, ctx.cache.getType(typeName).size)
+      let arg = ctx.genExpr(c.args[1])
+      result = if target.size >= size: target else: ctx.code.allocator.alloc(size)
+      let op = builtinOpcode(procName, typeName)
+      if op == vocAbsu:
+        if result.pos != arg.pos:
+          ctx.emitInst(vocMov, result.pos, arg.pos, size)
+      else:
+        ctx.emitInst(op, result.pos, arg.pos, size)
+      ctx.freeIfTemp(arg)
+      return
+
+    if procName in ["min", "max"]:
+      var leftNode = c.args[1]
+      let typeName = ctx.cache.inferType(leftNode)
+      let size = max(1, ctx.cache.getType(typeName).size)
+      let left = ctx.genExpr(c.args[1])
+      let right = ctx.genExpr(c.args[2])
+      result = if target.size >= size: target else: ctx.code.allocator.alloc(size)
+      let op = builtinOpcode(procName, typeName)
+      if result.pos == left.pos:
+        ctx.emitInst(op, result.pos, right.pos, size)
+      elif result.pos == right.pos:
+        ctx.emitInst(op, result.pos, left.pos, size)
+      else:
+        ctx.emitInst(vocMov, result.pos, left.pos, size)
+        ctx.emitInst(op, result.pos, right.pos, size)
+      ctx.freeIfTemp(left)
+      ctx.freeIfTemp(right)
+      return
 
     result = target
     var argsToFree: seq[CAllocation] = @[]
@@ -242,17 +389,13 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
     for argAlloc in argsToFree:
       ctx.freeIfTemp(argAlloc)
 
-    let bopCode = toBuiltinCall(procName)
-    var procPos = 0
-    
-    if bopCode == boCustom:
-      procPos = ctx.code.procTable.getOrDefault(procName, -1)
+    let procPos = ctx.code.procTable.getOrDefault(procName, -1)
 
-    ctx.emitInst(vocCall, bopCode.int, result.pos)
+    ctx.emitInst(vocCall, 0, result.pos)
     let patchPos = ctx.code.data.len
     ctx.emitWord(if procPos >= 0: uint32(procPos) else: 0u32)
 
-    if bopCode == boCustom and procPos < 0:
+    if procPos < 0:
       var list = ctx.code.callToPatch.getOrDefault(procName, @[])
       list.add(patchPos)
       ctx.code.callToPatch[procName] = list
@@ -339,7 +482,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
   of cnkFloatLit:
     result = if target.size >= FLOAT_SIZE: target else: ctx.code.allocator.alloc(FLOAT_SIZE)
     ctx.emitInst(vocLoadf, result.pos, 0)
-    ctx.emitWord(cast[uint32](c.floatVal))
+    ctx.emitWord(cast[uint32](float32(c.floatVal)))
     return
 
   of cnkCharLit:

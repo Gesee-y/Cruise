@@ -4,15 +4,15 @@
 # the letter 't').
 #
 # To run these tests, simply execute `nimble test`.
-
-#import std/[syncio, math]
 import ../../src/CVM/disassembler
-#{.plugin: "internals/deps/scopes_compile_plugin.nim".}
 
 proc main =
-  var f = open("test_fma_opt_probe.cbc", fmRead)
-  var data = newSeq[uint32](256)
-  discard f.readBuffer(addr data[0], 1024)
+  var f = open("../vm/bench_bytecode/bench_normalize2d.cbc", fmRead)
+  var data: seq[uint32] = @[]
+  var word: uint32
+  while f.readBuffer(addr word, sizeof(uint32)) == sizeof(uint32):
+    data.add(word)
+  close(f)
 
   disassemble(data)
 
