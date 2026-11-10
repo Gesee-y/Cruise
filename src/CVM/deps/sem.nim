@@ -129,6 +129,10 @@ proc inferType*(cache: var TypeCache, node: var CIRNode): string =
 
   of cnkConv:
     return node.args[0].name
+
+  of cnkFma, cnkRsqrt:
+    var operand = node.args[0]
+    return cache.inferType(operand)
     
   else:
     reportSemError node.info, "Failed to infer type of expression ```" & renderIR(node) & "```."

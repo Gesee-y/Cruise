@@ -225,7 +225,7 @@ proc getFieldReg(ctx: var CodeGenCtx, baseReg: CAllocation, c: CIRNode): CAlloca
 # ############################################################# EXPRESSIONS ###################################################### #
 # ################################################################################################################################ #
 
-proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAllocation)): CAllocation =
+proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(pos: -1)): CAllocation =
   result = default(CAllocation)
   case c.kind
   of cnkInfix:
@@ -482,7 +482,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = default(CAll
   of cnkFloatLit:
     result = if target.size >= FLOAT_SIZE: target else: ctx.code.allocator.alloc(FLOAT_SIZE)
     ctx.emitInst(vocLoadf, result.pos, 0)
-    ctx.emitWord(cast[uint32](c.floatVal))
+    ctx.emitWord(cast[uint32](float32(c.floatVal)))
     return
 
   of cnkCharLit:

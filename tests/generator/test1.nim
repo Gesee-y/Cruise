@@ -7,7 +7,7 @@
 import ../../src/CVM/disassembler
 
 proc main =
-  var f = open("test_builtin.cbc", fmRead)
+  var f = open("../vm/bench_bytecode/bench_normalize2d.cbc", fmRead)
   var data: seq[uint32] = @[]
   var word: uint32
   while f.readBuffer(addr word, sizeof(uint32)) == sizeof(uint32):
