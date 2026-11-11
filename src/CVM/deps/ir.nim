@@ -41,6 +41,7 @@ type
     cnkCast
     cnkConv
     cnkBracket
+    cnkTypeEqv
     cnkConstDef, cnkTypeDef, cnkIdentDef
     cnkCaseStmt
     cnkOfBranch, cnkDefaultBranch
@@ -339,6 +340,13 @@ proc makeCallIR(c: NifCursor): CIRNode =
     result = newCIRNode(c.info, cnkArrAt)
   elif it.symText.startsWith("setShaderName"):
     result = newCIRNode(c.info, cnkShaderName)
+    skip it
+    result.add newCIRSym(it.info, it.stringValue)
+    return 
+  elif it.symText.startsWith("setShaderType"):
+    result = newCIRNode(c.info, cnkTypeEqv)
+    skip it
+    result.add newCIRSym(it.info, it.getTypeName)
     skip it
     result.add newCIRSym(it.info, it.stringValue)
     return 

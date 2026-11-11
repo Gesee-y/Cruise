@@ -86,18 +86,23 @@ proc findSimilar(p: ProcOverloadNode, ty: string, info: LineInfo, pos: int): str
 proc inferType*(cache: var TypeCache, node: var CIRNode): string =
   result = "auto"
   case node.kind
-  of cnkIntLit: return "int"
-  of cnkUintLit: return "uint"
-  of cnkFloatLit: return "float"
-  of cnkCharLit: return "char"
-  of cnkBoolLit: return "bool"
+  of cnkIntLit: 
+    result = "int"
+  of cnkUintLit: 
+    result = "uint"
+  of cnkFloatLit: 
+    result = "float"
+  of cnkCharLit: 
+    result = "char"
+  of cnkBoolLit: 
+    result = "bool"
   
   of cnkSym, cnkRSym:
     let typeId = cache.variables.getOrDefault(node.name, -1)
     if typeId < 0:
       reportSemError node.info, "Failed to get symbol type `" & node.name & "`."
       return 
-    return cache.instances[typeId].name
+    result = cache.instances[typeId].name
       
   of cnkDotExpr:
     var r = cache.inferType(node.args[0])
@@ -110,14 +115,14 @@ proc inferType*(cache: var TypeCache, node: var CIRNode): string =
       fields.add(f)
     
     fields.add(current.name)
-    return cache.getType(r, fields).name
+    result = cache.getType(r, fields).name
 
   of cnkObjConstr:
-    return node.args[0].name
+    result = node.args[0].name
 
   of cnkArrAt:
     let t = cache.inferType(node.args[0])
-    return cache.getType(t).returnType
+    result = cache.getType(t).returnType
 
   of cnkPrefix, cnkInfix, cnkCall:
     if node.args[0].kind == cnkSym:
@@ -125,18 +130,20 @@ proc inferType*(cache: var TypeCache, node: var CIRNode): string =
     
     let tid = node.args[0].tid
     if tid >= 0 and tid < cache.instances.len:
-      return cache.instances[tid].returnType
+      result = cache.instances[tid].returnType
 
   of cnkConv:
-    return node.args[0].name
+    result = node.args[0].name
 
   of cnkFma, cnkRsqrt:
     var operand = node.args[0]
-    return cache.inferType(operand)
+    result = cache.inferType(operand)
     
   else:
     reportSemError node.info, "Failed to infer type of expression ```" & renderIR(node) & "```."
     return
+
+  result = cache.equivalences.getOrDefault(result, result)
 
 proc resolveProc*(c: TypeCache, n: CIRNode, argTypes: seq[string]): int =
   let fullName = n.args[0].name
@@ -220,6 +227,8 @@ proc resolveNode(cache: var TypeCache, n: var CIRNode, inFunc = false) =
       cache.resolveNode(n.args[1].args[1], inFunc = inFunc)
       cache.resolveNode(n.args[1].args[2], inFunc = inFunc)
     cache.resolveNode(n.args[2], inFunc = inFunc)
+  of cnkTypeEqv:
+    cache.equivalences[n.args[0].name, n.args[1].name]
   of cnkObjConstr:
     if not inFunc:
       reportSemError n.info, "Top level statements are unsupported on GPU."

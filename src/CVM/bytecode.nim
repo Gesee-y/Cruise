@@ -4,6 +4,7 @@
 
 template translateToBytecode*() = {.plugin: "deps/bytecode_plugin.nim".}
 func setShaderName*(str: static[string]) = discard
+func setShaderType*[T](base: typedesc[T], ty: static[string]) {.untyped.} = discard
 
   # ###################################################################################################### #
  # ############################################# DEFAULT TYPES ########################################## #

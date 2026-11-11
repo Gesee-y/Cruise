@@ -89,6 +89,7 @@ type
     variables*: Table[string, int]
     functions*: Table[string, ProcOverload]
     liveness*: Table[string, CLiveness]
+    equivalences*: Table[string, string]
     shaderParams*: ShaderParameters 
 
 # ######################################################################################################### #
@@ -538,6 +539,35 @@ proc getType*(c: TypeCache, root: string, idx: int): TypeInst =
 
 include "builtins.nim"
 
+proc newVectorType2(cache: var TypeCache, name, ty: string, size: int) =
+  result.nameToId[name] = result.instances.len
+  var nameToId = initTable[string, int]()
+  nameToId["x"] = 0
+  nameToId["y"] = 1
+  var fields = @[TypeField(name: "x", ty: ty, offset: 0), TypeField(name: "y", ty: ty, offset: size)]
+  result.instances.add TypeInst(kind: ObjectType, name: name, size: size*2, nameToId: nameToId, fields: fields)
+
+proc newVectorType3(cache: var TypeCache, name, ty: string, size: int) =
+  result.nameToId[name] = result.instances.len
+  var nameToId = initTable[string, int]()
+  nameToId["x"] = 0
+  nameToId["y"] = 1
+  nameToId["z"] = 2
+  var fields = @[TypeField(name: "x", ty: ty, offset: 0), TypeField(name: "y", ty: ty, offset: size), 
+    TypeField(name: "z", ty: ty, offset: size*2)]
+  result.instances.add TypeInst(kind: ObjectType, name: name, size: size*3, nameToId: nameToId, fields: fields)
+
+proc newVectorType4(cache: var TypeCache, name, ty: string, size: int) =
+  result.nameToId[name] = result.instances.len
+  var nameToId = initTable[string, int]()
+  nameToId["x"] = 0
+  nameToId["y"] = 1
+  nameToId["z"] = 2
+  nameToId["w"] = 3
+  var fields = @[TypeField(name: "x", ty: ty, offset: 0), TypeField(name: "y", ty: ty, offset: size), 
+    TypeField(name: "z", ty: ty, offset: size*2), TypeField(name: "w", ty: ty, offset: size*3)]
+  result.instances.add TypeInst(kind: ObjectType, name: name, size: size*4, nameToId: nameToId, fields: fields)
+
 # Instantiate a new `TypeCache` with primitive types already registered
 proc newTypeCache(): TypeCache =
   result = TypeCache(programName: "generated")
@@ -586,5 +616,13 @@ proc newTypeCache(): TypeCache =
   # Container types that returns a particular element type
   result.nameToId["seq"] = result.instances.len
   result.instances.add TypeInst(kind: GenericContainerType, name: "seq", size:1)
+
+  # Builtin vector type
+  result.newVectorType2("vec2i", "int32", 4)
+  result.newVectorType2("vec2f", "float32", 4)
+  result.newVectorType3("vec3i", "int32", 4)
+  result.newVectorType3("vec3f", "float32", 4)
+  result.newVectorType4("vec4i", "int32", 4)
+  result.newVectorType4("vec4f", "float32", 4)
 
   result.registerBuiltins()
