@@ -13,3 +13,5 @@ func setShaderType*[T](base: typedesc[T], ty: static[string]) {.untyped.} = disc
 template uniform*(val: static[string]) {.pragma.}
 template ssbo*() {.pragma.}
 template globalIndex*() {.pragma.}
+template fragmentOutput*() {.pragma.}
+template vertexOutput*() {.pragma.}

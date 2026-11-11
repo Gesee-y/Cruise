@@ -46,6 +46,26 @@ proc registerUniform(cache: var TypeCache, n: CIRNode) =
     cache.variables[vname] = typeId
     cache.addUniform(vname, typeId)
 
+proc registerFragment(cache: var TypeCache, n: CIRNode) =
+  let tyName = n.args[0].args[1].name
+  let vname = n.args[0].args[0].name
+  if cache.equivalences.getOrDefault(tyName, tyName) != "vec4f":
+    reportSemError n.info, "Fragment shader output should be a `vec4f`"
+  if cache.isValidDefinition(n.args[0]):
+    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    cache.variables[vname] = typeId
+    cache.fragOut = vname
+
+proc registerVertex(cache: var TypeCache, n: CIRNode) =
+  let tyName = n.args[0].args[1].name
+  let vname = n.args[0].args[0].name
+  if cache.equivalences.getOrDefault(tyName, tyName) != "vec4f":
+    reportSemError n.info, "Vertex shader output should be a `vec4f`"
+  if cache.isValidDefinition(n.args[0]):
+    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    cache.variables[vname] = typeId
+    cache.vertOut = vname
+
 proc registerSSBO(cache: var TypeCache, n: CIRNode) =
   let tyName = n.args[1].name
   let vname = n.args[0].name
@@ -212,6 +232,10 @@ proc resolveNode(cache: var TypeCache, n: var CIRNode, inFunc = false) =
     cache.registerSSBO(n)
   of cnkGlobalIndex:
     cache.registerGlobalIndex(n)
+  of cnkFragmentOutput:
+    cache.registerFragment(n)
+  of cnkVertexOutput:
+    cache.registerVertex(n)
   of cnkCall, cnkInfix, cnkPrefix:
     if not inFunc:
       reportSemError n.info, "Top level statements are unsupported on GPU."

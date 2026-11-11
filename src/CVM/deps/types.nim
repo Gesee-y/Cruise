@@ -91,6 +91,7 @@ type
     liveness*: Table[string, CLiveness]
     equivalences*: Table[string, string]
     shaderParams*: ShaderParameters 
+    vertOut*, fragOut*: string
 
 # ######################################################################################################### #
 # ############################################# CONSTRUCTORS ############################################## #
@@ -143,6 +144,10 @@ proc recordTypeWrappers*(t: NifCursor, flags: var set[TypeFlag]) =
       flags.incl OutF
     else: discard
     inc n
+
+proc getTypeWrapper*(t: NifCursor): set[TypeFlag] = 
+  result = {}
+  recordTypeWrappers(t, result)
 
 # Translate a Nif `TypeKind` directly to CVM `TypeKind`
 proc getRawTypeKind*(t: NifCursor): TypeKind =

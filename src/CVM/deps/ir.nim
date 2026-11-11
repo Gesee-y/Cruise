@@ -10,7 +10,7 @@ const SYSTEM_MODULE = "sysvq"
 type
   CIRNodeKind* = enum
     cnkNone
-    cnkStmtList, cnkShaderName
+    cnkStmtList, cnkShaderName, cnkFragmentOutput, cnkVertexOutput
     cnkSection
     cnkDecl, cnkFuncSig, cnkFuncDef
     cnkCall
@@ -61,6 +61,8 @@ type
     gpUniformWrite
     gpSSBO
     gpGlobalIndex
+    gpFrag
+    gpVert
 
   CIRNode* = object
     ## A single node in the Cruise IR tree.
@@ -402,6 +404,10 @@ proc fetchGPUPragma(c: NifCursor): set[GPUPragma] =
         result.incl(gpUniform)
       elif pragmaName.startsWith("ssbo"):
         result.incl(gpSSBO)
+      elif pragmaName.startsWith("fragmentOutput"):
+        result.incl(gpFrag)
+      elif pragmaName.startsWith("vertexOutput"):
+        result.incl(gpVert)
 
     skip n
 
@@ -619,6 +625,8 @@ proc toIR(n: NifCursor): CIRNode =
           var fieldCursor = firstChild(body)
           var p = newCIRNode(body.info, cnkParams)
           var hasGlobalIndex = false
+          var hasFragOut = false
+          var hasVertOut = false
 
           while fieldCursor.hasMore:
             if fieldCursor.exprKind != DotX:
@@ -628,11 +636,17 @@ proc toIR(n: NifCursor): CIRNode =
               skip field
               skip field
               let pragmas = field
+              skip field # pragmas
+              let fieldType = field
+              let fieldTyName = fieldType.getTypeName
 
               if pragmas.kind != DotToken:
                 let flags = pragmas.fetchGPUPragma()
+                let wrappers = fieldType.getTypeWrapper()
                 if flags.len > 0 and not isMainEntry:
                   reportIRError pragmas.info, "Only the `main` function can have GPU pragmas on it's arguments."
+                elif flags > 1:
+                  reportIRError pragmas.info, "A parameter can only have one GPU pragma."
                 else: 
                   if gpUniform in flags:
                     reportIRError pragmas.info, "Can't mark a parameter as uniform."
@@ -644,9 +658,25 @@ proc toIR(n: NifCursor): CIRNode =
                       hasGlobalIndex = true
                     else:
                       reportIRError pragmas.info, "Can't have multiple global index"
-              skip field # pragmas
-              let fieldType = field
-              let fieldTyName = fieldType.getTypeName
+                  if gpFrag:
+                    if not hasFragOut:
+                      if OutF not in wrappers:
+                        reportIRError pragmas.info, "Fragment shader output should be a `out` parameter"
+                      
+                      f = newCIRNode(c.info, cnkFragmentOutput)
+                      hasFragOut = true
+                    else:
+                      reportIRError pragmas.info, "Can't have multiple fragment output"
+                  elif gpVert:
+                    if not hasVertOut:
+                      if OutF not in wrappers:
+                        reportIRError pragmas.info, "Vertex shader output should be a `out` parameter"
+                      
+                      f = newCIRNode(c.info, cnkVertexOutput)
+                      hasVertOut = true
+                    else:
+                      reportIRError pragmas.info, "Can't have multiple vertex output"
+              
               f.add(newCIRSym(fieldName.info, fieldName.symText))
               f.add(newCIRSym(fieldType.info, fieldTyName))
               p.add(f)
