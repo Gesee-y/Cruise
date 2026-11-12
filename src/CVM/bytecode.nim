@@ -16,3 +16,15 @@ template globalIndex*() {.pragma.}
 template fragmentOutput*() {.pragma.}
 template vertexOutput*() {.pragma.}
 template vertexInput*() {.pragma.}
+template fragmentInput*() {.pragma.}
+
+
+proc readBytecode*(path: string, maxBytecodeWord=256): seq[uint32] =
+  result = @[]
+  if not fileExists(path):
+    return
+  var file = open(path, fmRead)
+  defer: file.close()
+  var word: uint32
+  while file.readBuffer(addr word, sizeof(word)) == sizeof(word):
+    result.add word

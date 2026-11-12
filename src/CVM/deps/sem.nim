@@ -47,44 +47,53 @@ proc registerUniform(cache: var TypeCache, n: CIRNode) =
     cache.addUniform(vname, typeId)
 
 proc registerFragment(cache: var TypeCache, n: CIRNode) =
-  let tyName = n.args[0].args[1].name
-  let vname = n.args[0].args[0].name
+  let tyName = n.args[1].name
+  let vname = n.args[0].name
   if cache.equivalences.getOrDefault(tyName, tyName) != "vec4f":
     reportSemError n.info, "Fragment shader output should be a `vec4f`"
-  if cache.isValidDefinition(n.args[0]):
+  if cache.isValidDefinition(n):
     let typeId = cache.nameToId.getOrDefault(tyName, -1)
     cache.variables[vname] = typeId
     cache.shaderParams.fragOut = vname
+    cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
 
 proc registerVertex(cache: var TypeCache, n: CIRNode) =
-  let tyName = n.args[0].args[1].name
-  let vname = n.args[0].args[0].name
-  if cache.equivalences.getOrDefault(tyName, tyName) != "vec4f":
-    reportSemError n.info, "Vertex shader output should be a `vec4f`"
-  if cache.isValidDefinition(n.args[0]):
+  let tyName = n.args[1].name
+  let vname = n.args[0].name
+  let shaderType = cache.equivalences.getOrDefault(tyName, tyName)
+  if shaderType != "vec4f" and shaderType != "vec3f":
+    reportSemError n.info, "Vertex outputs must be a `vec4f` position or `vec3f` varying"
+  if cache.isValidDefinition(n):
     let typeId = cache.nameToId.getOrDefault(tyName, -1)
     cache.variables[vname] = typeId
-    cache.shaderParams.vertOut = vname
+    if shaderType == "vec4f":
+      cache.shaderParams.vertOut = vname
+    else:
+      cache.shaderParams.vertVarying = vname
+    cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
 
 proc registerFragmentInput(cache: var TypeCache, n: CIRNode) =
-  let tyName = n.args[0].args[1].name
-  let vname = n.args[0].args[0].name
-  if cache.equivalences.getOrDefault(tyName, tyName) != "vec3f":
-    reportSemError n.info, "Fragment shader input should be a `vec3f`"
-  if cache.isValidDefinition(n.args[0]):
+  let tyName = n.args[1].name
+  let vname = n.args[0].name
+  let shaderType = cache.equivalences.getOrDefault(tyName, tyName)
+  if shaderType != "vec3f" and shaderType != "float32" and shaderType != "float":
+    reportSemError n.info, "Fragment shader input should be a `vec3f` color or `float32` channel"
+  if cache.isValidDefinition(n):
     let typeId = cache.nameToId.getOrDefault(tyName, -1)
     cache.variables[vname] = typeId
     cache.shaderParams.fragIn = vname
+    cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
 
 proc registerVertexInput(cache: var TypeCache, n: CIRNode) =
-  let tyName = n.args[0].args[1].name
-  let vname = n.args[0].args[0].name
+  let tyName = n.args[1].name
+  let vname = n.args[0].name
   if cache.equivalences.getOrDefault(tyName, tyName) != "vec3f":
     reportSemError n.info, "Vertex shader input should be a `vec3f`"
-  if cache.isValidDefinition(n.args[0]):
+  if cache.isValidDefinition(n):
     let typeId = cache.nameToId.getOrDefault(tyName, -1)
     cache.variables[vname] = typeId
     cache.shaderParams.vertIn = vname
+    cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
 
 proc registerSSBO(cache: var TypeCache, n: CIRNode) =
   let tyName = n.args[1].name
@@ -150,11 +159,13 @@ proc inferType*(cache: var TypeCache, node: var CIRNode): string =
     var fields: seq[string] = @[]
 
     while current.kind == cnkDotExpr:
-      let f = current.args[0].name
+      # Since fields name are unique and already validated
+      # We can normalize them to only the first part of the Nimony's symbol
+      let f = current.args[0].name.split(".")[0]
       current = current.args[1]
       fields.add(f)
     
-    fields.add(current.name)
+    fields.add(current.name.split(".")[0])
     result = cache.getType(r, fields).name
 
   of cnkObjConstr:
@@ -256,6 +267,10 @@ proc resolveNode(cache: var TypeCache, n: var CIRNode, inFunc = false) =
     cache.registerFragment(n)
   of cnkVertexOutput:
     cache.registerVertex(n)
+  of cnkVertexInput:
+    cache.registerVertexInput(n)
+  of cnkFragmentInput:
+    cache.registerFragmentInput(n)
   of cnkCall, cnkInfix, cnkPrefix:
     if not inFunc:
       reportSemError n.info, "Top level statements are unsupported on GPU."
@@ -272,7 +287,7 @@ proc resolveNode(cache: var TypeCache, n: var CIRNode, inFunc = false) =
       cache.resolveNode(n.args[1].args[2], inFunc = inFunc)
     cache.resolveNode(n.args[2], inFunc = inFunc)
   of cnkTypeEqv:
-    cache.equivalences[n.args[0].name, n.args[1].name]
+    cache.equivalences[n.args[0].name] = n.args[1].name
   of cnkObjConstr:
     if not inFunc:
       reportSemError n.info, "Top level statements are unsupported on GPU."

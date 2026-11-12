@@ -80,7 +80,7 @@ type
     uniformToId*: Table[string, int]
     ssboToId*: Table[string, int]
     globalIndex*: tuple[name: string, tid: int]
-    vertIn*, fragIn*: string
+    vertIn*, vertVarying*, fragIn*: string
     vertOut*, fragOut*: string
 
   # Type cache, a global structure bookeeping informations about types
@@ -354,7 +354,8 @@ proc addProcTypeInstance*(pDef: NifCursor): TypeInst =
     if symNode.kind != DotToken:
       # Check to avoid generating IR for system.nim code
       let fc = firstChild(symNode)
-      if fc.kind in {Symbol, SymbolDef} and fc.symText.split(".")[^1].startsWith(SYSTEM_MODULE): return
+      if fc.kind in {Symbol, SymbolDef} and 
+        (fc.symText.split(".")[^1].startsWith(SYSTEM_MODULE) or fc.symText.split(".")[0] == "setShaderType"): return
     result.raw = pDef
     result.kind = ProcType
 
@@ -546,25 +547,25 @@ proc getType*(c: TypeCache, root: string, idx: int): TypeInst =
 include "builtins.nim"
 
 proc newVectorType2(cache: var TypeCache, name, ty: string, size: int) =
-  result.nameToId[name] = result.instances.len
+  cache.nameToId[name] = cache.instances.len
   var nameToId = initTable[string, int]()
   nameToId["x"] = 0
   nameToId["y"] = 1
   var fields = @[TypeField(name: "x", ty: ty, offset: 0), TypeField(name: "y", ty: ty, offset: size)]
-  result.instances.add TypeInst(kind: ObjectType, name: name, size: size*2, nameToId: nameToId, fields: fields)
+  cache.instances.add TypeInst(kind: ObjectType, name: name, size: size*2, nameToId: nameToId, fields: fields)
 
 proc newVectorType3(cache: var TypeCache, name, ty: string, size: int) =
-  result.nameToId[name] = result.instances.len
+  cache.nameToId[name] = cache.instances.len
   var nameToId = initTable[string, int]()
   nameToId["x"] = 0
   nameToId["y"] = 1
   nameToId["z"] = 2
   var fields = @[TypeField(name: "x", ty: ty, offset: 0), TypeField(name: "y", ty: ty, offset: size), 
     TypeField(name: "z", ty: ty, offset: size*2)]
-  result.instances.add TypeInst(kind: ObjectType, name: name, size: size*3, nameToId: nameToId, fields: fields)
+  cache.instances.add TypeInst(kind: ObjectType, name: name, size: size*3, nameToId: nameToId, fields: fields)
 
 proc newVectorType4(cache: var TypeCache, name, ty: string, size: int) =
-  result.nameToId[name] = result.instances.len
+  cache.nameToId[name] = cache.instances.len
   var nameToId = initTable[string, int]()
   nameToId["x"] = 0
   nameToId["y"] = 1
@@ -572,7 +573,7 @@ proc newVectorType4(cache: var TypeCache, name, ty: string, size: int) =
   nameToId["w"] = 3
   var fields = @[TypeField(name: "x", ty: ty, offset: 0), TypeField(name: "y", ty: ty, offset: size), 
     TypeField(name: "z", ty: ty, offset: size*2), TypeField(name: "w", ty: ty, offset: size*3)]
-  result.instances.add TypeInst(kind: ObjectType, name: name, size: size*4, nameToId: nameToId, fields: fields)
+  cache.instances.add TypeInst(kind: ObjectType, name: name, size: size*4, nameToId: nameToId, fields: fields)
 
 # Instantiate a new `TypeCache` with primitive types already registered
 proc newTypeCache(): TypeCache =

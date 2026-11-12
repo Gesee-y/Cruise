@@ -22,7 +22,6 @@ proc getShaderName(n: NifCursor): string =
 proc generateBytecode(n: var NifCursor): NifBuilder =
   var cache = newTypeCache()
   result = createTree()
-  echo renderNode(n)
   var source = n
   
   cache.collectTypeDecls(source)
@@ -75,7 +74,6 @@ proc generateBytecode(n: var NifCursor): NifBuilder =
 proc noTransform(n: var NifCursor): NifBuilder =
   result = createTree()
   result.takeTree(n)
-  echo renderTree(result)
 
 var inp = loadPluginInput()
 var c = inp

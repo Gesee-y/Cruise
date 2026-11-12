@@ -200,25 +200,25 @@ proc getFieldReg(ctx: var CodeGenCtx, baseReg: CAllocation, c: CIRNode): CAlloca
   var basetype = ctx.cache.inferType(dummyArg0)
   var currentType = basetype
   var current = c.args[1]
-  var fields: seq[string] = @[]
 
   while current.kind == cnkDotExpr:
-    let f = current.args[0].name
+    let f = current.args[0].name.split(".")[0]
     let fid = ctx.cache.getType(currentType).nameToId.getOrDefault(f, -1)
     current = current.args[1]
 
     if fid >= 0:
-      offset += ctx.cache.getType(currentType).fields[fid].offset
-      currentType = ctx.cache.getType(currentType).fields[fid].ty
-    fields.add(f)
+      let field = ctx.cache.getType(currentType).fields[fid]
+      offset += field.offset
+      currentType = field.ty
   
-  let f = current.name
+  let f = current.name.split(".")[0]
   let fid = ctx.cache.getType(currentType).nameToId.getOrDefault(f, -1)
   if fid >= 0:
-    offset += ctx.cache.getType(currentType).fields[fid].offset
-  fields.add(f)
+    let field = ctx.cache.getType(currentType).fields[fid]
+    offset += field.offset
+    currentType = field.ty
   result.pos += offset
-  result.size = ctx.cache.getType(basetype, fields).size
+  result.size = max(1, ctx.cache.getType(currentType).size)
   result.isTemp = false
 
 # ################################################################################################################################ #
@@ -532,9 +532,6 @@ proc genVar(ctx: var CodeGenCtx, c: CIRNode) =
   let bp = l.birth
   var lline = l.dead.line
   var lcol  = l.dead.col
-  if lline == 0 and lcol == 0:
-    lline = bp.line + 1
-    lcol  = bp.col
 
   let alloc = ctx.code.allocator.alloc(max(1, ty.size), bp.line, bp.col, lline, lcol)
   if c.args.len > 1:
@@ -735,14 +732,27 @@ proc genArrAsgn(ctx: var CodeGenCtx, c: CIRNode) =
   ctx.freeIfTemp(valAlloc)
   ctx.freeIfTemp(indexAlloc)
 
+proc allocShaderParam(ctx: var CodeGenCtx, param: CIRNode): CAllocation =
+  let name = param.args[0].name
+  let typeName = param.args[1].name
+  let ty = ctx.cache.getType(typeName)
+  let live = ctx.cache.liveness.getOrDefault(name)
+  let birth = live.birth
+  var deadLine = live.dead.line
+  var deadCol = live.dead.col
+  result = ctx.code.allocator.alloc(max(1, ty.size), birth.line, birth.col,
+                                    deadLine, deadCol)
+
 proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
   let name = c.args[0].name
+  var isMainEntry = false # Keeps track of wheteher it's the main function
   if name.split(".")[0] == MAIN_ENTRY_NAME:
+    isMainEntry = true # Yup it is
     ctx.entryPoint = ctx.code.currentPos
   ctx.currentProcName = name
-  ctx.loops = @[]
   ctx.code.procTable[name] = ctx.code.currentPos
   
+  # Stack offset, yeah could have a better name but who cares ?
   var offset = 0
   if c.args[1].kind == cnkParams:
     for param in c.args[1].args:
@@ -750,21 +760,32 @@ proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
         # SSBO parameters are bound as buffers, not passed on stack or loaded into registers
         continue
       elif param.kind == cnkGlobalIndex:
+        # this is when encountering the global index used in compute shaders and stuffs
+        # We just load it (and kill it immediately if not used) at the start of the function
         let paramName = param.args[0].name
         let paramTyName = param.args[1].name
         let paramTy = ctx.cache.getType(paramTyName)
         
+        # Just fetching some liveness info obviously
         let l = ctx.cache.liveness.getOrDefault(paramName)
         let bp = l.birth
         var lline = l.dead.line
         var lcol  = l.dead.col
-        if lline == 0 and lcol == 0:
-          lline = bp.line + 1
-          lcol  = bp.col
           
-        let fsize = max(1, paramTy.size)
+
+        let fsize = paramTy.size
         let alloc = ctx.code.allocator.alloc(fsize, bp.line, bp.col, lline, lcol)
         ctx.emitInst(vocLoadGI, alloc.pos, 0, fsize)
+      elif param.kind in {cnkVertexInput, cnkFragmentInput}:
+        # When writing regular shader, here we handle vertex and fragment inputs
+        let alloc = ctx.allocShaderParam(param)
+        let inputOp = if param.kind == cnkVertexInput:
+          vocLoadVertexInput else: vocLoadFragmentInput
+        ctx.emitInst(inputOp, alloc.pos, 0, alloc.size)
+      elif param.kind in {cnkVertexOutput, cnkFragmentOutput}:
+        # Here it's just about the output of the shader
+        # Pretty straight forward
+        discard ctx.allocShaderParam(param)
       else:
         let paramName = param.args[0].name
         let paramTyName = param.args[1].name
@@ -774,9 +795,6 @@ proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
         let bp = l.birth
         var lline = l.dead.line
         var lcol  = l.dead.col
-        if lline == 0 and lcol == 0:
-          lline = bp.line + 1
-          lcol  = bp.col
           
         let fsize = max(1, paramTy.size)
         let alloc = ctx.code.allocator.alloc(fsize, bp.line, bp.col, lline, lcol)
@@ -790,6 +808,27 @@ proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
     ctx.code.callToPatch.del(name)
 
   ctx.genStmt(c.args[3])
+
+  if isMainEntry:
+    # Here we will try to set the shader output
+    # It's better to do it once and for all at the end of the shader
+    # Since it would be way more cumbersome to do it with the output itself (to much edge case)
+    for param in c.args[1].args:
+      if param.kind in {cnkVertexOutput, cnkFragmentOutput}:
+        let paramName = param.args[0].name
+        let live = ctx.cache.liveness.getOrDefault(paramName)
+        let output = ctx.code.allocator.lookup(live.birth.line, live.birth.col)
+        let typeName = param.args[1].name
+        let shaderType = ctx.cache.equivalences.getOrDefault(typeName, typeName)
+        case param.kind
+        of cnkVertexOutput:
+          let outputOp = if shaderType == "vec4f": vocStoreVertexOutput
+                         else: vocStoreVertexVarying
+          ctx.emitInst(outputOp, output.pos, 0, output.size)
+        of cnkFragmentOutput:
+          ctx.emitInst(vocStoreFragmentOutput, output.pos, 0, output.size)
+        else: discard
+
   ctx.emitInst(vocRet, 0, 0)
 
 proc genStmt*(ctx: var CodeGenCtx, c: CIRNode) =

@@ -563,3 +563,7 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
 
     of vocNoOp:
       discard
+
+    of vocLoadVertexInput, vocLoadFragmentInput, vocStoreVertexOutput,
+       vocStoreVertexVarying, vocStoreFragmentOutput:
+      discard # Stage I/O is provided by the GLSL VM, not the CPU interpreter.

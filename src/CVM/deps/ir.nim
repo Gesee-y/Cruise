@@ -64,6 +64,7 @@ type
     gpFrag
     gpVert
     gpVertIn
+    gpFragIn
 
   CIRNode* = object
     ## A single node in the Cruise IR tree.
@@ -411,6 +412,8 @@ proc fetchGPUPragma(c: NifCursor): set[GPUPragma] =
         result.incl(gpVert)
       elif pragmaName.startsWith("vertexInput"):
         result.incl(gpVertIn)
+      elif pragmaName.startsWith("fragmentInput"):
+        result.incl(gpFragIn)
 
     skip n
 
@@ -607,6 +610,13 @@ proc toIR(n: NifCursor): CIRNode =
         var symNode = firstChild(c) # Definition of the proc
         let name = symNode.symText
 
+        # Shader metadata helpers are compile-time APIs, not bytecode
+        # functions. Their instantiated signatures include static `string`
+        # parameters which are intentionally outside the GPU type system.
+        let shortName = name.split(".")[0]
+        if shortName == "setShaderName" or shortName == "setShaderType":
+          return newCIRNode(c.info, cnkEmpty)
+
         let isMainEntry = name.startsWith(MAIN_ENTRY_NAME)
         if isMainEntry and name.split(".")[1][0] > '0':
           reportIRError c.info, "Can't have multiple `main` entry point for GPU program."
@@ -629,7 +639,7 @@ proc toIR(n: NifCursor): CIRNode =
           var p = newCIRNode(body.info, cnkParams)
           var hasGlobalIndex = false
           var hasFragOut = false
-          var hasVertOut = false
+          var vertexOutputCount = 0
           var hasVertIn = false
           var hasFragIn = false
 
@@ -650,7 +660,7 @@ proc toIR(n: NifCursor): CIRNode =
                 let wrappers = fieldType.getTypeWrapper()
                 if flags.len > 0 and not isMainEntry:
                   reportIRError pragmas.info, "Only the `main` function can have GPU pragmas on it's arguments."
-                elif flags > 1:
+                elif flags.len > 1:
                   reportIRError pragmas.info, "A parameter can only have one GPU pragma."
                 else: 
                   if gpUniform in flags:
@@ -663,31 +673,31 @@ proc toIR(n: NifCursor): CIRNode =
                       hasGlobalIndex = true
                     else:
                       reportIRError pragmas.info, "Can't have multiple global index"
-                  if gpFrag:
+                  if gpFrag in flags:
                     if not hasFragOut:
-                      if OutF not in wrappers:
-                        reportIRError pragmas.info, "Fragment shader output should be a `out` parameter"
+                      if OutF notin wrappers and VarF notin wrappers:
+                        reportIRError pragmas.info, "Fragment shader output should be a `out` or `var` parameter"
                       
                       f = newCIRNode(c.info, cnkFragmentOutput)
                       hasFragOut = true
                     else:
                       reportIRError pragmas.info, "Can't have multiple fragment output"
-                  elif gpVert:
-                    if not hasVertOut:
-                      if OutF not in wrappers:
-                        reportIRError pragmas.info, "Vertex shader output should be a `out` parameter"
+                  elif gpVert in flags:
+                    if vertexOutputCount < 2:
+                      if OutF notin wrappers and VarF notin wrappers:
+                        reportIRError pragmas.info, "Vertex shader output should be a `out` or `var` parameter"
                       
                       f = newCIRNode(c.info, cnkVertexOutput)
-                      hasVertOut = true
+                      inc vertexOutputCount
                     else:
-                      reportIRError pragmas.info, "Can't have multiple vertex output"
-                  elif gpVertIn:
+                      reportIRError pragmas.info, "At most two vertex outputs are supported (position and one varying)"
+                  elif gpVertIn in flags:
                     if not hasVertIn:
                       f = newCIRNode(c.info, cnkVertexInput)
                       hasVertIn = true
                     else:
                       reportIRError pragmas.info, "Can't have multiple vertex input"
-                  elif gpFragIn:
+                  elif gpFragIn in flags:
                     if not hasFragIn:
                       f = newCIRNode(c.info, cnkFragmentInput)
                       hasFragIn = true
