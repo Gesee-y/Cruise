@@ -26,6 +26,7 @@ proc triangle() =
   glGenBuffers(1, addr buffs)
   glBindBuffer(GL_ARRAY_BUFFER, buffs)
   glBufferData(GL_ARRAY_BUFFER, sizeof(float32)*vertices.len, vertices, GL_STATIC_DRAW)
+  let shader = loadShaderBytecode("deps/triangle_vert.cbc")
 
   while running:
     app.eventLoop(SDLEventRouter)

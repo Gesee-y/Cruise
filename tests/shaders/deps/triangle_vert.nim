@@ -14,4 +14,5 @@ type
 setShaderType(Vec3, "vec3f")
 setShaderType(Vec4, "vec4f")
 
-proc main(gl_pos {.vertexOutput.}: out Vec4, aPos: Vec3 {.VertexInput.}) =
+proc main(gl_pos {.vertexOutput.}: out Vec4, aPos: Vec3 {.vertexInput.}) =
+  gl_pos = Vec4(x: aPos.x, y: aPos.y, z: aPos.z, w: 1.0f)
