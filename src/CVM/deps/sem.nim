@@ -54,7 +54,7 @@ proc registerFragment(cache: var TypeCache, n: CIRNode) =
   if cache.isValidDefinition(n.args[0]):
     let typeId = cache.nameToId.getOrDefault(tyName, -1)
     cache.variables[vname] = typeId
-    cache.fragOut = vname
+    cache.shaderParams.fragOut = vname
 
 proc registerVertex(cache: var TypeCache, n: CIRNode) =
   let tyName = n.args[0].args[1].name
@@ -64,7 +64,27 @@ proc registerVertex(cache: var TypeCache, n: CIRNode) =
   if cache.isValidDefinition(n.args[0]):
     let typeId = cache.nameToId.getOrDefault(tyName, -1)
     cache.variables[vname] = typeId
-    cache.vertOut = vname
+    cache.shaderParams.vertOut = vname
+
+proc registerFragmentInput(cache: var TypeCache, n: CIRNode) =
+  let tyName = n.args[0].args[1].name
+  let vname = n.args[0].args[0].name
+  if cache.equivalences.getOrDefault(tyName, tyName) != "vec3f":
+    reportSemError n.info, "Fragment shader input should be a `vec3f`"
+  if cache.isValidDefinition(n.args[0]):
+    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    cache.variables[vname] = typeId
+    cache.shaderParams.fragIn = vname
+
+proc registerVertexInput(cache: var TypeCache, n: CIRNode) =
+  let tyName = n.args[0].args[1].name
+  let vname = n.args[0].args[0].name
+  if cache.equivalences.getOrDefault(tyName, tyName) != "vec3f":
+    reportSemError n.info, "Vertex shader input should be a `vec3f`"
+  if cache.isValidDefinition(n.args[0]):
+    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    cache.variables[vname] = typeId
+    cache.shaderParams.vertIn = vname
 
 proc registerSSBO(cache: var TypeCache, n: CIRNode) =
   let tyName = n.args[1].name

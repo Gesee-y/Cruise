@@ -80,6 +80,8 @@ type
     uniformToId*: Table[string, int]
     ssboToId*: Table[string, int]
     globalIndex*: tuple[name: string, tid: int]
+    vertIn*, fragIn*: string
+    vertOut*, fragOut*: string
 
   # Type cache, a global structure bookeeping informations about types
   TypeCache* = object
@@ -91,7 +93,6 @@ type
     liveness*: Table[string, CLiveness]
     equivalences*: Table[string, string]
     shaderParams*: ShaderParameters 
-    vertOut*, fragOut*: string
 
 # ######################################################################################################### #
 # ############################################# CONSTRUCTORS ############################################## #

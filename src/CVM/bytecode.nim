@@ -15,3 +15,4 @@ template ssbo*() {.pragma.}
 template globalIndex*() {.pragma.}
 template fragmentOutput*() {.pragma.}
 template vertexOutput*() {.pragma.}
+template vertexInput*() {.pragma.}

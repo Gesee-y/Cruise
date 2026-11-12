@@ -10,7 +10,7 @@ const SYSTEM_MODULE = "sysvq"
 type
   CIRNodeKind* = enum
     cnkNone
-    cnkStmtList, cnkShaderName, cnkFragmentOutput, cnkVertexOutput
+    cnkStmtList, cnkShaderName, cnkFragmentOutput, cnkVertexOutput, cnkVertexInput, cnkFragmentInput
     cnkSection
     cnkDecl, cnkFuncSig, cnkFuncDef
     cnkCall
@@ -63,6 +63,7 @@ type
     gpGlobalIndex
     gpFrag
     gpVert
+    gpVertIn
 
   CIRNode* = object
     ## A single node in the Cruise IR tree.
@@ -408,6 +409,8 @@ proc fetchGPUPragma(c: NifCursor): set[GPUPragma] =
         result.incl(gpFrag)
       elif pragmaName.startsWith("vertexOutput"):
         result.incl(gpVert)
+      elif pragmaName.startsWith("vertexInput"):
+        result.incl(gpVertIn)
 
     skip n
 
@@ -627,6 +630,8 @@ proc toIR(n: NifCursor): CIRNode =
           var hasGlobalIndex = false
           var hasFragOut = false
           var hasVertOut = false
+          var hasVertIn = false
+          var hasFragIn = false
 
           while fieldCursor.hasMore:
             if fieldCursor.exprKind != DotX:
@@ -676,6 +681,18 @@ proc toIR(n: NifCursor): CIRNode =
                       hasVertOut = true
                     else:
                       reportIRError pragmas.info, "Can't have multiple vertex output"
+                  elif gpVertIn:
+                    if not hasVertIn:
+                      f = newCIRNode(c.info, cnkVertexInput)
+                      hasVertIn = true
+                    else:
+                      reportIRError pragmas.info, "Can't have multiple vertex input"
+                  elif gpFragIn:
+                    if not hasFragIn:
+                      f = newCIRNode(c.info, cnkFragmentInput)
+                      hasFragIn = true
+                    else:
+                      reportIRError pragmas.info, "Can't have multiple fragment input"
               
               f.add(newCIRSym(fieldName.info, fieldName.symText))
               f.add(newCIRSym(fieldType.info, fieldTyName))

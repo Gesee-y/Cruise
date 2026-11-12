@@ -2,5 +2,7 @@ memo
 nimcache
 tests/vm
 src/CVM/vms
+externalModule
+*.dll
 *.cbc
 *.exe
