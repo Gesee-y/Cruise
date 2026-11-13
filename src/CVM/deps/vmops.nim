@@ -90,8 +90,8 @@ type
     vocAddCf   = 60  ## dst += float immediate
     vocSubCf   = 61  ## dst -= float immediate
     vocMulCf   = 62  ## dst *= float immediate
-    vocLoadVertexInput = 63 ## dst = vertex attribute (vec3)
-    vocLoadFragmentInput = 64 ## dst = interpolated fragment varying (vec3)
-    vocStoreVertexOutput = 65 ## emit vec4 position
-    vocStoreVertexVarying = 66 ## emit vec3 vertex-to-fragment varying
+    vocLoadVertexInput = 63 ## dst = input block[src .. src+size)
+    vocLoadFragmentInput = 64 ## dst = interpolated varying block[src .. src+size)
+    vocStoreVertexOutput = 65 ## emit vec4 clip-space position
+    vocStoreVertexVarying = 66 ## store VM bytes in varying block at src
     vocStoreFragmentOutput = 67 ## emit vec4 fragment color

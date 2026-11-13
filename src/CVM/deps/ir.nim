@@ -10,7 +10,7 @@ const SYSTEM_MODULE = "sysvq"
 type
   CIRNodeKind* = enum
     cnkNone
-    cnkStmtList, cnkShaderName, cnkFragmentOutput, cnkVertexOutput, cnkVertexInput, cnkFragmentInput
+    cnkStmtList, cnkShaderName, cnkFragmentOutput, cnkVertexOutput, cnkVertexVarying, cnkVertexInput, cnkFragmentInput
     cnkSection
     cnkDecl, cnkFuncSig, cnkFuncDef
     cnkCall
@@ -63,6 +63,7 @@ type
     gpGlobalIndex
     gpFrag
     gpVert
+    gpVertVarying
     gpVertIn
     gpFragIn
 
@@ -386,6 +387,59 @@ proc makeBranchIR(c: NifCursor): CIRNode =
       skip n
   else: assert false, "Unknown op"
 
+proc makeForIR(c: NifCursor): CIRNode =
+  result = newCIRNode(c.info, cnkForStmt)
+  var child = firstChild(c)
+  let iterCur = child
+  skip child
+  var varsCur = child
+  skip child
+  let bodyCur = child
+  var vchild = firstChild(varsCur)
+  var sec = newCIRNode(varsCur.info, cnkSection)
+  var found = false
+  while vchild.hasMore:
+    if vchild.stmtKind in {VarS, LetS}:
+      if found:
+        reportIRError vchild.info, "Can't use more than one iterator in for statement"
+        break
+      var v = newCIRNode(vchild.info, cnkVarTy)
+      var symNode = firstChild(vchild)
+      var sd = newCIRNode(symNode.info, cnkSymDef)
+      var typ = symNode
+      skip typ
+      skip typ
+      skip typ
+      var name = symNode.symText
+      sd.add(newCIRSym(symNode.info, name))
+      sd.add(newCIRSym(typ.info, typ.getTypeName))
+      v.add(sd)
+
+      sec.add(v)
+      found = true
+    skip vchild
+
+  result.add(sec)
+
+  assert found, "Can't make for loop statement without loop variable"
+  if iterCur.exprKind != InfixX or not iterCur.firstChild.symText.contains(".."):
+    reportIRError iterCur.info, "Only `..` and `..<` can be used as iterators" 
+    return
+  var it = newCIRNode(iterCur.info, cnkInfix)
+  var ic = firstChild(iterCur)
+  let opStr = ic.symText
+
+  it.add(newCIRSym(ic.info, opStr))
+  skip ic # skip op to start operand
+  it.add(toIR(ic))
+  skip ic # skip start operand to stop operand
+  it.add(toIR(ic))
+
+  result.add(it)
+
+  assert bodyCur.stmtKind == StmtsS, "For loop body should be a statement."
+  result.add(toIR(bodyCur))
+
 proc fetchGPUPragma(c: NifCursor): set[GPUPragma] =
   result = {}
   var n = c
@@ -410,12 +464,53 @@ proc fetchGPUPragma(c: NifCursor): set[GPUPragma] =
         result.incl(gpFrag)
       elif pragmaName.startsWith("vertexOutput"):
         result.incl(gpVert)
+      elif pragmaName.startsWith("vertexVarying"):
+        result.incl(gpVertVarying)
       elif pragmaName.startsWith("vertexInput"):
         result.incl(gpVertIn)
       elif pragmaName.startsWith("fragmentInput"):
         result.incl(gpFragIn)
 
     skip n
+
+proc applyGPUFlag(f: var CIRNode, c, pragmas: NifCursor, flags: set[GPUPragma]) =
+  if gpUniform in flags:
+    reportIRError pragmas.info, "Can't mark a parameter as uniform."
+  if gpSSBO in flags:
+    f = newCIRNode(c.info, cnkSSBO)
+  if gpGlobalIndex in flags:
+    if not hasGlobalIndex: 
+      f = newCIRNode(c.info, cnkGlobalIndex)
+      hasGlobalIndex = true
+    else:
+      reportIRError pragmas.info, "Can't have multiple global index"
+  if gpFrag in flags:
+    if not hasFragOut:
+      if OutF notin wrappers and VarF notin wrappers:
+        reportIRError pragmas.info, "Fragment shader output should be a `out` or `var` parameter"
+      
+      f = newCIRNode(c.info, cnkFragmentOutput)
+      hasFragOut = true
+    else:
+      reportIRError pragmas.info, "Can't have multiple fragment output"
+  elif gpVert in flags:
+    if not hasVertOut:
+      if OutF notin wrappers:
+        reportIRError pragmas.info, "Vertex shader output should be a `out` or `var` parameter"
+
+      f = newCIRNode(c.info, cnkVertexOutput)
+      hasVertOut = true
+    else:
+      reportIRError pragmas.info, "Can't have multiple vertex output"
+  elif gpVertVarying:
+    if OutF notin wrappers and VarF notin wrappers:
+      reportIRError pragmas.info, "Vertex shader varying should be a `out` or `var` parameter"
+
+    f = newCIRNode(c.info, cnkVertexVarying)
+  elif gpVertIn in flags:
+    f = newCIRNode(c.info, cnkVertexInput)
+  elif gpFragIn in flags:
+    f = newCIRNode(c.info, cnkFragmentInput)
 
 proc toIR(n: NifCursor): CIRNode =
   var c = n
@@ -552,58 +647,7 @@ proc toIR(n: NifCursor): CIRNode =
           result.add(toIR(it))
           skip it
       of ForS:
-        result = newCIRNode(c.info, cnkForStmt)
-        var child = firstChild(c)
-        let iterCur = child
-        skip child
-        var varsCur = child
-        skip child
-        let bodyCur = child
-        var vchild = firstChild(varsCur)
-        var sec = newCIRNode(varsCur.info, cnkSection)
-        var found = false
-        while vchild.hasMore:
-          if vchild.stmtKind in {VarS, LetS}:
-            if found:
-              reportIRError vchild.info, "Can't use more than one iterator in for statement"
-              break
-            var v = newCIRNode(vchild.info, cnkVarTy)
-            var symNode = firstChild(vchild)
-            var sd = newCIRNode(symNode.info, cnkSymDef)
-            var typ = symNode
-            skip typ
-            skip typ
-            skip typ
-            var name = symNode.symText
-            sd.add(newCIRSym(symNode.info, name))
-            sd.add(newCIRSym(typ.info, typ.getTypeName))
-            v.add(sd)
-
-            sec.add(v)
-            found = true
-          skip vchild
-
-        result.add(sec)
-
-        assert found, "Can't make for loop statement without loop variable"
-        if iterCur.exprKind != InfixX or not iterCur.firstChild.symText.contains(".."):
-          reportIRError iterCur.info, "Only `..` and `..<` can be used as iterators" 
-          return
-        var it = newCIRNode(iterCur.info, cnkInfix)
-        var ic = firstChild(iterCur)
-        let opStr = ic.symText
-
-        it.add(newCIRSym(ic.info, opStr))
-        skip ic # skip op to start operand
-        it.add(toIR(ic))
-        skip ic # skip start operand to stop operand
-        it.add(toIR(ic))
-
-        result.add(it)
-
-        assert bodyCur.stmtKind == StmtsS, "For loop body should be a statement."
-        result.add(toIR(bodyCur))
-
+        result = makeForIR(c)
       of CommentS, DiscardS, ImportS, TypeS, NoStmt: return
       of ProcS, FuncS:
         result = newCIRNode(c.info, cnkFuncDef)
@@ -639,9 +683,7 @@ proc toIR(n: NifCursor): CIRNode =
           var p = newCIRNode(body.info, cnkParams)
           var hasGlobalIndex = false
           var hasFragOut = false
-          var vertexOutputCount = 0
-          var hasVertIn = false
-          var hasFragIn = false
+          var hasVertOut = false
 
           while fieldCursor.hasMore:
             if fieldCursor.exprKind != DotX:
@@ -663,46 +705,7 @@ proc toIR(n: NifCursor): CIRNode =
                 elif flags.len > 1:
                   reportIRError pragmas.info, "A parameter can only have one GPU pragma."
                 else: 
-                  if gpUniform in flags:
-                    reportIRError pragmas.info, "Can't mark a parameter as uniform."
-                  if gpSSBO in flags:
-                    f = newCIRNode(c.info, cnkSSBO)
-                  if gpGlobalIndex in flags:
-                    if not hasGlobalIndex: 
-                      f = newCIRNode(c.info, cnkGlobalIndex)
-                      hasGlobalIndex = true
-                    else:
-                      reportIRError pragmas.info, "Can't have multiple global index"
-                  if gpFrag in flags:
-                    if not hasFragOut:
-                      if OutF notin wrappers and VarF notin wrappers:
-                        reportIRError pragmas.info, "Fragment shader output should be a `out` or `var` parameter"
-                      
-                      f = newCIRNode(c.info, cnkFragmentOutput)
-                      hasFragOut = true
-                    else:
-                      reportIRError pragmas.info, "Can't have multiple fragment output"
-                  elif gpVert in flags:
-                    if vertexOutputCount < 2:
-                      if OutF notin wrappers and VarF notin wrappers:
-                        reportIRError pragmas.info, "Vertex shader output should be a `out` or `var` parameter"
-                      
-                      f = newCIRNode(c.info, cnkVertexOutput)
-                      inc vertexOutputCount
-                    else:
-                      reportIRError pragmas.info, "At most two vertex outputs are supported (position and one varying)"
-                  elif gpVertIn in flags:
-                    if not hasVertIn:
-                      f = newCIRNode(c.info, cnkVertexInput)
-                      hasVertIn = true
-                    else:
-                      reportIRError pragmas.info, "Can't have multiple vertex input"
-                  elif gpFragIn in flags:
-                    if not hasFragIn:
-                      f = newCIRNode(c.info, cnkFragmentInput)
-                      hasFragIn = true
-                    else:
-                      reportIRError pragmas.info, "Can't have multiple fragment input"
+                  f.applyGPUFlag(c, pragmas, flags)
               
               f.add(newCIRSym(fieldName.info, fieldName.symText))
               f.add(newCIRSym(fieldType.info, fieldTyName))

@@ -57,42 +57,56 @@ proc registerFragment(cache: var TypeCache, n: CIRNode) =
     cache.shaderParams.fragOut = vname
     cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
 
+proc addShaderBlockItem(items: var seq[ShaderBlockItem], name, typeName: string,
+                        size: int, info: LineInfo) =
+  var offset = 0
+  for item in items:
+    offset = max(offset, item.offset + item.size)
+  if offset + size > 128:
+    reportSemError info, "Shader input/output block exceeds 128 bytes"
+    return
+  items.add ShaderBlockItem(name: name, typeName: typeName,
+                            offset: offset, size: size)
+
 proc registerVertex(cache: var TypeCache, n: CIRNode) =
   let tyName = n.args[1].name
   let vname = n.args[0].name
   let shaderType = cache.equivalences.getOrDefault(tyName, tyName)
-  if shaderType != "vec4f" and shaderType != "vec3f":
-    reportSemError n.info, "Vertex outputs must be a `vec4f` position or `vec3f` varying"
   if cache.isValidDefinition(n):
     let typeId = cache.nameToId.getOrDefault(tyName, -1)
     cache.variables[vname] = typeId
-    if shaderType == "vec4f":
-      cache.shaderParams.vertOut = vname
-    else:
-      cache.shaderParams.vertVarying = vname
+    cache.shaderParams.vertOut = vname
+    cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
+
+proc registerVertex(cache: var TypeCache, n: CIRNode) =
+  let tyName = n.args[1].name
+  let vname = n.args[0].name
+  let shaderType = cache.equivalences.getOrDefault(tyName, tyName)
+  if cache.isValidDefinition(n):
+    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    cache.variables[vname] = typeId
+    let size = max(1, cache.getType(tyName).size)
+    addShaderBlockItem(cache.shaderParams.vertVaryings, vname, tyName, size, n.info)
     cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
 
 proc registerFragmentInput(cache: var TypeCache, n: CIRNode) =
   let tyName = n.args[1].name
   let vname = n.args[0].name
-  let shaderType = cache.equivalences.getOrDefault(tyName, tyName)
-  if shaderType != "vec3f" and shaderType != "float32" and shaderType != "float":
-    reportSemError n.info, "Fragment shader input should be a `vec3f` color or `float32` channel"
   if cache.isValidDefinition(n):
     let typeId = cache.nameToId.getOrDefault(tyName, -1)
     cache.variables[vname] = typeId
-    cache.shaderParams.fragIn = vname
+    let size = max(1, cache.getType(tyName).size)
+    addShaderBlockItem(cache.shaderParams.fragInputs, vname, tyName, size, n.info)
     cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
 
 proc registerVertexInput(cache: var TypeCache, n: CIRNode) =
   let tyName = n.args[1].name
   let vname = n.args[0].name
-  if cache.equivalences.getOrDefault(tyName, tyName) != "vec3f":
-    reportSemError n.info, "Vertex shader input should be a `vec3f`"
   if cache.isValidDefinition(n):
     let typeId = cache.nameToId.getOrDefault(tyName, -1)
     cache.variables[vname] = typeId
-    cache.shaderParams.vertIn = vname
+    let size = max(1, cache.getType(tyName).size)
+    addShaderBlockItem(cache.shaderParams.vertInputs, vname, tyName, size, n.info)
     cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
 
 proc registerSSBO(cache: var TypeCache, n: CIRNode) =
@@ -192,6 +206,64 @@ proc inferType*(cache: var TypeCache, node: var CIRNode): string =
     
   else:
     reportSemError node.info, "Failed to infer type of expression ```" & renderIR(node) & "```."
+    return
+
+  result = cache.equivalences.getOrDefault(result, result)
+
+# A version of inferType that doesn't modify it's argument
+# Made to be used post-sem, reduce copies
+proc inferType*(cache: var TypeCache, node: CIRNode): string =
+  result = "auto"
+  case node.kind
+  of cnkIntLit: 
+    result = "int"
+  of cnkUintLit: 
+    result = "uint"
+  of cnkFloatLit: 
+    result = "float"
+  of cnkCharLit: 
+    result = "char"
+  of cnkBoolLit: 
+    result = "bool"
+  
+  of cnkSym:
+    let typeId = cache.variables.getOrDefault(node.name, -1)
+    result = cache.instances[typeId].name
+  of cnkRSym:
+    result = cache.instances[node.tid].name
+  of cnkDotExpr:
+    var r = cache.inferType(node.args[0])
+    var current = node.args[1]
+    var fields: seq[string] = @[]
+
+    while current.kind == cnkDotExpr:
+      let f = current.args[0].name.split(".")[0]
+      current = current.args[1]
+      fields.add(f)
+    
+    fields.add(current.name.split(".")[0])
+    result = cache.getType(r, fields).name
+
+  of cnkObjConstr:
+    result = node.args[0].name
+
+  of cnkArrAt:
+    let t = cache.inferType(node.args[0])
+    result = cache.getType(t).returnType
+
+  of cnkPrefix, cnkInfix, cnkCall:    
+    let tid = node.args[0].tid
+    if tid >= 0 and tid < cache.instances.len:
+      result = cache.instances[tid].returnType
+
+  of cnkConv:
+    result = node.args[0].name
+
+  of cnkFma, cnkRsqrt:
+    var operand = node.args[0]
+    result = cache.inferType(operand)
+    
+  else:
     return
 
   result = cache.equivalences.getOrDefault(result, result)

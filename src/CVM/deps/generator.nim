@@ -49,6 +49,9 @@ const
 # ########################################################## HELPER PROCS ######################################################## #
 # ################################################################################################################################ #
 
+# Translate a string op to a vm opcode
+# Mostly just arithmethics for infix
+# Pretty straight forward
 proc opcodeFor(op: string, isFloat: bool): VMOpCode =
   case op
   of "+":
@@ -77,20 +80,19 @@ proc opcodeFor(op: string, isFloat: bool): VMOpCode =
   of "!=":
     if isFloat: return vocNeqf 
     else: return vocNeqi
+  # There is no `>` and `>=` in nimony since their are just template
+  # For `a > b` it just generate `b < a`
   of "<":
     if isFloat: return vocLtf 
     else: return vocLti
   of "<=":
     if isFloat: return vocLef 
     else: return vocLei
-  of ">":
-    if isFloat: return vocLtf 
-    else: return vocLti
-  of ">=":
-    if isFloat: return vocLef 
-    else: return vocLei
+
+  # This path is almost impossible the get to, since the check is done before entering the function so.
   else: assert false, "Failed to get infix opcode for `" & op & "`."
 
+# Get the opcode but for immediate values
 proc immediateOpcodeFor(op: string, isFloat: bool): VMOpCode =
   case op
   of "+":
@@ -101,6 +103,7 @@ proc immediateOpcodeFor(op: string, isFloat: bool): VMOpCode =
     if isFloat: vocMulCf else: vocMulCi
   else: assert false, "No immediate opcode for `" & op & "`."
 
+# Same but fetch opcode for prefix operations
 proc prefixOpcodeFor(op: string, isFloat: bool): VMOpCode =
   case op
   of "not":
@@ -110,9 +113,17 @@ proc prefixOpcodeFor(op: string, isFloat: bool): VMOpCode =
     else: return vocNegi
   else: assert false, "Failed to get prefix opcode for `" & op & "`."
 
+proc isFloatName(name: string): bool {.inline.} =
+  name.startsWith("float")
 proc isFloatType(ty: TypeInst): bool {.inline.} =
-  ty.name.startsWith("float")
+  ty.name.isFloatName()
+proc isUintName(name: string): bool {.inline.} =
+  name.startsWith("uint")
+proc isUintType(ty: TypeInst): bool {.inline.} =
+  ty.name.isFloatName()
 
+# Generate one intruction of any kind
+# The layout is [size - 1 byte] [op - 1 byte] [reg1 - one byte] [reg2 - one byte] 
 proc genInstruction(op: VMOpCode, dst, src: CMemLoc, size: int = 1): uint32 {.inline.} =
   (uint32(size and 0xFF) shl SIZE_POS) or (uint32(op) shl OPCODE_POS) or (uint32(dst and 0xFF) shl REGA_POS) or uint32(src and 0xFF)
 
@@ -124,6 +135,7 @@ proc emitWord(ctx: var CodeGenCtx, word: uint32) {.inline.} =
   ctx.code.data.add(word)
   inc ctx.code.currentPos
 
+# Fetch a literal value under all the potential wrapper it could have
 proc unwrapLiteral(node: CIRNode): CIRNode =
   result = node
   while result.kind in {cnkConv, cnkCast} and result.args.len > 0:
@@ -132,14 +144,16 @@ proc unwrapLiteral(node: CIRNode): CIRNode =
 proc isImmediateLiteral(node: CIRNode): bool =
   unwrapLiteral(node).isLit
 
+# Get the bits of an immediate value
 proc immediateBits(node: CIRNode, isFloat: bool, size: int): uint64 =
   let literal = unwrapLiteral(node)
   if isFloat:
     var value: float64
     case literal.kind
+    # Integers needs a conversion to float first because they aren't represented in the same wat as float
     of cnkIntLit: value = float64(literal.intVal)
     of cnkUintLit: value = float64(literal.uintVal)
-    of cnkFloatLit: value = float64(literal.floatVal)
+    of cnkFloatLit: value = literal.floatVal
     else: assert false, "Expected numeric immediate literal"
     if size <= 4:
       return uint64(cast[uint32](float32(value)))
@@ -148,23 +162,24 @@ proc immediateBits(node: CIRNode, isFloat: bool, size: int): uint64 =
   case literal.kind
   of cnkIntLit: cast[uint64](int64(literal.intVal))
   of cnkUintLit: uint64(literal.uintVal)
-  of cnkFloatLit: cast[uint64](int64(literal.floatVal))
-  else: assert false, "Expected numeric immediate literal"
+  else: assert false, "Expected integer immediate literal"
 
+# Emit instructions for an immediate value
+# Immediates can't be greater than 4 bytes (needed to make them fit in the bytecode)
 proc emitImmediate(ctx: var CodeGenCtx, op: VMOpCode, dst: CMemLoc,
                    value: uint64, size: int) =
   ctx.emitInst(op, dst, 0, size)
   ctx.emitWord(uint32(value and 0xFFFF_FFFF'u64))
-  if size > 4:
-    ctx.emitWord(uint32(value shr 32))
 
+# If an allocation is a temporary one, it should get freed
 proc freeIfTemp(ctx: var CodeGenCtx, alloc: CAllocation) {.inline.} =
-  if alloc.isTemp and alloc.size > 0:
+  if alloc.isTemp:
     ctx.code.allocator.free(alloc)
 
+# Directly emit instruction for builtin functions
 proc builtinOpcode(name, typeName: string): VMOpCode =
-  let isFloat = typeName.startsWith("float")
-  let isUnsigned = typeName.startsWith("uint")
+  let isFloat = typeName.isFloatName
+  let isUnsigned = typeName.isUintName
   case name
   of "abs":
     if isFloat: vocAbsf
@@ -186,13 +201,15 @@ proc builtinOpcode(name, typeName: string): VMOpCode =
 # ##################################################### VARIABLE RESOLUTION ###################################################### #
 # ################################################################################################################################ #
 
+# Try to get the allocation for a symbol node
 proc resolveSymbol(ctx: var CodeGenCtx, c: CIRNode): CAllocation =
   if c.name in ctx.cache.liveness:
     let l = ctx.cache.liveness.getOrDefault(c.name)
     return ctx.code.allocator.lookup(l.birth.line, l.birth.col)
   else:
-    return CAllocation()
+    return CAllocation(pos: -1)
 
+# Fetch the allocation for the field path (a.x.y.z) or a node
 proc getFieldReg(ctx: var CodeGenCtx, baseReg: CAllocation, c: CIRNode): CAllocation =
   result = baseReg
   var offset = 0
@@ -201,13 +218,14 @@ proc getFieldReg(ctx: var CodeGenCtx, baseReg: CAllocation, c: CIRNode): CAlloca
   var currentType = basetype
   var current = c.args[1]
 
+  # We just successively fetch fields and add their offset to the result
   while current.kind == cnkDotExpr:
     let f = current.args[0].name.split(".")[0]
     let fid = ctx.cache.getType(currentType).nameToId.getOrDefault(f, -1)
     current = current.args[1]
 
     if fid >= 0:
-      let field = ctx.cache.getType(currentType).fields[fid]
+      let field = addr ctx.cache.getType(currentType).fields[fid]
       offset += field.offset
       currentType = field.ty
   
@@ -218,8 +236,8 @@ proc getFieldReg(ctx: var CodeGenCtx, baseReg: CAllocation, c: CIRNode): CAlloca
     offset += field.offset
     currentType = field.ty
   result.pos += offset
-  result.size = max(1, ctx.cache.getType(currentType).size)
-  result.isTemp = false
+  result.size = ctx.cache.getType(currentType).size
+  result.isTemp = false # Should not be freed, only the master register can get freed
 
 # ################################################################################################################################ #
 # ############################################################# EXPRESSIONS ###################################################### #
@@ -230,14 +248,12 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
   case c.kind
   of cnkInfix:
     let opName = c.args[0].name
-    var dummyNode = c
-    let opTypeName = ctx.cache.inferType(dummyNode)
-    let isCmp = opName in ["<", "<=", ">", ">=", "==", "!="]
-    var cc = c.args[1]
-    let operandTyName = if isCmp: ctx.cache.inferType(cc) else: opTypeName
-    let opIsFloat  = operandTyName.startsWith("float")
+    let opTypeName = ctx.cache.inferType(c)
+    let isCmp = opName in ["<", "<=", "==", "!="]
+    let operandTyName = if isCmp: ctx.cache.inferType(c.args[1]) else: opTypeName
+    let opIsFloat  = operandTyName.isFloatName
     let operandTy = ctx.cache.getType(operandTyName)
-    let opSize = max(1, operandTy.size)
+    let opSize = operandTy.size
 
     var lhsNode = c.args[1]
     var rhsNode = c.args[2]
@@ -249,7 +265,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
 
     if opName in ["+", "-", "*"] and rhsNode.isImmediateLiteral:
       let lhs = ctx.genExpr(lhsNode)
-      result = if target.size >= opSize: target else: ctx.code.allocator.alloc(opSize)
+      result = if target.pos != -1: target else: ctx.code.allocator.alloc(opSize)
       if result.pos != lhs.pos:
         ctx.emitInst(vocMov, result.pos, lhs.pos, opSize)
       let imm = immediateBits(rhsNode, opIsFloat, opSize)
@@ -260,7 +276,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
     let r1 = ctx.genExpr(lhsNode)
     let r2 = ctx.genExpr(rhsNode)
 
-    if target.size >= opSize:
+    if target.pos != -1:
       result = target
     else:
       result = ctx.code.allocator.alloc(opSize)
@@ -714,7 +730,7 @@ proc genArrAsgn(ctx: var CodeGenCtx, c: CIRNode) =
   let containerTypeName = ctx.cache.inferType(dummyNode)
   let containerTy = ctx.cache.getType(containerTypeName)
   let elemTypeName = containerTy.returnType
-  let elemSize = if elemTypeName != "": max(1, ctx.cache.getType(elemTypeName).size) else: 1
+  let elemSize = ctx.cache.getType(elemTypeName).size
 
   let indexAlloc = ctx.genExpr(c.args[1])
   let valAlloc = ctx.genExpr(c.args[2])
@@ -742,6 +758,12 @@ proc allocShaderParam(ctx: var CodeGenCtx, param: CIRNode): CAllocation =
   var deadCol = live.dead.col
   result = ctx.code.allocator.alloc(max(1, ty.size), birth.line, birth.col,
                                     deadLine, deadCol)
+
+proc shaderBlockOffset(items: seq[ShaderBlockItem], name: string): int =
+  for item in items:
+    if item.name == name:
+      return item.offset
+  return 0
 
 proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
   let name = c.args[0].name
@@ -781,7 +803,11 @@ proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
         let alloc = ctx.allocShaderParam(param)
         let inputOp = if param.kind == cnkVertexInput:
           vocLoadVertexInput else: vocLoadFragmentInput
-        ctx.emitInst(inputOp, alloc.pos, 0, alloc.size)
+        let inputOffset = if param.kind == cnkVertexInput:
+          ctx.cache.shaderParams.vertInputs.shaderBlockOffset(param.args[0].name)
+        else:
+          ctx.cache.shaderParams.fragInputs.shaderBlockOffset(param.args[0].name)
+        ctx.emitInst(inputOp, alloc.pos, inputOffset, alloc.size)
       elif param.kind in {cnkVertexOutput, cnkFragmentOutput}:
         # Here it's just about the output of the shader
         # Pretty straight forward
@@ -818,13 +844,15 @@ proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
         let paramName = param.args[0].name
         let live = ctx.cache.liveness.getOrDefault(paramName)
         let output = ctx.code.allocator.lookup(live.birth.line, live.birth.col)
-        let typeName = param.args[1].name
-        let shaderType = ctx.cache.equivalences.getOrDefault(typeName, typeName)
         case param.kind
         of cnkVertexOutput:
-          let outputOp = if shaderType == "vec4f": vocStoreVertexOutput
-                         else: vocStoreVertexVarying
-          ctx.emitInst(outputOp, output.pos, 0, output.size)
+          if paramName == ctx.cache.shaderParams.vertOut:
+            ctx.emitInst(vocStoreVertexOutput, output.pos, 0, output.size)
+          else:
+            let outputOffset = ctx.cache.shaderParams.vertVaryings
+              .shaderBlockOffset(paramName)
+            ctx.emitInst(vocStoreVertexVarying, output.pos,
+                         outputOffset, output.size)
         of cnkFragmentOutput:
           ctx.emitInst(vocStoreFragmentOutput, output.pos, 0, output.size)
         else: discard

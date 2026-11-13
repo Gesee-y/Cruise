@@ -74,13 +74,19 @@ type
   ShaderSSBO* = object
     tid: int
 
+  ShaderBlockItem* = object
+    name*: string
+    typeName*: string
+    offset*: int
+    size*: int
+
   ShaderParameters* = object
     uniforms*: seq[ShaderUniform]
     ssbos*: seq[ShaderSSBO]
     uniformToId*: Table[string, int]
     ssboToId*: Table[string, int]
     globalIndex*: tuple[name: string, tid: int]
-    vertIn*, vertVarying*, fragIn*: string
+    vertInputs*, vertVaryings*, fragInputs*: seq[ShaderBlockItem]
     vertOut*, fragOut*: string
 
   # Type cache, a global structure bookeeping informations about types
