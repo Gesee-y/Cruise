@@ -68,6 +68,25 @@ proc testIntegerFma() =
   assert narrowResult == -29, "Expected int8 FMA result -29, got " & $narrowResult
   echo "  -> int32 and int8 results preserved"
 
+proc testTrigOpcodes() =
+  echo "[TEST] Trigonometric VM opcodes..."
+  let sinInput = 0.75'f32
+  let cosInput = -0.25'f32
+  let program = @[
+    encodeInst(vocLoadf, 0, 0, 4), cast[uint32](sinInput),
+    encodeInst(vocSinf, 4, 0, 4),
+    encodeInst(vocLoadf, 8, 0, 4), cast[uint32](cosInput),
+    encodeInst(vocCosf, 12, 8, 4),
+    encodeInst(vocHalt, 0, 0, 0)
+  ]
+  var vm = initCpuVm()
+  vm.runVM(program)
+  let sinResult = cast[ptr float32](addr vm.memory[4])[]
+  let cosResult = cast[ptr float32](addr vm.memory[12])[]
+  assert abs(sinResult - sin(sinInput)) < 0.0001'f32
+  assert abs(cosResult - cos(cosInput)) < 0.0001'f32
+  echo "  -> sin/cos opcode results verified"
+
 proc testLoopsAndBranches() =
   echo "[TEST] Loops and Conditional Jumps..."
   var vm = initCpuVm()
@@ -293,7 +312,7 @@ proc testBuiltinOpcodes() =
   assert program.len > 0, "test_builtin.cbc is empty"
 
   var foundAbs, foundAbsInt, foundMin, foundMinInt = false
-  var foundMax, foundMaxInt, foundSqrt, foundRsqrt, foundCall = false
+  var foundMax, foundMaxInt, foundSqrt, foundRsqrt, foundSin, foundCos, foundCall = false
   var foundAddCi, foundSubCi, foundMulCi = false
   var foundAddCf, foundSubCf, foundMulCf = false
   var mulCiCount, mulCfCount = 0
@@ -312,6 +331,8 @@ proc testBuiltinOpcodes() =
     of vocMaxi: foundMaxInt = true
     of vocSqrtf: foundSqrt = true
     of vocRsqrtf: foundRsqrt = true
+    of vocSinf: foundSin = true
+    of vocCosf: foundCos = true
     of vocAddCi: foundAddCi = true
     of vocSubCi: foundSubCi = true
     of vocMulCi:
@@ -343,6 +364,8 @@ proc testBuiltinOpcodes() =
   assert foundMaxInt, "integer max should use a dedicated opcode"
   assert foundSqrt, "sqrt should use a dedicated opcode"
   assert foundRsqrt, "1 / sqrt(x) should rewrite to rsqrt"
+  assert foundSin, "sin should use a dedicated opcode"
+  assert foundCos, "cos should use a dedicated opcode"
   assert foundAddCi and foundSubCi and foundMulCi,
     "Integer operations with constants should use immediate opcodes"
   assert foundAddCf and foundSubCf and foundMulCf,
@@ -371,20 +394,22 @@ proc testBuiltinOpcodes() =
     let expected = abs(a[i]) + min(a[i], b[i]) + max(a[i], b[i]) +
                    sqrt(abs(b[i])) + 1.0'f32 / sqrt(abs(a[i])) +
                    a[i] / sqrt(abs(b[i])) + (a[i] + 2.0'f32) +
-                   (b[i] - 1.0'f32) + (a[i] * 2.0'f32) + b[i] + a[i]
+                   (b[i] - 1.0'f32) + (a[i] * 2.0'f32) + b[i] + a[i] +
+                   sin(a[i]) + cos(b[i])
     assert abs(c[i] - expected) < 0.0001'f32,
       "Builtin result at index " & $i & ": expected " & $expected & " got " & $c[i]
     let expectedInt = abs(ia[i]) + min(ia[i], ib[i]) + max(ia[i], ib[i]) +
                       (ia[i] + 3) + (ib[i] - 2) + (ia[i] * 2) + ib[i] + ia[i]
     assert ic[i] == expectedInt,
       "Integer builtin result at index " & $i & ": expected " & $expectedInt & " got " & $ic[i]
-  echo "  -> abs/min/max/sqrt/rsqrt opcodes and results verified"
+  echo "  -> abs/min/max/sqrt/rsqrt/sin/cos opcodes and results verified"
 
 proc main() =
   echo "==================== CPU VM TEST SUITE ===================="
   testBasicArithmetic()
   testFloatArithmetic()
   testIntegerFma()
+  testTrigOpcodes()
   testLoopsAndBranches()
   testProcedureCall()
   testMemoryModel()

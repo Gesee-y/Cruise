@@ -78,7 +78,7 @@ proc registerVertex(cache: var TypeCache, n: CIRNode) =
     cache.shaderParams.vertOut = vname
     cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
 
-proc registerVertex(cache: var TypeCache, n: CIRNode) =
+proc registerVertexVarying(cache: var TypeCache, n: CIRNode) =
   let tyName = n.args[1].name
   let vname = n.args[0].name
   let shaderType = cache.equivalences.getOrDefault(tyName, tyName)
@@ -146,7 +146,7 @@ proc findSimilar(p: ProcOverloadNode, ty: string, info: LineInfo, pos: int): str
       let tyStr = tys.join(" | ")
       reportSemError info, "Multiple type for call argument at `" & $pos & "`: `" & tyStr  & "`."
 
-proc inferType*(cache: var TypeCache, node: var CIRNode): string =
+proc inferTypeOrAdd*(cache: var TypeCache, node: var CIRNode): string =
   result = "auto"
   case node.kind
   of cnkIntLit: 
@@ -168,7 +168,7 @@ proc inferType*(cache: var TypeCache, node: var CIRNode): string =
     result = cache.instances[typeId].name
       
   of cnkDotExpr:
-    var r = cache.inferType(node.args[0])
+    var r = cache.inferTypeOrAdd(node.args[0])
     var current = node.args[1]
     var fields: seq[string] = @[]
 
@@ -186,7 +186,7 @@ proc inferType*(cache: var TypeCache, node: var CIRNode): string =
     result = node.args[0].name
 
   of cnkArrAt:
-    let t = cache.inferType(node.args[0])
+    let t = cache.inferTypeOrAdd(node.args[0])
     result = cache.getType(t).returnType
 
   of cnkPrefix, cnkInfix, cnkCall:
@@ -202,7 +202,7 @@ proc inferType*(cache: var TypeCache, node: var CIRNode): string =
 
   of cnkFma, cnkRsqrt:
     var operand = node.args[0]
-    result = cache.inferType(operand)
+    result = cache.inferTypeOrAdd(operand)
     
   else:
     reportSemError node.info, "Failed to infer type of expression ```" & renderIR(node) & "```."
@@ -312,7 +312,7 @@ proc resolveCall(cache: var TypeCache, n: var CIRNode) =
 
   for i in 1 ..< n.args.len:
     cache.resolveNode(n.args[i], inFunc=true)
-    argTypes.add(cache.inferType(n.args[i]))
+    argTypes.add(cache.inferTypeOrAdd(n.args[i]))
 
   let procId = cache.resolveProc(n, argTypes)
   n.args[0] = newCIRRSym(n.args[0].info, funcName, procId)
@@ -339,6 +339,8 @@ proc resolveNode(cache: var TypeCache, n: var CIRNode, inFunc = false) =
     cache.registerFragment(n)
   of cnkVertexOutput:
     cache.registerVertex(n)
+  of cnkVertexVarying:
+    cache.registerVertexVarying(n)
   of cnkVertexInput:
     cache.registerVertexInput(n)
   of cnkFragmentInput:

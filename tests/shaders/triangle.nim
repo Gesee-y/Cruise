@@ -6,6 +6,7 @@ import ../../externalModule/opengl/src/opengl
 const
   ShaderBlockBytes = 128
   ShaderBlockWords = ShaderBlockBytes div sizeof(uint32)
+  UniformTableWords = 256
 
 type
   VertexAttribute = object
@@ -141,6 +142,19 @@ proc uploadBytecode(program: GLuint, uniformName, lengthName: string,
   glUniform1uiv(bytecodeLocation, code.len.GLsizei, addr code[0])
   glUniform1i(lengthLocation, code.len.GLint)
 
+proc uploadUniformBlock(program: GLuint, uniformName: string,
+                        values: openArray[uint32]) =
+  let baseName = uniformName & "[0]"
+  let location = glGetUniformLocation(program, baseName.cstring)
+  if location < 0:
+    raise newException(IOError, "GLSL VM uniform table is missing: " & uniformName)
+  if values.len > UniformTableWords:
+    raise newException(IOError, "Uniform table exceeds " & $UniformTableWords & " uint32 words")
+  var table: array[UniformTableWords, uint32]
+  for index, value in values:
+    table[index] = value
+  glUniform1uiv(location, UniformTableWords.GLsizei, addr table[0])
+
 
 proc triangle() =
   let app = initSDL3App()
@@ -215,7 +229,9 @@ proc triangle() =
   glUseProgram(program)
   uploadBytecode(program, "uVertexBytecode", "uVertexBytecodeLen", vertexBytecode)
   uploadBytecode(program, "uFragmentBytecode", "uFragmentBytecodeLen", fragmentBytecode)
-  
+  let vertexUniforms = [cast[uint32](1.0'f32), cast[uint32](0.0'f32)]
+  var timer = 0.0'f32
+  var fragmentUniforms = [cast[uint32](timer)]
   glBindVertexArray(vao)
 
   glViewport(0, 0, 800.GLsizei, 600.GLsizei)
@@ -227,6 +243,11 @@ proc triangle() =
     # Quit on Escape
     if app.isKeyJustPressed(CKey_Escape):
       running = false
+
+    timer += 0.016'f32
+    fragmentUniforms[0] = cast[uint32](timer)
+    uploadUniformBlock(program, "uVertexUniforms", vertexUniforms)
+    uploadUniformBlock(program, "uFragmentUniforms", fragmentUniforms)
 
     glClear(GL_COLOR_BUFFER_BIT)
     glDrawArrays(GL_TRIANGLES, 0, positions.len.GLsizei)

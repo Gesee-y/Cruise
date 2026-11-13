@@ -19,7 +19,7 @@ proc main(gid {.globalIndex.}: int, a {.ssbo.}: seq[float32],
   var oneRight = x * float32(1)
   c[gid] = abs(x) + min(x, y) + max(x, y) + sqrt(abs(y)) +
            (float32(1) / sqrt(abs(x))) + (x / sqrt(abs(y))) +
-           addf + subf + mulf + oneLeft + oneRight
+           addf + subf + mulf + oneLeft + oneRight + sin(x) + cos(y)
   var ix = ia[gid]
   var iy = ib[gid]
   var addi = ix + 3

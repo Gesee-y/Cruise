@@ -56,3 +56,7 @@ proc registerBuiltins*(c: var TypeCache) =
   c.registerUnaryOp("rsqrt", "float", "float")
   c.registerUnaryOp("rsqrt", "float32", "float32")
   c.registerUnaryOp("rsqrt", "float64", "float64")
+  for op in ["sin", "cos"]:
+    c.registerUnaryOp(op, "float", "float")
+    c.registerUnaryOp(op, "float32", "float32")
+    c.registerUnaryOp(op, "float64", "float64")

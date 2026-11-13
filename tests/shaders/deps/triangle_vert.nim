@@ -13,11 +13,17 @@ type
 setShaderType(Vec3, "vec3f")
 setShaderType(Vec4, "vec4f")
 
+var scale {.uniform.}: float32 = float32(0.0)
+var translateX {.uniform.}: float32 = float32(0.0)
+
 proc main(gl_pos {.vertexOutput.}: out Vec4,
-          color {.vertexOutput.}: var Vec3,
+          color {.vertexVarying.}: var Vec3,
           aPos {.vertexInput.}: Vec3) =
-  gl_pos = Vec4(x: aPos.x, y: aPos.y, z: aPos.z, w: float32(1.0))
+  gl_pos = Vec4(x: aPos.x * scale + translateX,
+                y: aPos.y * scale,
+                z: aPos.z,
+                w: float32(1.0))
   color = Vec3(
-    x: aPos.x * float32(0.5) + float32(0.5),
-    y: aPos.y * float32(0.5) + float32(0.5),
-    z: float32(0.85))
+    x: float32(0.5),
+    y: float32(0.5),
+    z: float32(0.0))

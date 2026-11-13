@@ -95,3 +95,6 @@ type
     vocStoreVertexOutput = 65 ## emit vec4 clip-space position
     vocStoreVertexVarying = 66 ## store VM bytes in varying block at src
     vocStoreFragmentOutput = 67 ## emit vec4 fragment color
+
+    vocSinf = 68 ## dst = sin(src), float
+    vocCosf = 69 ## dst = cos(src), float

@@ -195,6 +195,12 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
     of vocRsqrtf:
       vm.writeMemFloat(int(dst), size, 1.0 / sqrt(vm.readMemFloat(int(src), size)))
 
+    of vocSinf:
+      vm.writeMemFloat(int(dst), size, sin(vm.readMemFloat(int(src), size)))
+
+    of vocCosf:
+      vm.writeMemFloat(int(dst), size, cos(vm.readMemFloat(int(src), size)))
+
     of vocAddCi, vocSubCi, vocMulCi:
       var immediate = uint64(program[vm.pc])
       inc vm.pc

@@ -195,6 +195,8 @@ proc builtinOpcode(name, typeName: string): VMOpCode =
     else: vocMaxi
   of "sqrt": vocSqrtf
   of "rsqrt": vocRsqrtf
+  of "cos": vocCosf
+  of "sin": vocSinf
   else: assert false, "Unsupported builtin opcode: " & name
 
 # ################################################################################################################################ #
@@ -360,7 +362,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
 
   of cnkCall:
     let procName = c.args[0].name
-    if procName in ["abs", "sqrt", "rsqrt"]:
+    if procName in ["abs", "sqrt", "rsqrt", "sin", "cos"]:
       var argNode = c.args[1]
       let typeName = ctx.cache.inferType(argNode)
       let size = max(1, ctx.cache.getType(typeName).size)
@@ -808,7 +810,7 @@ proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
         else:
           ctx.cache.shaderParams.fragInputs.shaderBlockOffset(param.args[0].name)
         ctx.emitInst(inputOp, alloc.pos, inputOffset, alloc.size)
-      elif param.kind in {cnkVertexOutput, cnkFragmentOutput}:
+      elif param.kind in {cnkVertexOutput, cnkVertexVarying, cnkFragmentOutput}:
         # Here it's just about the output of the shader
         # Pretty straight forward
         discard ctx.allocShaderParam(param)
@@ -840,19 +842,18 @@ proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
     # It's better to do it once and for all at the end of the shader
     # Since it would be way more cumbersome to do it with the output itself (to much edge case)
     for param in c.args[1].args:
-      if param.kind in {cnkVertexOutput, cnkFragmentOutput}:
+      if param.kind in {cnkVertexOutput, cnkVertexVarying, cnkFragmentOutput}:
         let paramName = param.args[0].name
         let live = ctx.cache.liveness.getOrDefault(paramName)
         let output = ctx.code.allocator.lookup(live.birth.line, live.birth.col)
         case param.kind
         of cnkVertexOutput:
-          if paramName == ctx.cache.shaderParams.vertOut:
-            ctx.emitInst(vocStoreVertexOutput, output.pos, 0, output.size)
-          else:
-            let outputOffset = ctx.cache.shaderParams.vertVaryings
-              .shaderBlockOffset(paramName)
-            ctx.emitInst(vocStoreVertexVarying, output.pos,
-                         outputOffset, output.size)
+          ctx.emitInst(vocStoreVertexOutput, output.pos, 0, output.size)
+        of cnkVertexVarying:
+          let outputOffset = ctx.cache.shaderParams.vertVaryings
+            .shaderBlockOffset(paramName)
+          ctx.emitInst(vocStoreVertexVarying, output.pos,
+                       outputOffset, output.size)
         of cnkFragmentOutput:
           ctx.emitInst(vocStoreFragmentOutput, output.pos, 0, output.size)
         else: discard

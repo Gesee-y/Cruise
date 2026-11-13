@@ -7,7 +7,7 @@
 import ../../src/CVM/disassembler
 
 proc main =
-  var f = open("../shaders/deps/triangle_vert.cbc", fmRead)
+  var f = open("../shaders/deps/triangle_frag.cbc", fmRead)
   var data: seq[uint32] = @[]
   var word: uint32
   while f.readBuffer(addr word, sizeof(uint32)) == sizeof(uint32):

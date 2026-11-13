@@ -473,7 +473,8 @@ proc fetchGPUPragma(c: NifCursor): set[GPUPragma] =
 
     skip n
 
-proc applyGPUFlag(f: var CIRNode, c, pragmas: NifCursor, flags: set[GPUPragma]) =
+proc applyGPUFlag(f: var CIRNode, c, pragmas: NifCursor, flags: set[GPUPragma], 
+  hasGlobalIndex, hasFragOut, hasVertOut: var bool, wrappers: set[TypeFlag]) =
   if gpUniform in flags:
     reportIRError pragmas.info, "Can't mark a parameter as uniform."
   if gpSSBO in flags:
@@ -502,7 +503,7 @@ proc applyGPUFlag(f: var CIRNode, c, pragmas: NifCursor, flags: set[GPUPragma]) 
       hasVertOut = true
     else:
       reportIRError pragmas.info, "Can't have multiple vertex output"
-  elif gpVertVarying:
+  elif gpVertVarying in flags:
     if OutF notin wrappers and VarF notin wrappers:
       reportIRError pragmas.info, "Vertex shader varying should be a `out` or `var` parameter"
 
@@ -544,7 +545,7 @@ proc toIR(n: NifCursor): CIRNode =
       return toIR(it)
     of CallX, CmdX:
       result = makeCallIR(c)
-    of ConvX:
+    of ConvX, HconvX:
       var it = firstChild(c)
       result = newCIRNode(it.info, cnkConv)
       result.add(newCIRSym(it.info, it.getTypeName))
@@ -705,7 +706,7 @@ proc toIR(n: NifCursor): CIRNode =
                 elif flags.len > 1:
                   reportIRError pragmas.info, "A parameter can only have one GPU pragma."
                 else: 
-                  f.applyGPUFlag(c, pragmas, flags)
+                  f.applyGPUFlag(c, pragmas, flags, hasGlobalIndex, hasFragOut, hasVertOut, wrappers)
               
               f.add(newCIRSym(fieldName.info, fieldName.symText))
               f.add(newCIRSym(fieldType.info, fieldTyName))
