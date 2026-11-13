@@ -122,6 +122,24 @@ proc isUintName(name: string): bool {.inline.} =
 proc isUintType(ty: TypeInst): bool {.inline.} =
   ty.name.isFloatName()
 
+proc unwrapLiteral(node: CIRNode): CIRNode
+
+proc conversionType(cache: TypeCache, typeName: string): VMConvType =
+  let name = cache.equivalences.getOrDefault(typeName, typeName).split(".")[0]
+  case name
+  of "int", "int32": vctInt32
+  of "int8": vctInt8
+  of "int16": vctInt16
+  of "int64": vctInt64
+  of "uint", "uint8", "char": vctUInt8
+  of "uint16": vctUInt16
+  of "uint32": vctUInt32
+  of "uint64": vctUInt64
+  of "float", "float32": vctFloat32
+  of "float64": vctFloat64
+  of "bool": vctBool
+  else: assert false, "Unsupported conversion type: " & typeName
+
 # Generate one intruction of any kind
 # The layout is [size - 1 byte] [op - 1 byte] [reg1 - one byte] [reg2 - one byte] 
 proc genInstruction(op: VMOpCode, dst, src: CMemLoc, size: int = 1): uint32 {.inline.} =
@@ -420,7 +438,26 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
     return
 
   of cnkConv:
-    return ctx.genExpr(c.args[1], target = target)
+    let targetTypeName = ctx.cache.equivalences.getOrDefault(
+      c.args[0].name.split(".")[0], c.args[0].name.split(".")[0])
+    let sourceTypeName = ctx.cache.inferType(c.args[1])
+    let targetType = conversionType(ctx.cache, targetTypeName)
+    let sourceType = conversionType(ctx.cache, sourceTypeName)
+    let targetSize = max(1, ctx.cache.getType(targetTypeName).size)
+
+    if sourceType == targetType:
+      return ctx.genExpr(c.args[1], target = target)
+
+    let source = ctx.genExpr(c.args[1])
+    result = if target.size >= targetSize: target
+             else: ctx.code.allocator.alloc(targetSize)
+    ctx.emitInst(vocConv, result.pos, source.pos, targetSize)
+    let descriptor = uint32(ord(sourceType)) or
+      (uint32(ord(targetType)) shl 8)
+    ctx.emitWord(descriptor)
+    if source.isTemp and source.pos != result.pos:
+      ctx.freeIfTemp(source)
+    return
 
   of cnkBoolLit:
     result = target
@@ -487,19 +524,19 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
 
   of cnkIntLit:
     result = if target.size >= INT_SIZE: target else: ctx.code.allocator.alloc(INT_SIZE)
-    ctx.emitInst(vocLoadi, result.pos, 0)
+    ctx.emitInst(vocLoadi, result.pos, 0, INT_SIZE)
     ctx.emitWord(cast[uint32](c.intVal))
     return
 
   of cnkUintLit:
     result = if target.size >= INT_SIZE: target else: ctx.code.allocator.alloc(INT_SIZE)
-    ctx.emitInst(vocLoadi, result.pos, 0)
+    ctx.emitInst(vocLoadi, result.pos, 0, INT_SIZE)
     ctx.emitWord(cast[uint32](c.uintVal))
     return
 
   of cnkFloatLit:
     result = if target.size >= FLOAT_SIZE: target else: ctx.code.allocator.alloc(FLOAT_SIZE)
-    ctx.emitInst(vocLoadf, result.pos, 0)
+    ctx.emitInst(vocLoadf, result.pos, 0, FLOAT_SIZE)
     ctx.emitWord(cast[uint32](float32(c.floatVal)))
     return
 

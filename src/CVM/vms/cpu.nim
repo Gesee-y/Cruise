@@ -49,6 +49,20 @@ proc decodeWord*(word: uint32, op: var VMOpCode, dst, src: var uint8, size: var 
   dst  = uint8((word shr REGA_POS) and 0xFF'u32)
   src  = uint8(word and 0xFF'u32)
 
+proc conversionSize(kind: VMConvType): int {.inline.} =
+  case kind
+  of vctInt8, vctUInt8, vctBool: 1
+  of vctInt16, vctUInt16: 2
+  of vctInt32, vctUInt32, vctFloat32: 4
+  of vctInt64, vctUInt64, vctFloat64: 8
+  of vctInvalid: 0
+
+proc isFloatConversion(kind: VMConvType): bool {.inline.} =
+  kind in {vctFloat32, vctFloat64}
+
+proc isUnsignedConversion(kind: VMConvType): bool {.inline.} =
+  kind in {vctUInt8, vctUInt16, vctUInt32, vctUInt64, vctBool}
+
 # Helper memory read/write procs
 template readMemInt(vm: CpuVm, address: int, size: int): int64 =
   case size
@@ -137,6 +151,51 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         cast[ptr float32](addr vm.memory[dst])[] = fval
       else:
         vm.writeMemFloat(int(dst), size, float64(fval))
+
+    of vocConv:
+      let descriptor = program[vm.pc]
+      inc vm.pc
+      let sourceType = VMConvType(descriptor and 0xFF'u32)
+      let targetType = VMConvType((descriptor shr 8) and 0xFF'u32)
+      let sourceSize = sourceType.conversionSize
+      let targetSize = targetType.conversionSize
+      if sourceSize > 0 and targetSize > 0:
+        if targetType == vctBool:
+          let nonZero =
+            if sourceType.isFloatConversion:
+              vm.readMemFloat(int(src), sourceSize) != 0.0
+            elif sourceType.isUnsignedConversion:
+              vm.readMemUInt(int(src), sourceSize) != 0'u64
+            else:
+              vm.readMemInt(int(src), sourceSize) != 0
+          vm.writeMemUInt(int(dst), 1, if nonZero: 1'u64 else: 0'u64)
+        elif targetType.isFloatConversion:
+          let value =
+            if sourceType.isFloatConversion:
+              vm.readMemFloat(int(src), sourceSize)
+            elif sourceType.isUnsignedConversion:
+              float64(vm.readMemUInt(int(src), sourceSize))
+            else:
+              float64(vm.readMemInt(int(src), sourceSize))
+          vm.writeMemFloat(int(dst), targetSize, value)
+        elif isUnsignedConversion(targetType):
+          let value =
+            if sourceType.isFloatConversion:
+              cast[uint64](int64(vm.readMemFloat(int(src), sourceSize)))
+            elif sourceType.isUnsignedConversion:
+              vm.readMemUInt(int(src), sourceSize)
+            else:
+              cast[uint64](vm.readMemInt(int(src), sourceSize))
+          vm.writeMemUInt(int(dst), targetSize, value)
+        else:
+          let value =
+            if sourceType.isFloatConversion:
+              int64(vm.readMemFloat(int(src), sourceSize))
+            elif sourceType.isUnsignedConversion:
+              cast[int64](vm.readMemUInt(int(src), sourceSize))
+            else:
+              vm.readMemInt(int(src), sourceSize)
+          vm.writeMemInt(int(dst), targetSize, value)
 
     of vocMov:
       case size

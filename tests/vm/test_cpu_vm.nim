@@ -87,6 +87,47 @@ proc testTrigOpcodes() =
   assert abs(cosResult - cos(cosInput)) < 0.0001'f32
   echo "  -> sin/cos opcode results verified"
 
+proc testConversionOpcode() =
+  echo "[TEST] Runtime numeric conversion opcode..."
+  let descriptor = uint32(ord(vctInt32)) or (uint32(ord(vctFloat32)) shl 8)
+  let program = @[
+    encodeInst(vocLoadi, 0, 0, 4), 7'u32,
+    encodeInst(vocConv, 4, 0, 4), descriptor,
+    encodeInst(vocHalt, 0, 0, 0)
+  ]
+  var vm = initCpuVm()
+  vm.runVM(program)
+  let converted = cast[ptr float32](addr vm.memory[4])[]
+  assert converted == 7.0'f32, "Expected int32 7 to convert to float32 7.0, got " & $converted
+  echo "  -> int32 to float32 conversion verified"
+
+proc testGeneratedConversion() =
+  echo "[TEST] Generated runtime conversion..."
+  var file = open("test_conversion.cbc", fmRead)
+  var program: seq[uint32] = @[]
+  var word = 0'u32
+  while file.readBuffer(addr word, sizeof(word)) == sizeof(word):
+    program.add(word)
+  file.close()
+  assert program.len > 0, "test_conversion.cbc is empty"
+
+  var conversionCount = 0
+  for instruction in program:
+    if ((instruction shr 16) and 255'u32) == uint32(ord(vocConv)):
+      inc conversionCount
+  assert conversionCount == 1,
+    "Only the runtime global-index cast should emit vocConv; constant casts should be folded"
+
+  var output = newSeq[float32](4)
+  for gid in 0..<output.len:
+    var vm = initCpuVm(globalId = gid)
+    vm.setBuffer(0, cast[pointer](addr output[0]))
+    vm.runVM(program)
+  for gid, value in output:
+    assert abs(value - (float32(gid) + 0.5'f32)) < 0.0001'f32,
+      "Generated conversion at index " & $gid & " returned " & $value
+  echo "  -> runtime cast and constant conversion both verified"
+
 proc testLoopsAndBranches() =
   echo "[TEST] Loops and Conditional Jumps..."
   var vm = initCpuVm()
@@ -410,6 +451,8 @@ proc main() =
   testFloatArithmetic()
   testIntegerFma()
   testTrigOpcodes()
+  testConversionOpcode()
+  testGeneratedConversion()
   testLoopsAndBranches()
   testProcedureCall()
   testMemoryModel()

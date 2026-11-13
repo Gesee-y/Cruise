@@ -3,6 +3,20 @@
 # ######################################################################################################################## #
 
 type
+  VMConvType* = enum
+    vctInvalid = 0
+    vctInt8 = 1
+    vctInt16 = 2
+    vctInt32 = 3
+    vctInt64 = 4
+    vctUInt8 = 5
+    vctUInt16 = 6
+    vctUInt32 = 7
+    vctUInt64 = 8
+    vctFloat32 = 9
+    vctFloat64 = 10
+    vctBool = 11
+
   # All operations the virtual machine can execute.
   # Integer and float variants are kept separate so the back-end can select the
   # right hardware instruction without extra type information at runtime.
@@ -22,6 +36,7 @@ type
     vocMulf    = 8   ## dst *= src  (float)
     vocDivf    = 9   ## dst /= src  (float)
 
+    vocConv    = 10  ## dst = convert(src); a packed source/destination VMConvType word follows
     # Boolean / bitwise
     vocAnd     = 11  ## dst &= src
     vocOr      = 12  ## dst |= src

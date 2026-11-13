@@ -19,7 +19,7 @@ var timer {.uniform.}: float32 = float32(0.0)
 proc main(color {.fragmentInput.}: Vec3,
           fragColor {.fragmentOutput.}: var Vec4) =
   fragColor = Vec4(
-    x: sin(timer)/2,
-    y: cos(timer)/2,
+    x: color.x + sin(timer)/float32(2),
+    y: color.y + cos(timer)/float32(2),
     z: color.z,
     w: float32(1.0))

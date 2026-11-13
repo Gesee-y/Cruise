@@ -85,6 +85,17 @@ proc disassemble*(code: openArray[uint32]) =
         echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED SOURCES>"
         pc += 1
 
+    of vocConv:
+      if pc + 1 < code.len:
+        let descriptor = code[pc + 1]
+        let sourceType = VMConvType(descriptor and 0xFF'u32)
+        let targetType = VMConvType((descriptor shr 8) and 0xFF'u32)
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src} ({sourceType} -> {targetType})"
+        pc += 2
+      else:
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src}, <TRUNCATED TYPE>"
+        pc += 1
+
     # Halte / Fin d'exécution
     of vocHalt:
       echo &"{addrStr} | {hexStr}   | {opStr}"

@@ -20,6 +20,7 @@ type
     pgNone
     pgMultiplyByOne
     pgDivideBySqrt
+    pgConvLiteral
 
   # This represent the path to a term going from a parent `Term`
   TermPath = seq[int]
@@ -106,6 +107,68 @@ proc isOne(node: CIRNode): bool =
     node.args.len > 1 and node.args[^1].isOne
   else: false
 
+proc supportsLiteralConversion(targetType: string): bool =
+  targetType in ["float", "float32", "int", "int8", "int16", "int32",
+                 "uint", "uint8", "uint16", "uint32", "bool", "char"]
+
+proc literalAsFloat(node: CIRNode): float64 =
+  case node.kind
+  of cnkIntLit: float64(node.intVal)
+  of cnkUintLit: float64(node.uintVal)
+  of cnkFloatLit: float64(node.floatVal)
+  of cnkCharLit: float64(ord(node.charVal))
+  of cnkBoolLit:
+    if node.boolVal: 1.0 else: 0.0
+  else: 0.0
+
+proc literalAsSigned(node: CIRNode): int64 =
+  case node.kind
+  of cnkIntLit: int64(node.intVal)
+  of cnkUintLit: cast[int64](uint64(node.uintVal))
+  of cnkFloatLit: int64(node.floatVal)
+  of cnkCharLit: int64(ord(node.charVal))
+  of cnkBoolLit:
+    if node.boolVal: 1'i64 else: 0'i64
+  else: 0'i64
+
+proc literalAsUnsigned(node: CIRNode): uint64 =
+  case node.kind
+  of cnkIntLit: cast[uint64](int64(node.intVal))
+  of cnkUintLit: uint64(node.uintVal)
+  of cnkFloatLit: cast[uint64](int64(node.floatVal))
+  of cnkCharLit: uint64(ord(node.charVal))
+  of cnkBoolLit:
+    if node.boolVal: 1'u64 else: 0'u64
+  else: 0'u64
+
+proc rewriteConversionLiteral(node: CIRNode): CIRNode =
+  let source = node.args[1]
+  let targetType = node.args[0].name
+  let info = node.info
+  case targetType
+  of "float", "float32":
+    result = newCIRFloatLit(info, float(source.literalAsFloat))
+  of "int":
+    result = newCIRIntLit(info, int(source.literalAsSigned))
+  of "int8":
+    result = newCIRIntLit(info, int(cast[int8](source.literalAsSigned)))
+  of "int16":
+    result = newCIRIntLit(info, int(cast[int16](source.literalAsSigned)))
+  of "int32":
+    result = newCIRIntLit(info, int(cast[int32](source.literalAsSigned)))
+  of "uint", "uint8":
+    result = newCIRUintLit(info, uint(cast[uint8](source.literalAsUnsigned)))
+  of "uint16":
+    result = newCIRUintLit(info, uint(cast[uint16](source.literalAsUnsigned)))
+  of "uint32":
+    result = newCIRUintLit(info, uint(cast[uint32](source.literalAsUnsigned)))
+  of "bool":
+    result = newCIRBoolLit(info, source.literalAsFloat != 0.0)
+  of "char":
+    result = newCIRCharLit(info, cast[char](uint8(source.literalAsUnsigned)))
+  else:
+    result = node
+
 proc isMultiplyByOne(node: CIRNode): bool =
   node.args.len == 3 and (node.args[1].isOne or node.args[2].isOne)
 
@@ -126,6 +189,13 @@ proc newRewriterEngine(): RewriterEngine =
   result = RewriterEngine()
   let any = anyTerm()
   let product = operationTerm(cnkInfix, "*", @[any, any])
+
+  # Constant conversions are compile-time work; keep vocConv for runtime values.
+  result.addPattern(cnkConv, Pattern(
+    term: operationTerm(cnkConv, "", @[any]),
+    rewriter: rewriteConversionLiteral,
+    guard: pgConvLiteral
+  ))
 
   # Multiplication by one does not need a VM operation.
   result.addPattern(cnkInfix, Pattern(
@@ -235,6 +305,11 @@ proc matchPattern*(node: CIRNode, pattern: Pattern): bool =
   of pgDivideBySqrt:
     if node.args.len != 3 or node.args[2].kind != cnkCall or
        node.args[2].args.len < 2 or node.args[2].args[0].name != "sqrt":
+      return false
+  of pgConvLiteral:
+    if node.args.len != 2 or not node.args[1].isLit or
+       node.args[0].kind notin {cnkSym, cnkRSym} or
+       not supportsLiteralConversion(node.args[0].name):
       return false
 
   for rule in pattern.rules:
