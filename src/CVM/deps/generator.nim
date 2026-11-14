@@ -113,17 +113,6 @@ proc prefixOpcodeFor(op: string, isFloat: bool): VMOpCode =
     else: return vocNegi
   else: assert false, "Failed to get prefix opcode for `" & op & "`."
 
-proc isFloatName(name: string): bool {.inline.} =
-  name.startsWith("float")
-proc isFloatType(ty: TypeInst): bool {.inline.} =
-  ty.name.isFloatName()
-proc isUintName(name: string): bool {.inline.} =
-  name.startsWith("uint")
-proc isUintType(ty: TypeInst): bool {.inline.} =
-  ty.name.isFloatName()
-
-proc unwrapLiteral(node: CIRNode): CIRNode
-
 proc conversionType(cache: TypeCache, typeName: string): VMConvType =
   let name = cache.equivalences.getOrDefault(typeName, typeName).split(".")[0]
   case name

@@ -39,7 +39,7 @@ Then in the program running it:
 import CVM
 
 proc main:
-  let data = loadBytecode("path/to/myShader.cbc")
+  let data = readBytecode("path/to/myShader.cbc")
   var c: seq[int] = @[0, 0, 0]
   runVM(OpenCL, data, (@[1, 2, 3], @[4, 5, 6], c, 3)) # First argument is the bytecode, the remaining are the arguments
 ```
@@ -81,8 +81,8 @@ Being able to use Nim for everything without writing a single line of shader cod
 
 ## Why use this ?
 
-- Execute shader without compilation time.
-- Easy hot-reload (just reread the bytecode) making dev time faster
+- Execute shader without compilation time (meaning faster load time).
+- Easy hot-reload (just reread the bytecode) making dev time faster.
 - Can handle your graphic program while the real shader compile in the background
 - Has a constant pressure on register (since the VM is the only program)
 - Thread divergence only happens if the original code would have diverged because each thread runs the same bytecode

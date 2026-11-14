@@ -303,11 +303,10 @@ proc matchPattern*(node: CIRNode, pattern: Pattern): bool =
     if not node.isMultiplyByOne:
       return false
   of pgDivideBySqrt:
-    if node.args.len != 3 or node.args[2].kind != cnkCall or
-       node.args[2].args.len < 2 or node.args[2].args[0].name != "sqrt":
+    if node.args[2].kind != cnkCall or node.args[2].args[0].name != "sqrt":
       return false
   of pgConvLiteral:
-    if node.args.len != 2 or not node.args[1].isLit or
+    if not node.args[1].isLit or
        node.args[0].kind notin {cnkSym, cnkRSym} or
        not supportsLiteralConversion(node.args[0].name):
       return false

@@ -129,6 +129,20 @@ proc addOverload(p: var ProcOverload, t: TypeInst, tid: int) =
 # ################################################# UTILS ################################################# #
 # ######################################################################################################### #
 
+proc isFloatName(name: string): bool {.inline.} =
+  name.startsWith("float")
+proc isFloatType(ty: TypeInst): bool {.inline.} =
+  ty.name.isFloatName()
+proc isUintName(name: string): bool {.inline.} =
+  name.startsWith("uint")
+proc isUintType(ty: TypeInst): bool {.inline.} =
+  ty.name.isUintName()
+proc isIntName(name: string): bool {.inline.} =
+  name.startsWith("int")
+proc isIntType(ty: TypeInst): bool {.inline.} =
+  ty.name.isIntName()
+proc isIntegerName(name: string): bool = name.isUintName or name.isIntName
+
 # Pass through all wrappers around a function parameter
 proc stripTypeWrappers*(t: NifCursor): NifCursor =
   result = t
