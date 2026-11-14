@@ -20,7 +20,7 @@ template vertexOutput*() {.pragma.}
 template vertexVarying*() {.pragma.}
 template vertexInput*() {.pragma.}
 template fragmentInput*() {.pragma.}
-
+template texture*() {.pragma.}
 
 proc readBytecode*(path: string, maxBytecodeWord=256): seq[uint32] =
   result = @[]

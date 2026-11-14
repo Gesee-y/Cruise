@@ -471,6 +471,8 @@ proc fetchGPUPragma(c: NifCursor): set[GPUPragma] =
         result.incl(gpVertIn)
       elif pragmaName.startsWith("fragmentInput"):
         result.incl(gpFragIn)
+      elif pragmaName.startsWith("texture"):
+        result.incl(gpTexture)
 
     skip n
 
@@ -627,6 +629,8 @@ proc toIR(n: NifCursor): CIRNode =
               result = newCIRNode(c.info, cnkUniform)
             elif gpSSBO in flags:
               result = newCIRNode(c.info, cnkSSBO)
+            elif gpTexture in flags:
+              result = newCIRNode(c.info, cnkTexture)
             elif gpGlobalIndex in flags:
               result = newCIRNode(c.info, cnkGlobalIndex)
 

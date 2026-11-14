@@ -404,6 +404,17 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       ctx.freeIfTemp(right)
       return
 
+    if procName == "sample":
+      let texName = c.args[1].name
+      let texId = ctx.cache.shaderParams.textureToId.getOrDefault(texName, 0)
+      let uvAlloc = ctx.genExpr(c.args[2])
+      let size = 16 # vec4f output
+      result = if target.pos != -1: target else: ctx.code.allocator.alloc(size)
+      ctx.emitInst(vocSample2D, result.pos, uvAlloc.pos, size)
+      ctx.emitWord(uint32(texId))
+      ctx.freeIfTemp(uvAlloc)
+      return
+
     result = target
     var argsToFree: seq[CAllocation] = @[]
 
@@ -807,8 +818,8 @@ proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
   var offset = 0
   if c.args[1].kind == cnkParams:
     for param in c.args[1].args:
-      if param.kind == cnkSSBO:
-        # SSBO parameters are bound as buffers, not passed on stack or loaded into registers
+      if param.kind in {cnkSSBO, cnkTexture}:
+        # SSBO and Texture parameters are bound as buffers / samplers, not passed on stack or loaded into registers
         continue
       elif param.kind == cnkGlobalIndex:
         # this is when encountering the global index used in compute shaders and stuffs
@@ -893,8 +904,8 @@ proc genStmt*(ctx: var CodeGenCtx, c: CIRNode) =
   of cnkStmtList, cnkSection:
     for n in c.args:
       ctx.genStmt(n)
-  of cnkUniform:
-    # Uniform declarations are handled by shader params; no code emitted
+  of cnkUniform, cnkTexture:
+    # Uniform and Texture declarations are handled by shader params; no code emitted
     discard
   of cnkVarTy:
     ctx.genVar(c)

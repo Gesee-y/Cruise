@@ -96,6 +96,15 @@ proc disassemble*(code: openArray[uint32]) =
         echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src}, <TRUNCATED TYPE>"
         pc += 1
 
+    of vocSample2D:
+      if pc + 1 < code.len:
+        let texId = code[pc + 1]
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, Tex{texId}, [R{src}]"
+        pc += 2
+      else:
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED TEXID>"
+        pc += 1
+
     # Halte / Fin d'exécution
     of vocHalt:
       echo &"{addrStr} | {hexStr}   | {opStr}"

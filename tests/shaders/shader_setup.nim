@@ -152,3 +152,10 @@ proc uploadUniformBlock*(program: GLuint, uniformName: string,
   for index, value in values:
     table[index] = value
   glUniform1uiv(location, UniformTableWords.GLsizei, addr table[0])
+
+proc bindSamplers*(program: GLuint, samplerArrayName: string = "uSamplers", count: int = 8) =
+  for i in 0 ..< count:
+    let name = samplerArrayName & "[" & $i & "]"
+    let loc = glGetUniformLocation(program, name.cstring)
+    if loc >= 0:
+      glUniform1i(loc, GLint(i))

@@ -145,8 +145,7 @@ proc isIntName(name: string): bool {.inline.} =
   name.startsWith("int")
 proc isIntType(ty: TypeInst): bool {.inline.} =
   ty.name.isIntName()
-proc isIntegerName(name: string): bool = name.isUintName or name.isIntName
-proc isTexture(cache: TypeCache, name: string): bool = cache.shaderParams.textureToId.getOrDefault(name. -1) >= 0
+proc isTexture(cache: TypeCache, name: string): bool = cache.shaderParams.textureToId.getOrDefault(name, -1) >= 0
 
 # Pass through all wrappers around a function parameter
 proc stripTypeWrappers*(t: NifCursor): NifCursor =

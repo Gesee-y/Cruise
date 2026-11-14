@@ -119,9 +119,8 @@ proc registerSSBO(cache: var TypeCache, n: CIRNode) =
 
 proc registerTexture(cache: var TypeCache, n: CIRNode) =
   let tyName = n.args[1].name
-  let vname = n.args[0].name
   if cache.isValidDefinition(n):
-    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    let typeId = cache.nameToId.getOrDefault("sampler2D", -1)
     cache.variables[vname] = typeId
     cache.addTexture(vname, typeId)
 

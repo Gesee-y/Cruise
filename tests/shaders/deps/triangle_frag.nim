@@ -2,15 +2,11 @@
 
 import std/[syncio, math]
 import ../../../src/CVM/bytecode
+import default_type
 
 translateToBytecode()
 setShaderName("triangle_frag")
-
-type
-  Vec3 = object
-    x, y, z: float32
-  Vec4 = object
-    x, y, z, w: float32
+setShaderType(Vec2, "vec2f")
 setShaderType(Vec4, "vec4f")
 setShaderType(Vec3, "vec3f")
 
