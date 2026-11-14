@@ -632,3 +632,76 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
     of vocLoadVertexInput, vocLoadFragmentInput, vocStoreVertexOutput,
        vocStoreVertexVarying, vocStoreFragmentOutput:
       discard # Stage I/O is provided by the GLSL VM, not the CPU interpreter.
+
+    of vocSample2D:
+      discard # Sampler2D is handled by GPU VMs
+
+    of vocMmatvec2f:
+      let vx = cast[ptr float32](unsafeAddr vm.memory[dst])[]
+      let vy = cast[ptr float32](unsafeAddr vm.memory[dst + 4])[]
+      let c0x = cast[ptr float32](unsafeAddr vm.memory[src])[]
+      let c0y = cast[ptr float32](unsafeAddr vm.memory[src + 4])[]
+      let c1x = cast[ptr float32](unsafeAddr vm.memory[src + 8])[]
+      let c1y = cast[ptr float32](unsafeAddr vm.memory[src + 12])[]
+      cast[ptr float32](addr vm.memory[dst])[] = c0x * vx + c1x * vy
+      cast[ptr float32](addr vm.memory[dst + 4])[] = c0y * vx + c1y * vy
+
+    of vocMmatvec2i:
+      let vx = cast[ptr int32](unsafeAddr vm.memory[dst])[]
+      let vy = cast[ptr int32](unsafeAddr vm.memory[dst + 4])[]
+      let c0x = cast[ptr int32](unsafeAddr vm.memory[src])[]
+      let c0y = cast[ptr int32](unsafeAddr vm.memory[src + 4])[]
+      let c1x = cast[ptr int32](unsafeAddr vm.memory[src + 8])[]
+      let c1y = cast[ptr int32](unsafeAddr vm.memory[src + 12])[]
+      cast[ptr int32](addr vm.memory[dst])[] = c0x * vx + c1x * vy
+      cast[ptr int32](addr vm.memory[dst + 4])[] = c0y * vx + c1y * vy
+
+    of vocMmatvec3f:
+      let vx = cast[ptr float32](unsafeAddr vm.memory[dst])[]
+      let vy = cast[ptr float32](unsafeAddr vm.memory[dst + 4])[]
+      let vz = if size >= 12: cast[ptr float32](unsafeAddr vm.memory[dst + 8])[] else: 1.0'f32
+      var res: array[3, float32]
+      for col in 0..<3:
+        let vVal = if col == 0: vx elif col == 1: vy else: vz
+        for row in 0..<3:
+          let mVal = cast[ptr float32](unsafeAddr vm.memory[int(src) + (col * 3 + row) * 4])[]
+          res[row] += mVal * vVal
+      copyMem(addr vm.memory[dst], addr res[0], 12)
+
+    of vocMmatvec3i:
+      let vx = cast[ptr int32](unsafeAddr vm.memory[dst])[]
+      let vy = cast[ptr int32](unsafeAddr vm.memory[dst + 4])[]
+      let vz = if size >= 12: cast[ptr int32](unsafeAddr vm.memory[dst + 8])[] else: 1'i32
+      var res: array[3, int32]
+      for col in 0..<3:
+        let vVal = if col == 0: vx elif col == 1: vy else: vz
+        for row in 0..<3:
+          let mVal = cast[ptr int32](unsafeAddr vm.memory[int(src) + (col * 3 + row) * 4])[]
+          res[row] += mVal * vVal
+      copyMem(addr vm.memory[dst], addr res[0], 12)
+
+    of vocMmatvec4f:
+      let vx = cast[ptr float32](unsafeAddr vm.memory[dst])[]
+      let vy = cast[ptr float32](unsafeAddr vm.memory[dst + 4])[]
+      let vz = if size >= 12: cast[ptr float32](unsafeAddr vm.memory[dst + 8])[] else: 0.0'f32
+      let vw = if size >= 16: cast[ptr float32](unsafeAddr vm.memory[dst + 12])[] else: 1.0'f32
+      var res: array[4, float32]
+      for col in 0..<4:
+        let vVal = if col == 0: vx elif col == 1: vy elif col == 2: vz else: vw
+        for row in 0..<4:
+          let mVal = cast[ptr float32](unsafeAddr vm.memory[int(src) + (col * 4 + row) * 4])[]
+          res[row] += mVal * vVal
+      copyMem(addr vm.memory[dst], addr res[0], 16)
+
+    of vocMmatvec4i:
+      let vx = cast[ptr int32](unsafeAddr vm.memory[dst])[]
+      let vy = cast[ptr int32](unsafeAddr vm.memory[dst + 4])[]
+      let vz = if size >= 12: cast[ptr int32](unsafeAddr vm.memory[dst + 8])[] else: 0'i32
+      let vw = if size >= 16: cast[ptr int32](unsafeAddr vm.memory[dst + 12])[] else: 1'i32
+      var res: array[4, int32]
+      for col in 0..<4:
+        let vVal = if col == 0: vx elif col == 1: vy elif col == 2: vz else: vw
+        for row in 0..<4:
+          let mVal = cast[ptr int32](unsafeAddr vm.memory[int(src) + (col * 4 + row) * 4])[]
+          res[row] += mVal * vVal
+      copyMem(addr vm.memory[dst], addr res[0], 16)

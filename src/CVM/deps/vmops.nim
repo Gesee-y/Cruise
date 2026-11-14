@@ -121,3 +121,15 @@ type
     vocMmatvec3i = 74
     vocMmatvec4f = 75
     vocMmatvec4i = 76 
+    vocMmat2f = 77 # Multiplying 2 mat2f
+    vocMmat2i = 78
+    vocMmat3f = 79
+    vocMmat3i = 80
+    vocMmat4f = 81
+    vocMmat4i = 82
+    vocVecAddi = 83 # Vectorized addition for vec/mat + scalar, vocVecAddi.N dst, scalarReg (N is how many element the sacalar apply to)
+    vocVecAddf = 84
+    vocVecSubi = 85
+    vocVecSubf = 86
+    vocVecMuli = 87
+    vocVecMulf = 88

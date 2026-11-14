@@ -267,6 +267,36 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
 
     var lhsNode = c.args[1]
     var rhsNode = c.args[2]
+
+    let lhsTyName = ctx.cache.inferType(lhsNode)
+    let rhsTyName = ctx.cache.inferType(rhsNode)
+    if opName == "*" and lhsTyName.startsWith("mat") and rhsTyName.startsWith("vec"):
+      var mmatvecOp = vocNoOp
+      if lhsTyName == "mat2f" and rhsTyName == "vec2f": 
+        mmatvecOp = vocMmatvec2f
+      elif lhsTyName == "mat2i" and rhsTyName == "vec2i": 
+        mmatvecOp = vocMmatvec2i
+      elif lhsTyName == "mat3f" and rhsTyName == "vec3f": 
+        mmatvecOp = vocMmatvec3f
+      elif lhsTyName == "mat3i" and rhsTyName == "vec3i": 
+        mmatvecOp = vocMmatvec3i
+      elif lhsTyName == "mat4f" and rhsTyName == "vec4f": 
+        mmatvecOp = vocMmatvec4f
+      elif lhsTyName == "mat4i" and rhsTyName == "vec4i": 
+        mmatvecOp = vocMmatvec4i
+
+      if mmatvecOp != vocNoOp:
+        let r1 = ctx.genExpr(lhsNode)
+        let r2 = ctx.genExpr(rhsNode)
+        let retSize = max(1, operandTy.size)
+        result = if target.size >= retSize: target else: ctx.code.allocator.alloc(retSize)
+        if result.pos != r2.pos:
+          ctx.emitInst(vocMov, result.pos, r2.pos, r2.size)
+        ctx.emitInst(mmatvecOp, result.pos, r1.pos, r2.size)
+        ctx.freeIfTemp(r1)
+        ctx.freeIfTemp(r2)
+        return
+
     # Addition and multiplication are commutative, so put a literal on the
     # immediate side regardless of which operand it appeared on.
     if opName in ["+", "*"] and lhsNode.isImmediateLiteral and
