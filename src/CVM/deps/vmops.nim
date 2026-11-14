@@ -113,3 +113,5 @@ type
 
     vocSinf = 68 ## dst = sin(src), float
     vocCosf = 69 ## dst = cos(src), float
+    
+    vocSample2D = 70 ## vocSample2D.16 dstReg, coordReg (next word is the Texture ID)

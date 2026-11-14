@@ -52,7 +52,7 @@ type
     cnkStmtListExpr
     cnkEmpty
     cnkDiscardStmt
-    cnkWritOnly, cnkReadOnly, cnkSSBO
+    cnkWritOnly, cnkReadOnly, cnkSSBO, cnkTexture
     cnkVarTy, cnkGlobalIndex, cnkLocalIndex, cnkLocalSize
 
   GPUPragma* = enum
@@ -60,6 +60,7 @@ type
     gpUniformRead
     gpUniformWrite
     gpSSBO
+    gpTexture
     gpGlobalIndex
     gpFrag
     gpVert
@@ -479,6 +480,8 @@ proc applyGPUFlag(f: var CIRNode, c, pragmas: NifCursor, flags: set[GPUPragma],
     reportIRError pragmas.info, "Can't mark a parameter as uniform."
   if gpSSBO in flags:
     f = newCIRNode(c.info, cnkSSBO)
+  if gpTexture in flags:
+    f = newCIRNode(c.info, cnkTexture)
   if gpGlobalIndex in flags:
     if not hasGlobalIndex: 
       f = newCIRNode(c.info, cnkGlobalIndex)

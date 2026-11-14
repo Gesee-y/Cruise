@@ -71,6 +71,8 @@ type
   ShaderUniform* = object
     tid: int
 
+  ShaderTexture* = object
+
   ShaderSSBO* = object
     tid: int
 
@@ -83,8 +85,10 @@ type
   ShaderParameters* = object
     uniforms*: seq[ShaderUniform]
     ssbos*: seq[ShaderSSBO]
+    textures*: seq[ShaderTexture]
     uniformToId*: Table[string, int]
     ssboToId*: Table[string, int]
+    textureToId*: Table[string, int]
     globalIndex*: tuple[name: string, tid: int]
     vertInputs*, vertVaryings*, fragInputs*: seq[ShaderBlockItem]
     vertOut*, fragOut*: string
@@ -274,6 +278,11 @@ proc addSSBO(c: var TypeCache, name: string, tid: int) =
   let id = c.shaderParams.ssbos.len
   c.shaderParams.ssboToId[name] = id
   c.shaderParams.ssbos.add(ShaderSSBO(tid: tid))
+
+proc addTexture(c: var TypeCache, name: string, tid: int) =
+  let id = c.shaderParams.textures.len
+  c.shaderParams.textureToId[name] = id
+  c.shaderParams.textures.add(ShaderTexture(tid: tid))
 
 proc addGlobalIndex(c: var TypeCache, name: string, tid: int) =
   c.shaderParams.globalIndex = (name, tid)

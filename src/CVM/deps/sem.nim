@@ -117,6 +117,14 @@ proc registerSSBO(cache: var TypeCache, n: CIRNode) =
     cache.variables[vname] = typeId
     cache.addSSBO(vname, typeId)
 
+proc registerTexture(cache: var TypeCache, n: CIRNode) =
+  let tyName = n.args[1].name
+  let vname = n.args[0].name
+  if cache.isValidDefinition(n):
+    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    cache.variables[vname] = typeId
+    cache.addTexture(vname, typeId)
+
 proc registerGlobalIndex(cache: var TypeCache, n: CIRNode) =
   let tyName = n.args[1].name
   let vname = n.args[0].name
@@ -333,6 +341,8 @@ proc resolveNode(cache: var TypeCache, n: var CIRNode, inFunc = false) =
     cache.registerUniform(n)
   of cnkSSBO:
     cache.registerSSBO(n)
+  of cnkTexture:
+    cache.registerTexture(n)
   of cnkGlobalIndex:
     cache.registerGlobalIndex(n)
   of cnkFragmentOutput:

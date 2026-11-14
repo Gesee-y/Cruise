@@ -204,6 +204,7 @@ proc builtinOpcode(name, typeName: string): VMOpCode =
   of "rsqrt": vocRsqrtf
   of "cos": vocCosf
   of "sin": vocSinf
+  of "sample": vocSample2D
   else: assert false, "Unsupported builtin opcode: " & name
 
 # ################################################################################################################################ #
