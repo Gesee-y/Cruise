@@ -261,7 +261,8 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
     let opTypeName = ctx.cache.inferType(c)
     let isCmp = opName in ["<", "<=", "==", "!="]
     let operandTyName = if isCmp: ctx.cache.inferType(c.args[1]) else: opTypeName
-    let opIsFloat  = operandTyName.isFloatName
+    let opIsFloat  = operandTyName.isFloatName or
+      (operandTyName.startsWith("vec") and operandTyName.endsWith("f"))
     let operandTy = ctx.cache.getType(operandTyName)
     let opSize = operandTy.size
 
@@ -270,6 +271,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
 
     let lhsTyName = ctx.cache.inferType(lhsNode)
     let rhsTyName = ctx.cache.inferType(rhsNode)
+
     if opName == "*" and lhsTyName.startsWith("mat") and rhsTyName.startsWith("vec"):
       var mmatvecOp = vocNoOp
       if lhsTyName == "mat2f" and rhsTyName == "vec2f": 
@@ -280,9 +282,9 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
         mmatvecOp = vocMmatvec3f
       elif lhsTyName == "mat3i" and rhsTyName == "vec3i": 
         mmatvecOp = vocMmatvec3i
-      elif lhsTyName == "mat4f" and rhsTyName == "vec4f": 
+      elif lhsTyName == "mat4f" and (rhsTyName == "vec4f" or rhsTyName == "vec3f"): 
         mmatvecOp = vocMmatvec4f
-      elif lhsTyName == "mat4i" and rhsTyName == "vec4i": 
+      elif lhsTyName == "mat4i" and (rhsTyName == "vec4i" or rhsTyName == "vec3i"): 
         mmatvecOp = vocMmatvec4i
 
       if mmatvecOp != vocNoOp:
@@ -295,6 +297,52 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
         ctx.emitInst(mmatvecOp, result.pos, r1.pos, r2.size)
         ctx.freeIfTemp(r1)
         ctx.freeIfTemp(r2)
+        return
+
+    if opName == "*" and lhsTyName.startsWith("mat") and rhsTyName.startsWith("mat"):
+      var mmatOp = vocNoOp
+      if lhsTyName == "mat2f" and rhsTyName == "mat2f": mmatOp = vocMmat2f
+      elif lhsTyName == "mat2i" and rhsTyName == "mat2i": mmatOp = vocMmat2i
+      elif lhsTyName == "mat3f" and rhsTyName == "mat3f": mmatOp = vocMmat3f
+      elif lhsTyName == "mat3i" and rhsTyName == "mat3i": mmatOp = vocMmat3i
+      elif lhsTyName == "mat4f" and rhsTyName == "mat4f": mmatOp = vocMmat4f
+      elif lhsTyName == "mat4i" and rhsTyName == "mat4i": mmatOp = vocMmat4i
+
+      if mmatOp != vocNoOp:
+        let r1 = ctx.genExpr(lhsNode)
+        let r2 = ctx.genExpr(rhsNode)
+        let retSize = max(1, operandTy.size)
+        result = if target.size >= retSize: target else: ctx.code.allocator.alloc(retSize)
+        if result.pos != r1.pos:
+          ctx.emitInst(vocMov, result.pos, r1.pos, retSize)
+        ctx.emitInst(mmatOp, result.pos, r2.pos, retSize)
+        ctx.freeIfTemp(r1)
+        ctx.freeIfTemp(r2)
+        return
+
+    let isLhsVec = lhsTyName.startsWith("vec")
+    let isRhsVec = rhsTyName.startsWith("vec")
+    if (isLhsVec and not isRhsVec) or (isRhsVec and not isLhsVec):
+      let (vecNode, scalarNode) = if isLhsVec: (lhsNode, rhsNode) else: (rhsNode, lhsNode)
+      let vecTyName = if isLhsVec: lhsTyName else: rhsTyName
+      let vecDim = if vecTyName.contains("2"): 2 elif vecTyName.contains("3"): 3 else: 4
+      let vecSize = vecDim * 4
+      var vecOp = vocNoOp
+      case opName
+      of "*": vecOp = if opIsFloat: vocVecMulf else: vocVecMuli
+      of "+": vecOp = if opIsFloat: vocVecAddf else: vocVecAddi
+      of "-": vecOp = if opIsFloat: vocVecSubf else: vocVecSubi
+      else: discard
+
+      if vecOp != vocNoOp:
+        let rVec = ctx.genExpr(vecNode)
+        let rScalar = ctx.genExpr(scalarNode)
+        result = if target.size >= vecSize: target else: ctx.code.allocator.alloc(vecSize)
+        if result.pos != rVec.pos:
+          ctx.emitInst(vocMov, result.pos, rVec.pos, vecSize)
+        ctx.emitInst(vecOp, result.pos, rScalar.pos, vecDim)
+        ctx.freeIfTemp(rVec)
+        ctx.freeIfTemp(rScalar)
         return
 
     # Addition and multiplication are commutative, so put a literal on the
@@ -377,6 +425,17 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
     let opTy = ctx.cache.getType(opTypeName)
     let opSize = max(1, opTy.size)
     let operand = ctx.genExpr(c.args[1])
+
+    if opName == "-" and opTypeName.startsWith("vec"):
+      result = if target.size >= opSize: target
+               else: ctx.code.allocator.alloc(opSize)
+      if result.pos != operand.pos:
+        ctx.emitInst(vocMov, result.pos, operand.pos, opSize)
+      let dim = opSize div sizeof(float32)
+      let op = if opTypeName.endsWith("f"): vocVecNegf else: vocVecNegi
+      ctx.emitInst(op, result.pos, 0, dim)
+      ctx.freeIfTemp(operand)
+      return
     
     if target.size >= opSize:
       result = target
@@ -443,6 +502,104 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       ctx.emitInst(vocSample2D, result.pos, uvAlloc.pos, size)
       ctx.emitWord(uint32(texId))
       ctx.freeIfTemp(uvAlloc)
+      return
+
+    if procName in ["newVec2", "newVec2f", "newVec3", "newVec3f", "newVec4", "newVec4f"]:
+      let totalWords = if procName in ["newVec2", "newVec2f"]: 2
+                       elif procName in ["newVec3", "newVec3f"]: 3
+                       else: 4
+      let totalBytes = totalWords * 4
+      result = if target.size >= totalBytes: target else: ctx.code.allocator.alloc(totalBytes)
+      var currentOffset = 0
+      for i in 1 ..< c.args.len:
+        if currentOffset >= totalBytes: break
+        let arg = c.args[i]
+        var argTyName = ctx.cache.inferType(arg)
+        let argSize = max(4, ctx.cache.getType(argTyName).size)
+        let copySize = min(argSize, totalBytes - currentOffset)
+        let subTarget = CAllocation(pos: result.pos + currentOffset, size: copySize, isTemp: false)
+        let argAlloc = ctx.genExpr(arg, target = subTarget)
+        if argAlloc.pos != subTarget.pos:
+          ctx.emitInst(vocMov, subTarget.pos, argAlloc.pos, copySize)
+        ctx.freeIfTemp(argAlloc)
+        currentOffset += copySize
+      return
+
+    if procName == "dot":
+      let arg0 = c.args[1]
+      let tyName = ctx.cache.inferType(arg0)
+      let r1 = ctx.genExpr(c.args[1])
+      let r2 = ctx.genExpr(c.args[2])
+      result = if target.size >= 4: target else: ctx.code.allocator.alloc(4)
+      let op = if tyName.contains("2"): vocDot2
+               elif tyName.contains("4"): vocDot4
+               else: vocDot3
+      ctx.emitInst(op, result.pos, r1.pos, r2.pos)
+      ctx.freeIfTemp(r1)
+      ctx.freeIfTemp(r2)
+      return
+
+    if procName == "normalize":
+      let arg0 = c.args[1]
+      let tyName = ctx.cache.inferType(arg0)
+      let dim = if tyName.contains("2"): 2 elif tyName.contains("4"): 4 else: 3
+      let size = dim * 4
+      let arg = ctx.genExpr(c.args[1])
+      result = if target.size >= size: target else: ctx.code.allocator.alloc(size)
+      ctx.emitInst(vocNormalize, result.pos, arg.pos, dim)
+      ctx.freeIfTemp(arg)
+      return
+
+    if procName == "reflect":
+      let arg0 = c.args[1]
+      let tyName = ctx.cache.inferType(arg0)
+      let is3D = not tyName.contains("2")
+      let size = if is3D: 12 else: 8
+      let r1 = ctx.genExpr(c.args[1])
+      let r2 = ctx.genExpr(c.args[2])
+      result = if target.size >= size: target else: ctx.code.allocator.alloc(size)
+      let op = if is3D: vocReflect3 else: vocReflect2
+      ctx.emitInst(op, result.pos, r1.pos, r2.pos)
+      ctx.freeIfTemp(r1)
+      ctx.freeIfTemp(r2)
+      return
+
+    if procName == "pow":
+      let arg0 = c.args[1]
+      let tyName = ctx.cache.inferType(arg0)
+      let isFloat = tyName.startsWith("float") or tyName.startsWith("vec")
+      let count = max(1, ctx.cache.getType(tyName).size div 4)
+      let r1 = ctx.genExpr(c.args[1])
+      let r2 = ctx.genExpr(c.args[2])
+      result = if target.size >= r1.size: target else: ctx.code.allocator.alloc(r1.size)
+      if result.pos != r1.pos:
+        ctx.emitInst(vocMov, result.pos, r1.pos, r1.size)
+      let op = if isFloat: vocPowf else: vocPowi
+      ctx.emitInst(op, result.pos, r2.pos, count)
+      ctx.freeIfTemp(r1)
+      ctx.freeIfTemp(r2)
+      return
+
+    if procName == "transpose":
+      let tyName = ctx.cache.inferType(c.args[1])
+      let (op, size) = if tyName.contains("2"): (vocTranspose2, 16)
+                       elif tyName.contains("3"): (vocTranspose3, 36)
+                       else: (vocTranspose4, 64)
+      let arg = ctx.genExpr(c.args[1])
+      result = if target.size >= size: target else: ctx.code.allocator.alloc(size)
+      ctx.emitInst(op, result.pos, arg.pos, size)
+      ctx.freeIfTemp(arg)
+      return
+
+    if procName in ["inverse", "invert"]:
+      let tyName = ctx.cache.inferType(c.args[1])
+      let (op, size) = if tyName.contains("2"): (vocInvert2, 16)
+                       elif tyName.contains("3"): (vocInvert3, 36)
+                       else: (vocInvert4, 64)
+      let arg = ctx.genExpr(c.args[1])
+      result = if target.size >= size: target else: ctx.code.allocator.alloc(size)
+      ctx.emitInst(op, result.pos, arg.pos, size)
+      ctx.freeIfTemp(arg)
       return
 
     result = target
@@ -881,6 +1038,12 @@ proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
       elif param.kind in {cnkVertexOutput, cnkVertexVarying, cnkFragmentOutput}:
         # Here it's just about the output of the shader
         # Pretty straight forward
+        if param.kind in {cnkVertexOutput, cnkFragmentOutput}:
+          try:
+            var dead = c.args[3].args[^1].info
+            dead.line += 1
+            ctx.cache.liveness[param.args[0].name].dead = dead
+          except: discard
         discard ctx.allocShaderParam(param)
       else:
         let paramName = param.args[0].name

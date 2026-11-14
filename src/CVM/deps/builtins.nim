@@ -25,12 +25,24 @@ proc registerUnaryOp(c: var TypeCache, op: string, argTy, retTy: string) =
   
   c.addInstance(inst)
 
+proc registerFn(c: var TypeCache, name: string, argTys: openArray[string], retTy: string) =
+  var inst = TypeInst(
+    name: name,
+    kind: ProcType,
+    returnType: retTy,
+    size: 0
+  )
+  for i, a in argTys:
+    inst.fields.add(TypeField(name: "p" & $i, ty: a))
+  c.addInstance(inst)
+
 proc registerBuiltins*(c: var TypeCache) =
   const numericTypes = ["int8", "int16", "int32", "int64", "float", "float32", "float64", "uint", "uint32"]
   const allTypes = ["int8", "int16", "int32", "int64", "float", "float32", "float64", "uint", "uint32", "bool"]
   const bitwiseTypes = ["int8", "int16", "int32", "int64", "uint", "uint32"]
   const matrixType = ["mat2f", "mat2i", "mat3f", "mat3i", "mat4f", "mat4i"]
   const vectorType = ["vec2f", "vec2i", "vec3f", "vec3i", "vec4f", "vec4i"]
+  const floatVectorTypes = ["vec2f", "vec3f", "vec4f"]
 
   for ty in numericTypes:
     for op in ["+", "-", "*", "/", "%"]:
@@ -50,13 +62,69 @@ proc registerBuiltins*(c: var TypeCache) =
       c.registerBinaryOp(op, ty, ty, ty)
 
   for ty in vectorType:
-    for op in ["+", "-", "*"]:
+    for op in ["+", "-", "*", "/"]:
       c.registerBinaryOp(op, ty, ty, ty)
+    c.registerUnaryOp("-", ty, ty)
 
   for i in 0..<matrixType.len:
     c.registerBinaryOp("*", matrixType[i], vectorType[i], vectorType[i])
 
+  # Vector * scalar and Vector +/- scalar
+  for ty in floatVectorTypes:
+    for sTy in ["float", "float32"]:
+      c.registerBinaryOp("*", ty, sTy, ty)
+      c.registerBinaryOp("*", sTy, ty, ty)
+      c.registerBinaryOp("/", ty, sTy, ty)
+      c.registerBinaryOp("+", ty, sTy, ty)
+      c.registerBinaryOp("-", ty, sTy, ty)
+
   c.registerBinaryOp("sample", "sampler2D", "vec2f", "vec4f")
+
+  # Dot product
+  c.registerBinaryOp("dot", "vec2f", "vec2f", "float32")
+  c.registerBinaryOp("dot", "vec3f", "vec3f", "float32")
+  c.registerBinaryOp("dot", "vec4f", "vec4f", "float32")
+
+  # Normalize
+  c.registerUnaryOp("normalize", "vec2f", "vec2f")
+  c.registerUnaryOp("normalize", "vec3f", "vec3f")
+  c.registerUnaryOp("normalize", "vec4f", "vec4f")
+
+  # Reflect
+  c.registerBinaryOp("reflect", "vec2f", "vec2f", "vec2f")
+  c.registerBinaryOp("reflect", "vec3f", "vec3f", "vec3f")
+
+  # Pow
+  for sTy in ["float", "float32"]:
+    c.registerBinaryOp("pow", sTy, sTy, sTy)
+    for vTy in floatVectorTypes:
+      c.registerBinaryOp("pow", vTy, sTy, vTy)
+
+  # Transpose and Invert
+  for mTy in ["mat2f", "mat3f", "mat4f"]:
+    c.registerUnaryOp("transpose", mTy, mTy)
+    c.registerUnaryOp("inverse", mTy, mTy)
+    c.registerUnaryOp("invert", mTy, mTy)
+
+  # Vector constructors (newVec2f, newVec3f, newVec4f)
+  for name in ["newVec2", "newVec2f"]:
+    c.registerFn(name, ["float32", "float32"], "vec2f")
+    c.registerFn(name, ["float", "float"], "vec2f")
+
+  for name in ["newVec3", "newVec3f"]:
+    c.registerUnaryOp(name, "vec4f", "vec3f")
+    c.registerFn(name, ["vec2f", "float32"], "vec3f")
+    c.registerFn(name, ["vec2f", "float"], "vec3f")
+    c.registerFn(name, ["float32", "float32", "float32"], "vec3f")
+    c.registerFn(name, ["float", "float", "float"], "vec3f")
+
+  for name in ["newVec4", "newVec4f"]:
+    c.registerFn(name, ["vec3f", "float32"], "vec4f")
+    c.registerFn(name, ["vec3f", "float"], "vec4f")
+    c.registerFn(name, ["vec2f", "float32", "float32"], "vec4f")
+    c.registerFn(name, ["vec2f", "float", "float"], "vec4f")
+    c.registerFn(name, ["float32", "float32", "float32", "float32"], "vec4f")
+    c.registerFn(name, ["float", "float", "float", "float"], "vec4f")
 
   for ty in numericTypes:
     c.registerUnaryOp("-", ty, ty)

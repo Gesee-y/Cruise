@@ -16,4 +16,4 @@ var tex {.texture.}: Sampler2D = Sampler2D()
 
 proc main(uv {.fragmentInput.}: Vec2,
           fragColor {.fragmentOutput.}: var Vec4) =
-  fragColor = Vec4(x: 1.0f, y: 1.0f, z: 1.0f, w: 1.0f)
+  fragColor = newVec4f(1.0f, 1.0f, 1.0f, 1.0f)

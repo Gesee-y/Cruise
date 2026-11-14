@@ -6,8 +6,10 @@ import ../../externalModule/opengl/src/opengl
 import shader_setup
 
 type
-  Vec3 = object
-    x, y, z: float32
+  Vec3* = object
+    x*, y*, z*: float32
+  Vec4* = object
+    x*, y*, z*, w*: float32
 
 proc light() =
   let app = initSDL3App()
@@ -110,6 +112,37 @@ proc light() =
     [-0.5f,  0.5f,  0.5f],
     [-0.5f,  0.5f, -0.5f]
   ]
+  let normals = [
+    [0.0f, 0.0f, 1.0f],
+    [0.0f, 0.0f, 1.0f],
+    [0.0f, 0.0f, 1.0f],
+    [0.0f, 0.0f, 1.0f],
+    
+    [0.0f, 0.0f, -1.0f],
+    [0.0f, 0.0f, -1.0f],
+    [0.0f, 0.0f, -1.0f],
+    [0.0f, 0.0f, -1.0f],
+    
+    [0.0f, 1.0f, 0.0f],
+    [0.0f, 1.0f, 0.0f],
+    [0.0f, 1.0f, 0.0f],
+    [0.0f, 1.0f, 0.0f],
+    
+    [0.0f, -1.0f, 0.0f],
+    [0.0f, -1.0f, 0.0f],
+    [0.0f, -1.0f, 0.0f],
+    [0.0f, -1.0f, 0.0f],
+    
+    [1.0f, 0.0f, 0.0f],
+    [1.0f, 0.0f, 0.0f],
+    [1.0f, 0.0f, 0.0f],
+    [1.0f, 0.0f, 0.0f],
+
+    [-1.0f, 0.0f, 0.0f],
+    [-1.0f, 0.0f, 0.0f],
+    [-1.0f, 0.0f, 0.0f],
+    [-1.0f, 0.0f, 0.0f]
+  ]
   let texCoords: array[24, array[2, GLfloat]] = [
     # Front
     [0.0f, 0.0f], [1.0f, 0.0f], [1.0f, 1.0f], [0.0f, 1.0f],
@@ -134,7 +167,7 @@ proc light() =
     20u32, 21, 22, 20, 22, 23  # Left
   ]
   let inputBlock = packVertexInputBlock(objectVertexBytecode,
-    [vertexAttribute(positions), vertexAttribute(texCoords)])
+    [vertexAttribute(positions), vertexAttribute(normals), vertexAttribute(texCoords)])
   var vao, vbo, ebo: GLuint
   glGenVertexArrays(1, addr vao)
   glBindVertexArray(vao)
@@ -205,9 +238,10 @@ proc light() =
                convertedSurface.pixels)
   SDL_DestroySurface(convertedSurface)
 
-  var vertexUniforms: array[16, uint32]
+  # Uniforms are packed by declaration: mvp[0..15], model[16..31].
+  var vertexUniforms: array[32, uint32]
   var timer = 0.0'f32
-  var fragmentUniforms = [cast[uint32](timer), 0, 0, 0, 0, 0]
+  var fragmentUniforms = [cast[uint32](timer), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
   glBindVertexArray(vao)
 
   # Randomized 3D distribution for 36 cubes
@@ -220,8 +254,9 @@ proc light() =
       orbitRadius: float32
       orbitSpeed: float32
 
-  var cube = CubeConfig()
-  var lightSource = CubeConfig(basePos: Vec3(x: 1.2f, y: 1.0f, z: 2.0f), orbitRadius: 2f, orbitSpeed: 0.5f)
+  var cube = CubeConfig(speedX: 0.23f, speedY: 0.37f, speedZ: 0.11f,
+                        scale: 1.0f)
+  var lightSource = CubeConfig(basePos: Vec3(x: 1.2f, y: 1.0f, z: 2.0f), scale: 0.5f, orbitRadius: 2f, orbitSpeed: 0.5f)
   var rng = initRand(20261114)
   
   var camPos = Vec3(x: 0.0'f32, y: 0.0'f32, z: 12.0'f32)
@@ -230,6 +265,8 @@ proc light() =
 
   glEnable(GL_DEPTH_TEST)
   glDepthFunc(GL_LESS)
+  glEnable(GL_CULL_FACE)
+  glCullFace(GL_BACK)
 
   glViewport(0, 0, 800.GLsizei, 600.GLsizei)
   glClearColor(0.07'f32, 0.08'f32, 0.12'f32, 1.0'f32)
@@ -289,7 +326,6 @@ proc light() =
     fragmentUniforms[3] = cast[uint32](lightColor.x)
     fragmentUniforms[4] = cast[uint32](lightColor.y)
     fragmentUniforms[5] = cast[uint32](lightColor.z)
-    uploadUniformBlock(program, "uFragmentUniforms", fragmentUniforms)
 
     glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
 
@@ -308,6 +344,20 @@ proc light() =
     let up = Vec3(x: 0.0'f32, y: 1.0'f32, z: 0.0'f32)
     let view = mat4LookAt(camPos, center, up)
 
+    let lightPosX = lightSource.basePos.x +
+      cos(timer * lightSource.orbitSpeed + lightSource.phase) * lightSource.orbitRadius
+    let lightPosY = lightSource.basePos.y +
+      sin(timer * (lightSource.orbitSpeed * 1.3'f32) + lightSource.phase) * lightSource.orbitRadius
+    let lightPosZ = lightSource.basePos.z +
+      sin(timer * lightSource.orbitSpeed + lightSource.phase) * (lightSource.orbitRadius * 0.6'f32)
+    fragmentUniforms[6] = cast[uint32](lightPosX)
+    fragmentUniforms[7] = cast[uint32](lightPosY)
+    fragmentUniforms[8] = cast[uint32](lightPosZ)
+    fragmentUniforms[9] = cast[uint32](camPos.x)
+    fragmentUniforms[10] = cast[uint32](camPos.y)
+    fragmentUniforms[11] = cast[uint32](camPos.z)
+    uploadUniformBlock(program, "uFragmentUniforms", fragmentUniforms)
+
     var i = 0
     for c in [cube, lightSource]:
       let rotX = timer * c.speedX + c.phase
@@ -325,9 +375,9 @@ proc light() =
 
       for j in 0..<16:
         vertexUniforms[j] = cast[uint32](mvp.m[j])
+        vertexUniforms[16 + j] = cast[uint32](model.m[j])
       
       uploadUniformBlock(program, "uVertexUniforms", vertexUniforms)
-      uploadUniformBlock(program, "uFragmentUniforms", fragmentUniforms)
 
       if i == 0:
         glBindVertexArray(vao)

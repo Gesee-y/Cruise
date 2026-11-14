@@ -31,8 +31,8 @@ proc isValidDefinition(cache: var TypeCache, n: CIRNode): bool =
     reportSemError n.info, "Unknown type `" & tyName & "` for variable/uniform `" & vname  & "`. Maybe the type is not native to GPU or undeclared in the current module."
     return false
 
-  if typeId >= 0 and cache.instances[typeId].kind in {ProcType, RefType}:
-    reportSemError n.info, "Can't declare variable of type `ref` or `proc` because pointers are unsupported."
+  if cache.instances[typeId].kind in {ProcType, RefType}:
+    reportSemError n.info, "Can't declare variable `" & vname & "` of type `" & tyName & "` `ref` or `proc` because pointers are unsupported."
     return false
 
 proc getTypeName(cache: TypeCache, n: CIRNode): string =

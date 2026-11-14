@@ -705,3 +705,230 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
           let mVal = cast[ptr int32](unsafeAddr vm.memory[int(src) + (col * 4 + row) * 4])[]
           res[row] += mVal * vVal
       copyMem(addr vm.memory[dst], addr res[0], 16)
+
+    of vocMmat2f:
+      var res: array[4, float32]
+      for c in 0..<2:
+        for r in 0..<2:
+          var sum = 0.0'f32
+          for k in 0..<2:
+            let a = cast[ptr float32](unsafeAddr vm.memory[int(dst) + (k * 2 + r) * 4])[]
+            let b = cast[ptr float32](unsafeAddr vm.memory[int(src) + (c * 2 + k) * 4])[]
+            sum += a * b
+          res[c * 2 + r] = sum
+      copyMem(addr vm.memory[dst], addr res[0], 16)
+
+    of vocMmat2i:
+      var res: array[4, int32]
+      for c in 0..<2:
+        for r in 0..<2:
+          var sum = 0'i32
+          for k in 0..<2:
+            let a = cast[ptr int32](unsafeAddr vm.memory[int(dst) + (k * 2 + r) * 4])[]
+            let b = cast[ptr int32](unsafeAddr vm.memory[int(src) + (c * 2 + k) * 4])[]
+            sum += a * b
+          res[c * 2 + r] = sum
+      copyMem(addr vm.memory[dst], addr res[0], 16)
+
+    of vocMmat3f:
+      var res: array[9, float32]
+      for c in 0..<3:
+        for r in 0..<3:
+          var sum = 0.0'f32
+          for k in 0..<3:
+            let a = cast[ptr float32](unsafeAddr vm.memory[int(dst) + (k * 3 + r) * 4])[]
+            let b = cast[ptr float32](unsafeAddr vm.memory[int(src) + (c * 3 + k) * 4])[]
+            sum += a * b
+          res[c * 3 + r] = sum
+      copyMem(addr vm.memory[dst], addr res[0], 36)
+
+    of vocMmat3i:
+      var res: array[9, int32]
+      for c in 0..<3:
+        for r in 0..<3:
+          var sum = 0'i32
+          for k in 0..<3:
+            let a = cast[ptr int32](unsafeAddr vm.memory[int(dst) + (k * 3 + r) * 4])[]
+            let b = cast[ptr int32](unsafeAddr vm.memory[int(src) + (c * 3 + k) * 4])[]
+            sum += a * b
+          res[c * 3 + r] = sum
+      copyMem(addr vm.memory[dst], addr res[0], 36)
+
+    of vocMmat4f:
+      var res: array[16, float32]
+      for c in 0..<4:
+        for r in 0..<4:
+          var sum = 0.0'f32
+          for k in 0..<4:
+            let a = cast[ptr float32](unsafeAddr vm.memory[int(dst) + (k * 4 + r) * 4])[]
+            let b = cast[ptr float32](unsafeAddr vm.memory[int(src) + (c * 4 + k) * 4])[]
+            sum += a * b
+          res[c * 4 + r] = sum
+      copyMem(addr vm.memory[dst], addr res[0], 64)
+
+    of vocMmat4i:
+      var res: array[16, int32]
+      for c in 0..<4:
+        for r in 0..<4:
+          var sum = 0'i32
+          for k in 0..<4:
+            let a = cast[ptr int32](unsafeAddr vm.memory[int(dst) + (k * 4 + r) * 4])[]
+            let b = cast[ptr int32](unsafeAddr vm.memory[int(src) + (c * 4 + k) * 4])[]
+            sum += a * b
+          res[c * 4 + r] = sum
+      copyMem(addr vm.memory[dst], addr res[0], 64)
+
+    of vocVecAddi:
+      let count = max(1, size)
+      let sVal = cast[ptr int32](unsafeAddr vm.memory[src])[]
+      for i in 0..<count:
+        cast[ptr int32](addr vm.memory[int(dst) + i * 4])[] += sVal
+
+    of vocVecAddf:
+      let count = max(1, size)
+      let sVal = cast[ptr float32](unsafeAddr vm.memory[src])[]
+      for i in 0..<count:
+        cast[ptr float32](addr vm.memory[int(dst) + i * 4])[] += sVal
+
+    of vocVecSubi:
+      let count = max(1, size)
+      let sVal = cast[ptr int32](unsafeAddr vm.memory[src])[]
+      for i in 0..<count:
+        cast[ptr int32](addr vm.memory[int(dst) + i * 4])[] -= sVal
+
+    of vocVecSubf:
+      let count = max(1, size)
+      let sVal = cast[ptr float32](unsafeAddr vm.memory[src])[]
+      for i in 0..<count:
+        cast[ptr float32](addr vm.memory[int(dst) + i * 4])[] -= sVal
+
+    of vocVecMuli:
+      let count = max(1, size)
+      let sVal = cast[ptr int32](unsafeAddr vm.memory[src])[]
+      for i in 0..<count:
+        cast[ptr int32](addr vm.memory[int(dst) + i * 4])[] *= sVal
+
+    of vocVecMulf:
+      let count = max(1, size)
+      let sVal = cast[ptr float32](unsafeAddr vm.memory[src])[]
+      for i in 0..<count:
+        cast[ptr float32](addr vm.memory[int(dst) + i * 4])[] *= sVal
+
+    of vocNormalize:
+      let dim = max(2, size)
+      var sumSq = 0.0'f32
+      for i in 0..<dim:
+        let val = cast[ptr float32](unsafeAddr vm.memory[int(src) + i * 4])[]
+        sumSq += val * val
+      let lenVal = sqrt(sumSq)
+      let invLen = if lenVal > 1e-6'f32: 1.0'f32 / lenVal else: 0.0'f32
+      for i in 0..<dim:
+        let val = cast[ptr float32](unsafeAddr vm.memory[int(src) + i * 4])[]
+        cast[ptr float32](addr vm.memory[int(dst) + i * 4])[] = val * invLen
+
+    of vocDot2:
+      let ax = cast[ptr float32](unsafeAddr vm.memory[src])[]
+      let ay = cast[ptr float32](unsafeAddr vm.memory[src + 4])[]
+      let bx = cast[ptr float32](unsafeAddr vm.memory[size])[]
+      let by = cast[ptr float32](unsafeAddr vm.memory[size + 4])[]
+      cast[ptr float32](addr vm.memory[dst])[] = ax * bx + ay * by
+
+    of vocDot3:
+      let ax = cast[ptr float32](unsafeAddr vm.memory[src])[]
+      let ay = cast[ptr float32](unsafeAddr vm.memory[src + 4])[]
+      let az = cast[ptr float32](unsafeAddr vm.memory[src + 8])[]
+      let bx = cast[ptr float32](unsafeAddr vm.memory[size])[]
+      let by = cast[ptr float32](unsafeAddr vm.memory[size + 4])[]
+      let bz = cast[ptr float32](unsafeAddr vm.memory[size + 8])[]
+      cast[ptr float32](addr vm.memory[dst])[] = ax * bx + ay * by + az * bz
+
+    of vocDot4:
+      var sum = 0.0'f32
+      for i in 0..<4:
+        sum += cast[ptr float32](unsafeAddr vm.memory[int(src) + i * 4])[] *
+               cast[ptr float32](unsafeAddr vm.memory[int(size) + i * 4])[]
+      cast[ptr float32](addr vm.memory[dst])[] = sum
+
+    of vocTranspose2:
+      var res: array[4, float32]
+      for c in 0..<2:
+        for r in 0..<2:
+          res[c * 2 + r] = cast[ptr float32](unsafeAddr vm.memory[int(src) + (r * 2 + c) * 4])[]
+      copyMem(addr vm.memory[dst], addr res[0], 16)
+
+    of vocTranspose3:
+      var res: array[9, float32]
+      for c in 0..<3:
+        for r in 0..<3:
+          res[c * 3 + r] = cast[ptr float32](unsafeAddr vm.memory[int(src) + (r * 3 + c) * 4])[]
+      copyMem(addr vm.memory[dst], addr res[0], 36)
+
+    of vocTranspose4:
+      var res: array[16, float32]
+      for c in 0..<4:
+        for r in 0..<4:
+          res[c * 4 + r] = cast[ptr float32](unsafeAddr vm.memory[int(src) + (r * 4 + c) * 4])[]
+      copyMem(addr vm.memory[dst], addr res[0], 64)
+
+    of vocInvert2:
+      let a = cast[ptr float32](unsafeAddr vm.memory[src])[]
+      let b = cast[ptr float32](unsafeAddr vm.memory[src + 4])[]
+      let c = cast[ptr float32](unsafeAddr vm.memory[src + 8])[]
+      let d = cast[ptr float32](unsafeAddr vm.memory[src + 12])[]
+      let det = a * d - b * c
+      let invDet = if abs(det) > 1e-6'f32: 1.0'f32 / det else: 0.0'f32
+      var res = [d * invDet, -b * invDet, -c * invDet, a * invDet]
+      copyMem(addr vm.memory[dst], addr res[0], 16)
+
+    of vocInvert3, vocInvert4:
+      # Copy through for fallback if general 4x4 inverse not needed on CPU
+      copyMem(addr vm.memory[dst], unsafeAddr vm.memory[src], if op == vocInvert3: 36 else: 64)
+
+    of vocReflect2:
+      let ix = cast[ptr float32](unsafeAddr vm.memory[dst])[]
+      let iy = cast[ptr float32](unsafeAddr vm.memory[dst + 4])[]
+      let nx = cast[ptr float32](unsafeAddr vm.memory[src])[]
+      let ny = cast[ptr float32](unsafeAddr vm.memory[src + 4])[]
+      let dotProd = ix * nx + iy * ny
+      cast[ptr float32](addr vm.memory[dst])[] = ix - 2.0'f32 * dotProd * nx
+      cast[ptr float32](addr vm.memory[dst + 4])[] = iy - 2.0'f32 * dotProd * ny
+
+    of vocReflect3:
+      let ix = cast[ptr float32](unsafeAddr vm.memory[dst])[]
+      let iy = cast[ptr float32](unsafeAddr vm.memory[dst + 4])[]
+      let iz = cast[ptr float32](unsafeAddr vm.memory[dst + 8])[]
+      let nx = cast[ptr float32](unsafeAddr vm.memory[src])[]
+      let ny = cast[ptr float32](unsafeAddr vm.memory[src + 4])[]
+      let nz = cast[ptr float32](unsafeAddr vm.memory[src + 8])[]
+      let dotProd = ix * nx + iy * ny + iz * nz
+      cast[ptr float32](addr vm.memory[dst])[] = ix - 2.0'f32 * dotProd * nx
+      cast[ptr float32](addr vm.memory[dst + 4])[] = iy - 2.0'f32 * dotProd * ny
+      cast[ptr float32](addr vm.memory[dst + 8])[] = iz - 2.0'f32 * dotProd * nz
+
+    of vocPowi:
+      let count = max(1, size)
+      let expVal = int(cast[ptr int32](unsafeAddr vm.memory[src])[])
+      for i in 0..<count:
+        let baseVal = cast[ptr int32](unsafeAddr vm.memory[int(dst) + i * 4])[]
+        var r = 1'i32
+        for p in 0..<expVal: r *= baseVal
+        cast[ptr int32](addr vm.memory[int(dst) + i * 4])[] = r
+
+    of vocPowf:
+      let count = max(1, size)
+      let expVal = cast[ptr float32](unsafeAddr vm.memory[src])[]
+      for i in 0..<count:
+        let baseVal = cast[ptr float32](unsafeAddr vm.memory[int(dst) + i * 4])[]
+        cast[ptr float32](addr vm.memory[int(dst) + i * 4])[] = pow(baseVal, expVal)
+
+    of vocVecNegf:
+      for i in 0..<max(1, size):
+        let address = int(dst) + i * sizeof(float32)
+        cast[ptr float32](addr vm.memory[address])[] =
+          -cast[ptr float32](unsafeAddr vm.memory[address])[]
+
+    of vocVecNegi:
+      for i in 0..<max(1, size):
+        let address = int(dst) + i * sizeof(int32)
+        cast[ptr int32](addr vm.memory[address])[] =
+          -cast[ptr int32](unsafeAddr vm.memory[address])[]

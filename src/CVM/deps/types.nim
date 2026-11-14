@@ -271,8 +271,13 @@ proc addInstance(c: var TypeCache, instance: TypeInst) =
       c.functions[instance.name] = ov
 
 proc addUniform(c: var TypeCache, name: string, tid: int) =
-  let id = c.shaderParams.uniforms.len
-  c.shaderParams.uniformToId[name] = id
+  # Uniform bytecode operands address the packed uint32 uniform table, so each
+  # declaration starts after the preceding declarations' full word-aligned size.
+  var wordOffset = 0
+  for uniform in c.shaderParams.uniforms:
+    let byteSize = max(1, c.instances[uniform.tid].size)
+    wordOffset += (byteSize + sizeof(uint32) - 1) div sizeof(uint32)
+  c.shaderParams.uniformToId[name] = wordOffset
   c.shaderParams.uniforms.add(ShaderUniform(tid: tid))
 
 proc addSSBO(c: var TypeCache, name: string, tid: int) =

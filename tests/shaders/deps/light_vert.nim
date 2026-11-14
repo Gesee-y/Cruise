@@ -11,8 +11,8 @@ setShaderType(Vec2, "vec2f")
 setShaderType(Vec3, "vec3f")
 setShaderType(Vec4, "vec4f")
 
-var transform {.uniform.}: Mat4 = Mat4()
+var mvp {.uniform.}: Mat4 = Mat4()
 
 proc main(gl_pos {.vertexOutput.}: out Vec4,
           aPos {.vertexInput.}: Vec3) =
-  gl_pos = transform * Vec4(x: aPos.x, y: aPos.y, z: aPos.z, w: float32(1.0))
+  gl_pos = mvp * newVec4f(aPos, 1.0f)
