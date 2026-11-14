@@ -146,6 +146,7 @@ proc isIntName(name: string): bool {.inline.} =
 proc isIntType(ty: TypeInst): bool {.inline.} =
   ty.name.isIntName()
 proc isIntegerName(name: string): bool = name.isUintName or name.isIntName
+proc isTexture(cache: TypeCache, name: string): bool = cache.shaderParams.textureToId.getOrDefault(name. -1) >= 0
 
 # Pass through all wrappers around a function parameter
 proc stripTypeWrappers*(t: NifCursor): NifCursor =
@@ -660,5 +661,8 @@ proc newTypeCache(): TypeCache =
   result.newVectorType3("vec3f", "float32", 4)
   result.newVectorType4("vec4i", "int32", 4)
   result.newVectorType4("vec4f", "float32", 4)
+
+  result.nameToId["sampler2D"] = result.instances.len
+  result.instances.add TypeInst(kind: PrimitiveType, name: "sampler2D", size:1)
 
   result.registerBuiltins()

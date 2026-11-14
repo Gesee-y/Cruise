@@ -43,6 +43,8 @@ proc registerBuiltins*(c: var TypeCache) =
     for ty in bitwiseTypes:
       c.registerBinaryOp(op, ty, ty, ty)
 
+  registerBinaryOp("sample2D", "sampler2D", "vec2f", "vec4f")
+
   for ty in numericTypes:
     c.registerUnaryOp("-", ty, ty)
     c.registerUnaryOp("abs", ty, ty)
