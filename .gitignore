@@ -3,6 +3,7 @@ nimcache
 tests/vm
 src/CVM/vms
 externalModule
+assets
 *.glsl
 *.sh
 *.dll
