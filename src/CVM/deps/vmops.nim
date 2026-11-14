@@ -115,3 +115,9 @@ type
     vocCosf = 69 ## dst = cos(src), float
     
     vocSample2D = 70 ## vocSample2D.16 dstReg, coordReg (next word is the Texture ID)
+    vocMmatvec2f = 71 ## vocMmatvec2f dstAndVecReg, matReg, multiply a mat2 by a vec2
+    vocMmatvec2i = 72
+    vocMmatvec3f = 73
+    vocMmatvec3i = 74
+    vocMmatvec4f = 75
+    vocMmatvec4i = 76 
