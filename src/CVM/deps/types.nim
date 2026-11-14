@@ -665,6 +665,20 @@ proc newTypeCache(): TypeCache =
   result.newVectorType4("vec4i", "int32", 4)
   result.newVectorType4("vec4f", "float32", 4)
 
+  # Builtin matrix type
+  result.nameToId["mat2f"] = result.instances.len
+  result.instances.add TypeInst(kind: ContainerType, name: "mat2f", returnType: "float32", size:16)
+  result.nameToId["mat2i"] = result.instances.len
+  result.instances.add TypeInst(kind: ContainerType, name: "mat2i", returnType: "int32", size:16)
+  result.nameToId["mat3f"] = result.instances.len
+  result.instances.add TypeInst(kind: ContainerType, name: "mat3f", returnType: "float32", size:36)
+  result.nameToId["mat3i"] = result.instances.len
+  result.instances.add TypeInst(kind: ContainerType, name: "mat3i", returnType: "int32", size:36)
+  result.nameToId["mat4f"] = result.instances.len
+  result.instances.add TypeInst(kind: ContainerType, name: "mat4f", returnType: "float32", size:64)
+  result.nameToId["mat4i"] = result.instances.len
+  result.instances.add TypeInst(kind: ContainerType, name: "mat4i", returnType: "int32", size:64)
+
   result.nameToId["sampler2D"] = result.instances.len
   result.instances.add TypeInst(kind: PrimitiveType, name: "sampler2D", size: 1)
 

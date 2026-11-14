@@ -29,6 +29,8 @@ proc registerBuiltins*(c: var TypeCache) =
   const numericTypes = ["int8", "int16", "int32", "int64", "float", "float32", "float64", "uint", "uint32"]
   const allTypes = ["int8", "int16", "int32", "int64", "float", "float32", "float64", "uint", "uint32", "bool"]
   const bitwiseTypes = ["int8", "int16", "int32", "int64", "uint", "uint32"]
+  const matrixType = ["mat2f", "mat2i", "mat3f", "mat3i", "mat4f", "mat4i"]
+  const vectorType = ["vec2f", "vec2i", "vec3f", "vec3i", "vec4f", "vec4i"]
 
   for ty in numericTypes:
     for op in ["+", "-", "*", "/", "%"]:
@@ -42,6 +44,17 @@ proc registerBuiltins*(c: var TypeCache) =
     c.registerBinaryOp(op, "bool", "bool", "bool")
     for ty in bitwiseTypes:
       c.registerBinaryOp(op, ty, ty, ty)
+
+  for ty in matrixType:
+    for op in ["+", "-", "*"]:
+      c.registerBinaryOp(op, ty, ty, ty)
+
+  for ty in vectorType:
+    for op in ["+", "-"]:
+      c.registerBinaryOp(op, ty, ty, ty)
+
+  for i in 0..<matrixType.len:
+    c.registerBinaryOp("*", matrixType[i], vectorType[i], vectorType[i])
 
   c.registerBinaryOp("sample", "sampler2D", "vec2f", "vec4f")
 

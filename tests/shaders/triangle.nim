@@ -80,6 +80,32 @@ proc triangle() =
   glUseProgram(program)
   uploadBytecode(program, "uVertexBytecode", "uVertexBytecodeLen", vertexBytecode)
   uploadBytecode(program, "uFragmentBytecode", "uFragmentBytecodeLen", fragmentBytecode)
+  bindSamplers(program, "uSamplers", 8)
+
+  # Load image texture from assets using SDL3
+  let assetPath = appDir / ".." / ".." / "assets" / "box21.png"
+  var surface = SDL_LoadPNG(assetPath.cstring)
+  if surface == nil:
+    raise newException(IOError, "Failed to load texture image from: " & assetPath & " error: " & sdlError())
+  var convertedSurface = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA32)
+  if convertedSurface == nil:
+    convertedSurface = surface
+  else:
+    SDL_DestroySurface(surface)
+
+  var textureId: GLuint
+  glGenTextures(1, addr textureId)
+  glActiveTexture(GL_TEXTURE0)
+  glBindTexture(GL_TEXTURE_2D, textureId)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE.GLint)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE.GLint)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR.GLint)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR.GLint)
+  glTexImage2D(GL_TEXTURE_2D, 0.GLint, GL_RGBA.GLint, convertedSurface.w.GLsizei,
+               convertedSurface.h.GLsizei, 0.GLint, GL_RGBA, GL_UNSIGNED_BYTE,
+               convertedSurface.pixels)
+  SDL_DestroySurface(convertedSurface)
+
   let vertexUniforms = [cast[uint32](1.0'f32), cast[uint32](0.0'f32)]
   var timer = 0.0'f32
   var fragmentUniforms = [cast[uint32](timer)]
@@ -104,6 +130,7 @@ proc triangle() =
     glDrawArrays(GL_TRIANGLES, 0, positions.len.GLsizei)
     discard SDL_GL_SwapWindow(win.handle)
 
+  glDeleteTextures(1, addr textureId)
   glDeleteBuffers(1, addr vbo)
   glDeleteVertexArrays(1, addr vao)
   win.quitWindow()
