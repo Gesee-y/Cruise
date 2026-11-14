@@ -72,6 +72,7 @@ type
     tid: int
 
   ShaderTexture* = object
+    tid: int
 
   ShaderSSBO* = object
     tid: int
@@ -348,7 +349,7 @@ proc addTypeInstance*(tyDef: NifCursor): TypeInst =
         if fieldCursor.kind == TagLit and fieldCursor.otherKind == FldU:
           var f = TypeField()
           var field = firstChild(fieldCursor)
-          let fieldName = field.symText
+          let fieldName = field.symText.split(".")[0]
           let fieldSym = field.symId
           skip field # export marker
           skip field # pragmas
@@ -547,17 +548,20 @@ proc getType*(c: TypeCache, root: TypeInst, idx: int): TypeInst =
 
 proc getType*(c: TypeCache, root: string): TypeInst =
   # Fetch the concrete type following a given path
-  var ty = c.nameToId.getOrDefault(root, -1)
+  var eq = c.equivalences.getOrDefault(root, root)
+  var ty = c.nameToId.getOrDefault(eq, -1)
   if ty == -1: return TypeInst(kind: UnknownType)
 
   return c.instances[ty]
 
+proc getType*(c: TypeCache, ty: int): TypeInst =
+  # Fetch the concrete type following a given path
+  if ty == -1: return TypeInst(kind: UnknownType)
+  return c.instances[ty]
+
 proc getType*(c: TypeCache, root: string, additional: seq[string]): TypeInst =
   # Fetch the concrete type following a given path
-  var ty = c.nameToId.getOrDefault(root, -1)
-  if ty == -1: return TypeInst(kind: UnknownType)
-
-  var inst = c.instances[ty]
+  var inst = c.getType(root)
   return c.getType(inst, additional)
 
 proc getType*(c: TypeCache, root: string, idx: int): TypeInst =
@@ -662,6 +666,6 @@ proc newTypeCache(): TypeCache =
   result.newVectorType4("vec4f", "float32", 4)
 
   result.nameToId["sampler2D"] = result.instances.len
-  result.instances.add TypeInst(kind: PrimitiveType, name: "sampler2D", size:1)
+  result.instances.add TypeInst(kind: PrimitiveType, name: "sampler2D", size: 1)
 
   result.registerBuiltins()

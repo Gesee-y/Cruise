@@ -3,7 +3,7 @@
 # ###################################################################################################################################### #
 
 proc resolveSymbol(cache: var TypeCache, n: CIRNode) =
-  let isType = n.name in cache.functions or n.name in cache.nameToId
+  let isType = n.name in cache.functions or n.name in cache.nameToId or n.name in cache.equivalences
   if cache.variables.getOrDefault(n.name, -1) < 0 and not isType:
     reportSemError n.info, """Unable to resolve symbol `""" & n.name & """`. May be a symbol inaccessible from the current module or not natively supported by GPU"""
 
@@ -19,40 +19,49 @@ proc resolveSymbol(cache: var TypeCache, n: CIRNode) =
 
 proc isValidDefinition(cache: var TypeCache, n: CIRNode): bool =
   result = true
-  let tyName = n.args[1].name
+  let ty = n.args[1].name
   let vname = n.args[0].name
-  if tyName notin cache.nameToId:
+  let tyName = cache.equivalences.getOrDefault(ty, ty)
+  var typeId = cache.nameToId.getOrDefault(tyName, -1)
+  if typeId < 0:
+    let shortName = ty.split(".")[0]
+    let shortEq = cache.equivalences.getOrDefault(shortName, shortName)
+    typeId = cache.nameToId.getOrDefault(shortEq, -1)
+  if typeId < 0:
     reportSemError n.info, "Unknown type `" & tyName & "` for variable/uniform `" & vname  & "`. Maybe the type is not native to GPU or undeclared in the current module."
     return false
-  let typeId = cache.nameToId.getOrDefault(tyName, -1)
 
   if typeId >= 0 and cache.instances[typeId].kind in {ProcType, RefType}:
     reportSemError n.info, "Can't declare variable of type `ref` or `proc` because pointers are unsupported."
     return false
 
+proc getTypeName(cache: TypeCache, n: CIRNode): string =
+  result = cache.equivalences.getOrDefault(n.name, n.name)
+
+proc getTypeId(cache: TypeCache, n: CIRNode): int =
+  result = cache.nameToId.getOrDefault(cache.getTypeName(n), -1)
+
 proc registerDefinition(cache: var TypeCache, n: CIRNode) =
-  let tyName = n.args[1].name
   let vname = n.args[0].name
   if cache.isValidDefinition(n):
-    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    let typeId = cache.getTypeId(n.args[1])
     cache.variables[vname] = typeId
     cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
 
 proc registerUniform(cache: var TypeCache, n: CIRNode) =
-  let tyName = n.args[0].args[1].name
   let vname = n.args[0].args[0].name
   if cache.isValidDefinition(n.args[0]):
-    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    let typeId = cache.getTypeId(n.args[0].args[1])
     cache.variables[vname] = typeId
     cache.addUniform(vname, typeId)
 
 proc registerFragment(cache: var TypeCache, n: CIRNode) =
-  let tyName = n.args[1].name
   let vname = n.args[0].name
-  if cache.equivalences.getOrDefault(tyName, tyName) != "vec4f":
+  let tyName = cache.getTypeName(n.args[1])
+  if tyName != "vec4f":
     reportSemError n.info, "Fragment shader output should be a `vec4f`"
   if cache.isValidDefinition(n):
-    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    let typeId = cache.getTypeId(n.args[1])
     cache.variables[vname] = typeId
     cache.shaderParams.fragOut = vname
     cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
@@ -69,66 +78,58 @@ proc addShaderBlockItem(items: var seq[ShaderBlockItem], name, typeName: string,
                             offset: offset, size: size)
 
 proc registerVertex(cache: var TypeCache, n: CIRNode) =
-  let tyName = n.args[1].name
   let vname = n.args[0].name
-  let shaderType = cache.equivalences.getOrDefault(tyName, tyName)
   if cache.isValidDefinition(n):
-    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    let typeId = cache.getTypeId(n.args[1])
     cache.variables[vname] = typeId
     cache.shaderParams.vertOut = vname
     cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
 
 proc registerVertexVarying(cache: var TypeCache, n: CIRNode) =
-  let tyName = n.args[1].name
   let vname = n.args[0].name
-  let shaderType = cache.equivalences.getOrDefault(tyName, tyName)
   if cache.isValidDefinition(n):
-    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    let typeId = cache.getTypeId(n.args[1])
     cache.variables[vname] = typeId
-    let size = max(1, cache.getType(tyName).size)
-    addShaderBlockItem(cache.shaderParams.vertVaryings, vname, tyName, size, n.info)
+    let size = max(1, cache.getType(typeId).size)
+    addShaderBlockItem(cache.shaderParams.vertVaryings, vname, cache.getTypeName(n.args[1]), size, n.info)
     cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
 
 proc registerFragmentInput(cache: var TypeCache, n: CIRNode) =
-  let tyName = n.args[1].name
   let vname = n.args[0].name
   if cache.isValidDefinition(n):
-    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    let typeId = cache.getTypeId(n.args[1])
     cache.variables[vname] = typeId
-    let size = max(1, cache.getType(tyName).size)
-    addShaderBlockItem(cache.shaderParams.fragInputs, vname, tyName, size, n.info)
+    let size = max(1, cache.getType(typeId).size)
+    addShaderBlockItem(cache.shaderParams.fragInputs, vname, cache.getTypeName(n.args[1]), size, n.info)
     cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
 
 proc registerVertexInput(cache: var TypeCache, n: CIRNode) =
-  let tyName = n.args[1].name
   let vname = n.args[0].name
   if cache.isValidDefinition(n):
-    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    let typeId = cache.getTypeId(n.args[1])
     cache.variables[vname] = typeId
-    let size = max(1, cache.getType(tyName).size)
-    addShaderBlockItem(cache.shaderParams.vertInputs, vname, tyName, size, n.info)
+    let size = max(1, cache.getType(typeId).size)
+    addShaderBlockItem(cache.shaderParams.vertInputs, vname, cache.getTypeName(n.args[1]), size, n.info)
     cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
 
 proc registerSSBO(cache: var TypeCache, n: CIRNode) =
-  let tyName = n.args[1].name
   let vname = n.args[0].name
   if cache.isValidDefinition(n):
-    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    let typeId = cache.getTypeId(n.args[1])
     cache.variables[vname] = typeId
     cache.addSSBO(vname, typeId)
 
 proc registerTexture(cache: var TypeCache, n: CIRNode) =
-  let tyName = n.args[1].name
-  if cache.isValidDefinition(n):
+  let vname = n.args[0].args[0].name
+  if cache.isValidDefinition(n.args[0]):
     let typeId = cache.nameToId.getOrDefault("sampler2D", -1)
     cache.variables[vname] = typeId
     cache.addTexture(vname, typeId)
 
 proc registerGlobalIndex(cache: var TypeCache, n: CIRNode) =
-  let tyName = n.args[1].name
   let vname = n.args[0].name
   if cache.isValidDefinition(n):
-    let typeId = cache.nameToId.getOrDefault(tyName, -1)
+    let typeId = cache.getTypeId(n.args[1])
     cache.variables[vname] = typeId
     cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
     cache.addGlobalIndex(vname, typeId)
@@ -376,6 +377,7 @@ proc resolveNode(cache: var TypeCache, n: var CIRNode, inFunc = false) =
       reportSemError n.info, "Top level statements are unsupported on GPU."
     for i in 1..<n.args.len:
       cache.resolveNode(n.args[i].args[1], inFunc = inFunc)
+      n.args[i].args[0].n = n.args[i].args[0].name.split(".")[0]
   else:
     if not inFunc and n.kind notin {cnkStmtList, cnkSection}:
       reportSemError n.info, "Top level statements are unsupported on GPU."

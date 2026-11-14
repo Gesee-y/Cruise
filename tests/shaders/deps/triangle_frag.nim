@@ -9,13 +9,11 @@ setShaderName("triangle_frag")
 setShaderType(Vec2, "vec2f")
 setShaderType(Vec4, "vec4f")
 setShaderType(Vec3, "vec3f")
+setShaderType(Sampler2D, "sampler2D")
 
 var timer {.uniform.}: float32 = float32(0.0)
+var tex {.texture.}: Sampler2D = Sampler2D()
 
-proc main(color {.fragmentInput.}: Vec3,
+proc main(uv {.fragmentInput.}: Vec2,
           fragColor {.fragmentOutput.}: var Vec4) =
-  fragColor = Vec4(
-    x: color.x,
-    y: color.y,
-    z: color.z,
-    w: float32(1.0))
+  fragColor = sample(tex, uv)
