@@ -19,3 +19,7 @@ proc `*`*(m1, m2: Mat3): Mat3 = Mat3()
 proc `*`*(m: Mat4, v: Vec4): Vec4 = v
 proc `*`*(m: Mat4, v: Vec3): Vec4 = Vec4()
 proc `*`*(m1, m2: Mat4): Mat4 = Mat4()
+
+proc `*`*(v1, v2: Vec2): Vec2 = Vec2()
+proc `*`*(v1, v2: Vec3): Vec3 = Vec3()
+proc `*`*(v1, v2: Vec4): Vec4 = Vec4()

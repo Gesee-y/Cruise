@@ -50,7 +50,7 @@ proc registerBuiltins*(c: var TypeCache) =
       c.registerBinaryOp(op, ty, ty, ty)
 
   for ty in vectorType:
-    for op in ["+", "-"]:
+    for op in ["+", "-", "*"]:
       c.registerBinaryOp(op, ty, ty, ty)
 
   for i in 0..<matrixType.len:

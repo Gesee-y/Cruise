@@ -8,7 +8,7 @@ import std/os
 import ../../src/CVM/disassembler
 
 proc main =
-  var f = open(currentSourcePath.parentDir / ".." / "shaders" / "deps" / "triangle_frag.cbc", fmRead)
+  var f = open(currentSourcePath.parentDir / ".." / "shaders" / "deps" / "light_cube_frag.cbc", fmRead)
   var data: seq[uint32] = @[]
   var word: uint32
   while f.readBuffer(addr word, sizeof(uint32)) == sizeof(uint32):

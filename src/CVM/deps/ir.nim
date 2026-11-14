@@ -594,6 +594,31 @@ proc toIR(n: NifCursor): CIRNode =
       result.add(newCIRSym(it.info, it.symText))
       skip it # skip op
       result.add(toIR(it))
+    of SufX:
+      var it = firstChild(c)
+      result = newCIRNode(c.info, cnkConv)
+      let c = toIR(it)
+      skip it
+
+      case it.stringValue:
+      of "f64":
+        result.add(newCIRSym(it.info, "float64"))
+      of "f32":
+        result.add(newCIRSym(it.info, "float32"))
+      of "i64":
+        result.add(newCIRSym(it.info, "int64"))
+      of "i32":
+        result.add(newCIRSym(it.info, "int32"))
+      of "u64":
+        result.add(newCIRSym(it.info, "uint64"))
+      of "u32":
+        result.add(newCIRSym(it.info, "uint32"))
+      else:
+        reportIRError c.info, "Unknow IR suffix `" & it.stringValue & "`"
+        result.add(newCIRSym(it.info, "float32"))
+
+      result.add(c)
+
     of OconstrX:
       var it = c
       result = newCIRNode(it.info, cnkObjConstr)
