@@ -172,7 +172,6 @@ proc light() =
   var rgbaPixels = newSeq[byte](textureWidth * textureHeight * 4)
   copyMem(addr rgbaPixels[0], convertedSurface.pixels, rgbaPixels.len)
   objectConfig.setTexture(0, rgbaPixels, textureWidth, textureHeight)
-  lightConfig.setTexture(0, rgbaPixels, textureWidth, textureHeight)
   SDL_DestroySurface(convertedSurface)
 
   # Uniforms are packed by declaration: mvp[0..15], model[16..31].

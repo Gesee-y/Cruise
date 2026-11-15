@@ -19,7 +19,7 @@ Because it's made entirely to run on GPU!
 In the program to run on the VM, let's name it `mainKernel.nim`:
 
 ```nim
-import CVM
+import CVM/bytecode
 
 translateToBytecode()
 setShaderName("myShader")
@@ -36,12 +36,22 @@ This will generate a `myShader.cbc` file, which contains the bytecode of the pro
 Then in the program running it:
 
 ```nim
-import CVM
+import CVM/vms/cpu
 
 proc main:
   let data = readBytecode("path/to/myShader.cbc")
-  # Now you can enjoy your bytecode
-  # Since this just offer the compiler + VM
+  let a = @[1, 2, 3]
+  let b = @[4, 5, 6]
+  var c = newSeq[int](3)
+  var obj = initVmObjectConfig(data)
+  obj.setBuffer(0, addr a[0])
+  obj.setBuffer(1, addr b[0])
+  obj.setBuffer(2, addr c[0])
+  obj.setUniform(0, 3)
+  var vm = initCpuVm()
+
+  vm.configure(obj) # Update static data in the VM
+  vm.runVm(obj) # Execute the bytecode
 ```
 
 ## Examples

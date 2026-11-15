@@ -121,7 +121,9 @@ proc initGlslVm*(): GlslVm =
   glBindVertexArray(0)
 
 proc setShader*(vm: var GlslVm, config: VmObjectConfig) =
-  ## Select bytecode for this draw. No draw command is issued.
+  ## Select bytecode without replacing the configured vertex inputs or texture
+  ## bindings. The new shader must be compatible with those configured inputs.
+  ## No draw command is issued.
   assert config.vertexBytecode.len > 0 and
     config.vertexBytecode.len <= GlslVmMaxBytecodeWords,
     "Object config needs 1..512 vertex bytecode words"
