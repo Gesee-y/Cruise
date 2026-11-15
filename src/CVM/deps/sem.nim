@@ -53,6 +53,7 @@ proc registerUniform(cache: var TypeCache, n: CIRNode) =
   if cache.isValidDefinition(n.args[0]):
     let typeId = cache.getTypeId(n.args[0].args[1])
     cache.variables[vname] = typeId
+    cache.liveness[vname] = CLiveness(birth: n.args[0].info, dead: n.args[0].info)
     cache.addUniform(vname, typeId)
 
 proc registerFragment(cache: var TypeCache, n: CIRNode) =

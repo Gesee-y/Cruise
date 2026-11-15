@@ -204,6 +204,8 @@ proc builtinOpcode(name, typeName: string): VMOpCode =
   of "rsqrt": vocRsqrtf
   of "cos": vocCosf
   of "sin": vocSinf
+  of "floor": vocFloorf
+  of "fract": vocFractf
   of "sample": vocSample2D
   else: assert false, "Unsupported builtin opcode: " & name
 
@@ -459,7 +461,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
 
   of cnkCall:
     let procName = c.args[0].name
-    if procName in ["abs", "sqrt", "rsqrt", "sin", "cos"]:
+    if procName in ["abs", "sqrt", "rsqrt", "sin", "cos", "floor", "fract"]:
       var argNode = c.args[1]
       let typeName = ctx.cache.inferType(argNode)
       let size = max(1, ctx.cache.getType(typeName).size)
@@ -470,8 +472,64 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
         if result.pos != arg.pos:
           ctx.emitInst(vocMov, result.pos, arg.pos, size)
       else:
-        ctx.emitInst(op, result.pos, arg.pos, size)
+        let opSize = if op in {vocFloorf, vocFractf}: max(1, size div 4) else: size
+        ctx.emitInst(op, result.pos, arg.pos, opSize)
       ctx.freeIfTemp(arg)
+      return
+
+    if procName in ["mix", "lerp", "smoothstep", "step", "clamp"]:
+      let resultArgIndex = if procName == "step": 2
+                           elif procName == "smoothstep": 3
+                           else: 1
+      let resultNode = c.args[resultArgIndex]
+      let resultTy = ctx.cache.inferType(resultNode)
+      let resultSize = max(4, ctx.cache.getType(resultTy).size)
+      let lanes = max(1, resultSize div 4)
+      let value = ctx.genExpr(resultNode, target = target)
+      result = value
+      var descriptor = 0'u32
+      var secondOperand = CAllocation(pos: -1)
+      var thirdOperand = CAllocation(pos: -1)
+      var op = vocNoOp
+
+      case procName
+      of "step":
+        op = vocStepf
+        secondOperand = ctx.genExpr(c.args[1]) # edge
+        if ctx.cache.getType(ctx.cache.inferType(c.args[1])).size == 4 and lanes > 1:
+          descriptor = descriptor or 0x100'u32
+      of "smoothstep":
+        op = vocSmoothstepf
+        secondOperand = ctx.genExpr(c.args[1]) # edge0
+        thirdOperand = ctx.genExpr(c.args[2]) # edge1
+        descriptor = uint32(thirdOperand.pos and 0xFF)
+        if ctx.cache.getType(ctx.cache.inferType(c.args[1])).size == 4 and lanes > 1:
+          descriptor = descriptor or 0x100'u32
+        if ctx.cache.getType(ctx.cache.inferType(c.args[2])).size == 4 and lanes > 1:
+          descriptor = descriptor or 0x200'u32
+      of "mix", "lerp":
+        op = vocMixf
+        secondOperand = ctx.genExpr(c.args[2]) # y
+        thirdOperand = ctx.genExpr(c.args[3]) # factor
+        descriptor = uint32(thirdOperand.pos and 0xFF)
+        if ctx.cache.getType(ctx.cache.inferType(c.args[3])).size == 4 and lanes > 1:
+          descriptor = descriptor or 0x100'u32
+      of "clamp":
+        op = vocClampf
+        secondOperand = ctx.genExpr(c.args[2]) # lower bound
+        thirdOperand = ctx.genExpr(c.args[3]) # upper bound
+        descriptor = uint32(thirdOperand.pos and 0xFF)
+        if ctx.cache.getType(ctx.cache.inferType(c.args[2])).size == 4 and lanes > 1:
+          descriptor = descriptor or 0x100'u32
+        if ctx.cache.getType(ctx.cache.inferType(c.args[3])).size == 4 and lanes > 1:
+          descriptor = descriptor or 0x200'u32
+      else:
+        discard
+
+      ctx.emitInst(op, result.pos, secondOperand.pos, lanes)
+      ctx.emitWord(descriptor)
+      ctx.freeIfTemp(secondOperand)
+      ctx.freeIfTemp(thirdOperand)
       return
 
     if procName in ["min", "max"]:
@@ -669,7 +727,16 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       let uOffset = ctx.cache.shaderParams.uniformToId.getOrDefault(c.name, 0)
       let tyId = ctx.cache.variables.getOrDefault(c.name, -1)
       let uSize = if tyId >= 0: max(1, ctx.cache.instances[tyId].size) else: 1
-      result = if target.size >= uSize: target else: ctx.code.allocator.alloc(uSize)
+      result = 
+        if target.size >= uSize: 
+          target 
+        else: 
+          let l = ctx.cache.liveness.getOrDefault(c.name)
+          let bp = l.birth
+          var lline = l.dead.line
+          var lcol  = l.dead.col
+          ctx.code.allocator.alloc(uSize, bp.line, bp.col, lline, lcol)
+      
       ctx.emitInst(vocLoadUni, result.pos, uOffset, uSize)
       return
 

@@ -105,6 +105,15 @@ proc disassemble*(code: openArray[uint32]) =
         echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED TEXID>"
         pc += 1
 
+    of vocStepf, vocSmoothstepf, vocMixf, vocClampf:
+      if pc + 1 < code.len:
+        let descriptor = code[pc + 1]
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src}, descriptor=0x{descriptor.toHex(8)}"
+        pc += 2
+      else:
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src}, <TRUNCATED DESCRIPTOR>"
+        pc += 1
+
     # Halte / Fin d'exécution
     of vocHalt:
       echo &"{addrStr} | {hexStr}   | {opStr}"

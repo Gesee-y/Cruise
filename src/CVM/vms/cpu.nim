@@ -932,3 +932,43 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         let address = int(dst) + i * sizeof(int32)
         cast[ptr int32](addr vm.memory[address])[] =
           -cast[ptr int32](unsafeAddr vm.memory[address])[]
+
+    of vocFloorf, vocFractf:
+      for i in 0..<max(1, size):
+        let address = int(dst) + i * 4
+        let value = cast[ptr float32](unsafeAddr vm.memory[int(src) + i * 4])[]
+        cast[ptr float32](addr vm.memory[address])[] =
+          if op == vocFloorf: floor(value).float32 else: value - floor(value).float32
+
+    of vocStepf, vocSmoothstepf, vocMixf, vocClampf:
+      let descriptor = program[vm.pc]
+      inc vm.pc
+      let count = max(1, size)
+      let firstBroadcast = (descriptor and 0x100'u32) != 0
+      let secondBroadcast = (descriptor and 0x200'u32) != 0
+      let thirdSrc = int(descriptor and 0xFF'u32)
+      for i in 0..<count:
+        let outAddr = int(dst) + i * 4
+        let secondAddr = int(src) + (if firstBroadcast: 0 else: i * 4)
+        let x = cast[ptr float32](unsafeAddr vm.memory[outAddr])[]
+        let y = cast[ptr float32](unsafeAddr vm.memory[secondAddr])[]
+        var value: float32
+        case op
+        of vocStepf:
+          value = if y < x: 0.0'f32 else: 1.0'f32
+        of vocSmoothstepf:
+          let edge1Addr = thirdSrc + (if secondBroadcast: 0 else: i * 4)
+          let edge1 = cast[ptr float32](unsafeAddr vm.memory[edge1Addr])[]
+          let t = min(1.0'f32, max(0.0'f32, (x - y) / (edge1 - y)))
+          value = t * t * (3.0'f32 - 2.0'f32 * t)
+        of vocMixf:
+          let factorAddr = thirdSrc + (if firstBroadcast: 0 else: i * 4)
+          let factor = cast[ptr float32](unsafeAddr vm.memory[factorAddr])[]
+          value = x * (1.0'f32 - factor) + y * factor
+        of vocClampf:
+          let upperAddr = thirdSrc + (if secondBroadcast: 0 else: i * 4)
+          let upper = cast[ptr float32](unsafeAddr vm.memory[upperAddr])[]
+          value = min(upper, max(y, x))
+        else:
+          value = x
+        cast[ptr float32](addr vm.memory[outAddr])[] = value

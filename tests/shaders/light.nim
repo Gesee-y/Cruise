@@ -241,7 +241,7 @@ proc light() =
   # Uniforms are packed by declaration: mvp[0..15], model[16..31].
   var vertexUniforms: array[32, uint32]
   var timer = 0.0'f32
-  var fragmentUniforms = [cast[uint32](timer), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  var fragmentUniforms = newSeq[uint32](16)
   glBindVertexArray(vao)
 
   # Randomized 3D distribution for 36 cubes
@@ -318,6 +318,7 @@ proc light() =
     timer += 0.016'f32
     let objectColor = Vec3(x: 1.0f, y: 0.5f, z: 0.31f)
     let lightColor = Vec3(x: 1.0f, y: 1.0f, z: 1.0f)
+    let accentColor = Vec3(x: 0.1f, y: 0.85f, z: 1.0f)
 
     fragmentUniforms[0] = cast[uint32](objectColor.x)
     fragmentUniforms[1] = cast[uint32](objectColor.y)
@@ -326,6 +327,11 @@ proc light() =
     fragmentUniforms[3] = cast[uint32](lightColor.x)
     fragmentUniforms[4] = cast[uint32](lightColor.y)
     fragmentUniforms[5] = cast[uint32](lightColor.z)
+
+    fragmentUniforms[12] = cast[uint32](accentColor.x)
+    fragmentUniforms[13] = cast[uint32](accentColor.y)
+    fragmentUniforms[14] = cast[uint32](accentColor.z)
+    fragmentUniforms[15] = cast[uint32](timer)
 
     glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
 

@@ -47,6 +47,9 @@ proc registerBuiltins*(c: var TypeCache) =
   for ty in numericTypes:
     for op in ["+", "-", "*", "/", "%"]:
       c.registerBinaryOp(op, ty, ty, ty)
+  for op in ["+", "-", "*", "/"]:
+    c.registerBinaryOp(op, "float32", "float", "float32")
+    c.registerBinaryOp(op, "float", "float32", "float32")
 
   for ty in allTypes:
     for op in ["==", "!=", "<", "<=", ">", ">="]:
@@ -143,3 +146,29 @@ proc registerBuiltins*(c: var TypeCache) =
     c.registerUnaryOp(op, "float", "float")
     c.registerUnaryOp(op, "float32", "float32")
     c.registerUnaryOp(op, "float64", "float64")
+
+  # Common GLSL-style shading functions. Scalar and vector overloads share
+  # the same VM opcodes; scalar arguments may be broadcast over a vector.
+  for ty in ["float", "float32"]:
+    c.registerUnaryOp("floor", ty, ty)
+    c.registerUnaryOp("fract", ty, ty)
+    c.registerBinaryOp("step", ty, ty, ty)
+    c.registerFn("smoothstep", [ty, ty, ty], ty)
+    c.registerFn("mix", [ty, ty, ty], ty)
+    c.registerFn("lerp", [ty, ty, ty], ty)
+    c.registerFn("clamp", [ty, ty, ty], ty)
+
+  for ty in floatVectorTypes:
+    c.registerUnaryOp("floor", ty, ty)
+    c.registerUnaryOp("fract", ty, ty)
+    c.registerBinaryOp("step", ty, ty, ty)
+    c.registerFn("smoothstep", [ty, ty, ty], ty)
+    c.registerFn("mix", [ty, ty, ty], ty)
+    c.registerFn("lerp", [ty, ty, ty], ty)
+    c.registerFn("clamp", [ty, ty, ty], ty)
+    for scalarTy in ["float", "float32"]:
+      c.registerBinaryOp("step", scalarTy, ty, ty)
+      c.registerFn("smoothstep", [scalarTy, scalarTy, ty], ty)
+      c.registerFn("mix", [ty, ty, scalarTy], ty)
+      c.registerFn("lerp", [ty, ty, scalarTy], ty)
+      c.registerFn("clamp", [ty, scalarTy, scalarTy], ty)

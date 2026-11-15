@@ -4,6 +4,7 @@ tests/vm
 src/CVM/vms
 externalModule
 assets
+.nimcache_light
 *.glsl
 *.sh
 *.dll

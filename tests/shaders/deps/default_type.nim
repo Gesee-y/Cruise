@@ -49,6 +49,14 @@ proc `/`*(v: Vec4, s: float32): Vec4 = v
 
 proc `+`*(v: Vec3, s: float32): Vec3 = v
 proc `-`*(v: Vec3, s: float32): Vec3 = v
+proc `*`*(v: Vec2, s: float): Vec2 = v
+proc `*`*(v: Vec3, s: float): Vec3 = v
+proc `*`*(v: Vec4, s: float): Vec4 = v
+proc `*`*(s: float, v: Vec2): Vec2 = v
+proc `*`*(s: float, v: Vec3): Vec3 = v
+proc `*`*(s: float, v: Vec4): Vec4 = v
+proc `+`*(v: Vec3, s: float): Vec3 = v
+proc `-`*(v: Vec3, s: float): Vec3 = v
 
 proc dot*(a, b: Vec2): float32 = 0.0f
 proc dot*(a, b: Vec3): float32 = 0.0f
@@ -64,6 +72,54 @@ proc reflect*(i, n: Vec3): Vec3 = i
 proc pow*(x: Vec2, y: float32): Vec2 = x
 proc pow*(x: Vec3, y: float32): Vec3 = x
 proc pow*(x: Vec4, y: float32): Vec4 = x
+
+# Shading builtins are declared here for the shader source type-checker. Their
+# bodies are placeholders; the CVM generator lowers these calls to VM opcodes.
+proc fract*(x: float32): float32 = x
+proc fract*(x: Vec2): Vec2 = x
+proc fract*(x: Vec3): Vec3 = x
+proc fract*(x: Vec4): Vec4 = x
+proc floor*(x: Vec2): Vec2 = x
+proc floor*(x: Vec3): Vec3 = x
+proc floor*(x: Vec4): Vec4 = x
+
+proc step*(edge, x: float32): float32 = x
+proc step*(edge, x: Vec2): Vec2 = x
+proc step*(edge, x: Vec3): Vec3 = x
+proc step*(edge, x: Vec4): Vec4 = x
+proc step*(edge: float32, x: Vec2): Vec2 = x
+proc step*(edge: float32, x: Vec3): Vec3 = x
+proc step*(edge: float32, x: Vec4): Vec4 = x
+
+proc smoothstep*(edge0, edge1, x: float32): float32 = x
+proc smoothstep*(edge0, edge1, x: Vec2): Vec2 = x
+proc smoothstep*(edge0, edge1, x: Vec3): Vec3 = x
+proc smoothstep*(edge0, edge1, x: Vec4): Vec4 = x
+proc smoothstep*(edge0, edge1: float32, x: Vec2): Vec2 = x
+proc smoothstep*(edge0, edge1: float32, x: Vec3): Vec3 = x
+proc smoothstep*(edge0, edge1: float32, x: Vec4): Vec4 = x
+
+proc mix*(x, y, a: float32): float32 = x
+proc mix*(x, y: Vec2, a: float32): Vec2 = x
+proc mix*(x, y: Vec3, a: float32): Vec3 = x
+proc mix*(x, y: Vec4, a: float32): Vec4 = x
+proc mix*(x, y, a: Vec2): Vec2 = x
+proc mix*(x, y, a: Vec3): Vec3 = x
+proc mix*(x, y, a: Vec4): Vec4 = x
+proc lerp*(x, y, a: float32): float32 = x
+proc lerp*(x, y: Vec2, a: float32): Vec2 = x
+proc lerp*(x, y: Vec3, a: float32): Vec3 = x
+proc lerp*(x, y: Vec4, a: float32): Vec4 = x
+proc lerp*(x, y, a: Vec2): Vec2 = x
+proc lerp*(x, y, a: Vec3): Vec3 = x
+proc lerp*(x, y, a: Vec4): Vec4 = x
+
+proc clamp*(x, lo, hi: Vec2): Vec2 = x
+proc clamp*(x, lo, hi: Vec3): Vec3 = x
+proc clamp*(x, lo, hi: Vec4): Vec4 = x
+proc clamp*(x: Vec2, lo, hi: float32): Vec2 = x
+proc clamp*(x: Vec3, lo, hi: float32): Vec3 = x
+proc clamp*(x: Vec4, lo, hi: float32): Vec4 = x
 
 proc transpose*(m: Mat2): Mat2 = m
 proc transpose*(m: Mat3): Mat3 = m

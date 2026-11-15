@@ -149,3 +149,9 @@ type
     vocDot4 = 102
     vocVecNegf = 103 ## Negate each float lane in a vector in place
     vocVecNegi = 104 ## Negate each int32 lane in a vector in place
+    vocFloorf = 105 ## dst[i] = floor(src[i]), size is scalar/vector lane count
+    vocFractf = 106 ## dst[i] = fract(src[i]), size is scalar/vector lane count
+    vocStepf = 107 ## dst=x; src=edge; descriptor carries edge broadcast flag
+    vocSmoothstepf = 108 ## dst=x; src=edge0; descriptor carries edge1 and broadcast flags
+    vocMixf = 109 ## dst=x; src=y; descriptor carries factor and broadcast flag
+    vocClampf = 110 ## dst=x; src=lower; descriptor carries upper and broadcast flags
