@@ -402,12 +402,12 @@ proc resolveNode(cache: var TypeCache, n: var CIRNode, inFunc = false) =
   of cnkFragmentInput:
     cache.registerFragmentInput(n)
   of cnkAsgn:
-    cache.resolveNode(n.args[0])
-    cache.resolveNode(n.args[1])
+    cache.resolveNode(n.args[0], inFunc=inFunc)
+    cache.resolveNode(n.args[1], inFunc=inFunc)
 
     let ty = cache.inferTypeOrAdd(n.args[0])
     if cache.getType(ty).kind == ContainerType:
-      reportSemError c.info, "Can't assign a container to a variable. This would cause aliasing on GPU."
+      reportSemError n.info, "Can't assign a container to a variable. This would cause aliasing on GPU."
   of cnkInfix:
     if n.args.len == 3 and n.args[0].name.isInplaceOperator:
       cache.resolveNode(n.args[1], inFunc = inFunc)

@@ -1428,16 +1428,18 @@ proc genInfix(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation
     if rhsTyName.startsWith("vec"):
       ctx.emitInst(opcodeFor(inplaceOp, opIsFloat), lhs.pos, rhs.pos, opSize)
     elif inplaceOp in ["+", "-", "*"]:
+      let lanes = opSize div 4
       let (vecOp, _) = getVecScalarCode(inplaceOp, lhsTyName, rhsTyName)
       if vecOp != vocNoOp:
         ctx.emitInst(vecOp, lhs.pos, rhs.pos, lanes)
       else:
         for lane in 0 ..< lanes:
-          ctx.emitInst(opcodeFor(inplaceOp, isVectorFloat),
+          ctx.emitInst(opcodeFor(inplaceOp, opIsFloat),
             lhs.pos + lane * FLOAT_SIZE, rhs.pos, FLOAT_SIZE)
     else:
+      let lanes = opSize div 4
       for lane in 0 ..< lanes:
-        ctx.emitInst(opcodeFor(inplaceOp, isVectorFloat),
+        ctx.emitInst(opcodeFor(inplaceOp, opIsFloat),
           lhs.pos + lane * FLOAT_SIZE, rhs.pos, FLOAT_SIZE)
   else:
     ctx.emitInst(opcodeFor(inplaceOp, lhsTyName.isFloatName),
