@@ -431,5 +431,5 @@ Being able to use Nim for everything without writing a single line of shader cod
 
 ## Cons
 
-- Slower than a native GPU program (though it's not awfully slow, just moderately slow).
+- Slower than a native GPU program (On a AMD FirePro W4190M for the plastic crate the VM run at 100FPS while the native version runs a 500FPS, this range with the draw distance, with the object covering a huge part of the screen, the VM runs a 10FPS while the natives runs a 400FPS).
 - Still ongoing (handling more GPU construct, run on more shader langs, etc etc)

@@ -82,7 +82,7 @@ void main() {
     int callFrameBase = -1;
     uint registerBase = 0u;
     int stackBase = 0;
-    uint cvmStack[256];
+    uint cvmStack[8];
     int stackLen = 0;
 
     while (!halted) {
