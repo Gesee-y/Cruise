@@ -164,7 +164,7 @@ proc setBuffer*(vm: var OpenClVm, bufId: int, hostPtr: pointer, sizeInBytes: int
   if hostPtr != nil and sizeInBytes > 0:
     check enqueueWriteBuffer(vm.ctx.queue, devBuf, CL_TRUE, 0, sizeInBytes, hostPtr, 0, nil, nil)
 
-proc loadConfig(vm: var OpenClVm, config: VmObjectConfig) =
+proc configure*(vm: var OpenClVm, config: VmObjectConfig) =
   ## Apply the shared uniforms and buffers. The bytecode remains explicit at
   ## `runVM`, allowing this record to be shared with shader backends.
   if config.uniforms.len > 0:
@@ -191,7 +191,7 @@ proc runVM*(vm: var OpenClVm, program: openArray[uint32], globalWorkSize: int = 
 
 proc runVM*(vm: var OpenClVm, config: VmObjectConfig, globalWorkSize: int = 32,
             startPc: int = 0, localWorkSize: int = 0) =
-  vm.loadConfig(config)
+  vm.configure(config)
   vm.runVM(config.bytecode, globalWorkSize, startPc, localWorkSize)
 
 proc setBufferMem*(vm: var OpenClVm, bufId: int, mem: Pmem, sizeInBytes: int) =

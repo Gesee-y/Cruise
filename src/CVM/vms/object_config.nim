@@ -51,6 +51,12 @@ proc storeUniform[T](table: var seq[uint32], offset: int, value: T) =
   var copied = value
   copyMem(addr table[offset], addr copied, sizeof(T))
 
+proc copyUniforms(table: var seq[uint32], values: openArray[uint32]) =
+  if table.len != values.len:
+    table.setLen(values.len)
+  if values.len > 0:
+    copyMem(addr table[0], unsafeAddr values[0], values.len * sizeof(uint32))
+
 proc setUniform*[T](config: var VmObjectConfig, offset: int, value: T,
                     stage: VmUniformStage = vusShared) =
   ## Store a typed value at a word offset, preserving its raw representation.
@@ -64,9 +70,9 @@ proc setUniforms*(config: var VmObjectConfig, values: openArray[uint32],
   if values.len > 256:
     assert false, "Uniform table exceeds 256 words"
   case stage
-  of vusShared: config.uniforms = @values
-  of vusVertex: config.vertexUniforms = @values
-  of vusFragment: config.fragmentUniforms = @values
+  of vusShared: config.uniforms.copyUniforms(values)
+  of vusVertex: config.vertexUniforms.copyUniforms(values)
+  of vusFragment: config.fragmentUniforms.copyUniforms(values)
 
 proc setBuffer*(config: var VmObjectConfig, bufferId: int,
                 data: pointer, byteLength: int) =

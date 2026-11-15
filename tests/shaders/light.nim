@@ -179,7 +179,7 @@ proc light() =
   var vertexUniforms: array[32, uint32]
   var timer = 0.0'f32
   var fragmentUniforms = newSeq[uint32](16)
-  vm.runVm(objectConfig)
+  vm.configure(objectConfig)
   var indexBuffer: GLuint
   glGenBuffers(1, addr indexBuffer)
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer)
@@ -325,9 +325,11 @@ proc light() =
         vertexUniforms[16 + j] = cast[uint32](model.m[j])
       
       if i == 0:
+        vm.setShader(objectConfig)
         objectConfig.setUniforms(vertexUniforms, vusVertex)
         vm.runVm(objectConfig)
       else:
+        vm.setShader(lightConfig)
         lightConfig.setUniforms(vertexUniforms, vusVertex)
         vm.runVm(lightConfig)
       glDrawElements(GL_TRIANGLES, indices.len.GLsizei, GL_UNSIGNED_INT, nil)

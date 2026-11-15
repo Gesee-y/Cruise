@@ -45,7 +45,7 @@ proc setBuffer*(vm: var CpuVm, bufId: int, bufPtr: pointer) =
     vm.buffers.setLen(bufId + 1)
   vm.buffers[bufId] = bufPtr
 
-proc loadConfig(vm: var CpuVm, config: VmObjectConfig) =
+proc configure*(vm: var CpuVm, config: VmObjectConfig) =
   ## Apply backend-neutral uniforms and input buffers. Keep `config` alive while
   ## the VM may read its buffers; the CPU VM stores their addresses directly.
   if config.uniforms.len > 0:
@@ -67,7 +67,7 @@ proc loadConfig(vm: var CpuVm, config: VmObjectConfig) =
 proc runVM*(vm: var CpuVm, program: openArray[uint32])
 
 proc runVM*(vm: var CpuVm, config: VmObjectConfig) =
-  vm.loadConfig(config)
+  vm.configure(config)
   vm.runVM(config.bytecode)
 
 proc decodeWord*(word: uint32, op: var VMOpCode, dst, src: var uint8, size: var int) {.inline.} =

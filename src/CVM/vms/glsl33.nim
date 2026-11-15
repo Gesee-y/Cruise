@@ -27,6 +27,10 @@ type
     vao: GLuint
     inputVbo: GLuint
     inputWordCount: int
+    vertexBytecodeLocation: GLint
+    fragmentBytecodeLocation: GLint
+    vertexUniformLocation: GLint
+    fragmentUniformLocation: GLint
 
 proc destroy*(vm: var GlslVm)
 
@@ -103,24 +107,38 @@ proc initGlslVm*(): GlslVm =
   for stageName in ["uVertexBytecode", "uFragmentBytecode"]:
     let location = glGetUniformLocation(result.program, (stageName & "[0]").cstring)
     assert location >= 0, "GLSL VM is missing " & stageName
+    if stageName == "uVertexBytecode": result.vertexBytecodeLocation = location
+    else: result.fragmentBytecodeLocation = location
   for uniformName in ["uVertexUniforms", "uFragmentUniforms"]:
-    assert glGetUniformLocation(result.program, (uniformName & "[0]").cstring) >= 0,
+    let location = glGetUniformLocation(result.program, (uniformName & "[0]").cstring)
+    assert location >= 0,
       "GLSL VM is missing " & uniformName
+    if uniformName == "uVertexUniforms": result.vertexUniformLocation = location
+    else: result.fragmentUniformLocation = location
   for i in 0 ..< GlslVmMaxTextures:
     let location = glGetUniformLocation(result.program, ("uSamplers[" & $i & "]").cstring)
     if location >= 0: glUniform1i(location, i.GLint)
   glBindVertexArray(0)
 
-proc runVm*(vm: var GlslVm, config: VmObjectConfig) =
-  ## Apply one object's configuration to OpenGL. This binds the VM shader,
-  ## uploads the object's inputs, uniforms and textures, then returns without
-  ## issuing a draw call; the caller owns the rendering command.
+proc setShader*(vm: var GlslVm, config: VmObjectConfig) =
+  ## Select bytecode for this draw. No draw command is issued.
   assert config.vertexBytecode.len > 0 and
     config.vertexBytecode.len <= GlslVmMaxBytecodeWords,
     "Object config needs 1..512 vertex bytecode words"
   assert config.fragmentBytecode.len > 0 and
     config.fragmentBytecode.len <= GlslVmMaxBytecodeWords,
     "Object config needs 1..512 fragment bytecode words"
+  glUseProgram(vm.program)
+  glBindVertexArray(vm.vao)
+  glUniform1uiv(vm.vertexBytecodeLocation, config.vertexBytecode.len.GLsizei,
+    unsafeAddr config.vertexBytecode[0])
+  glUniform1uiv(vm.fragmentBytecodeLocation, config.fragmentBytecode.len.GLsizei,
+    unsafeAddr config.fragmentBytecode[0])
+
+proc configure*(vm: var GlslVm, config: VmObjectConfig) =
+  ## Upload immutable bytecode inputs and textures for an object. Call again
+  ## only when switching or changing those resources; runVM handles uniforms.
+  vm.setShader(config)
   let layout = bytecodeInputLayout(config.vertexBytecode)
   for field in layout:
     let neededWords = (field.offset + field.size + sizeof(uint32) - 1) div sizeof(uint32)
@@ -204,6 +222,14 @@ proc runVm*(vm: var GlslVm, config: VmObjectConfig) =
       texture.height.GLsizei, 0, GL_RGBA, GL_UNSIGNED_BYTE,
       unsafeAddr texture.data[0])
     if texture.mipmaps: glGenerateMipmap(GL_TEXTURE_2D)
+  for slot in 0 ..< GlslVmMaxTextures:
+    glActiveTexture((GL_TEXTURE0.int + slot).GLenum)
+    let textureId = if vm.textureActive[slot]: vm.textures[slot] else: 0'u32
+    glBindTexture(GL_TEXTURE_2D, textureId)
+
+proc runVm*(vm: var GlslVm, config: VmObjectConfig) =
+  ## Upload per-draw uniforms and leave the VM shader/VAO ready for a caller
+  ## issued draw command. Configure static resources separately.
   var vertexUniforms: array[GlslVmUniformWords, uint32]
   var fragmentUniforms: array[GlslVmUniformWords, uint32]
   for i, value in config.uniforms:
@@ -214,20 +240,8 @@ proc runVm*(vm: var GlslVm, config: VmObjectConfig) =
 
   glUseProgram(vm.program)
   glBindVertexArray(vm.vao)
-  let vertexBytecodeLoc = glGetUniformLocation(vm.program, "uVertexBytecode[0]")
-  glUniform1uiv(vertexBytecodeLoc, config.vertexBytecode.len.GLsizei,
-    unsafeAddr config.vertexBytecode[0])
-  let fragmentBytecodeLoc = glGetUniformLocation(vm.program, "uFragmentBytecode[0]")
-  glUniform1uiv(fragmentBytecodeLoc, config.fragmentBytecode.len.GLsizei,
-    unsafeAddr config.fragmentBytecode[0])
-  for i in 0 ..< GlslVmMaxTextures:
-    glActiveTexture((GL_TEXTURE0.int + i).GLenum)
-    let textureId = if vm.textureActive[i]: vm.textures[i] else: 0'u32
-    glBindTexture(GL_TEXTURE_2D, textureId)
-  let vertexLoc = glGetUniformLocation(vm.program, "uVertexUniforms[0]")
-  let fragmentLoc = glGetUniformLocation(vm.program, "uFragmentUniforms[0]")
-  glUniform1uiv(vertexLoc, GlslVmUniformWords.GLsizei, addr vertexUniforms[0])
-  glUniform1uiv(fragmentLoc, GlslVmUniformWords.GLsizei, addr fragmentUniforms[0])
+  glUniform1uiv(vm.vertexUniformLocation, GlslVmUniformWords.GLsizei, addr vertexUniforms[0])
+  glUniform1uiv(vm.fragmentUniformLocation, GlslVmUniformWords.GLsizei, addr fragmentUniforms[0])
   # Program, VAO, buffers and texture bindings remain active for the caller's draw.
 
 proc destroy*(vm: var GlslVm) =
