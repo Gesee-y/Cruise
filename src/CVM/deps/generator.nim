@@ -9,6 +9,8 @@
 type
   CMemLoc = int ## Virtual-memory byte address.
 
+  # Function call data
+  # The position to the function + the current stack size will get patched in the call
   CallPatch = object
     targetPos: int
     frameInfoPos: int
@@ -118,6 +120,7 @@ proc prefixOpcodeFor(op: string, isFloat: bool): VMOpCode =
     else: return vocNegi
   else: assert false, "Failed to get prefix opcode for `" & op & "`."
 
+# Get us the conversion selector for a cnkConv when used on a runtime value
 proc conversionType(cache: TypeCache, typeName: string): VMConvType =
   let name = cache.equivalences.getOrDefault(typeName, typeName).split(".")[0]
   case name
@@ -162,7 +165,7 @@ proc immediateBits(node: CIRNode, isFloat: bool, size: int): uint64 =
   if isFloat:
     var value: float64
     case literal.kind
-    # Integers needs a conversion to float first because they aren't represented in the same wat as float
+    # Integers needs a conversion to float first because they aren't represented in the same way as float
     of cnkIntLit: value = float64(literal.intVal)
     of cnkUintLit: value = float64(literal.uintVal)
     of cnkFloatLit: value = literal.floatVal
@@ -214,30 +217,30 @@ proc builtinOpcode(name, typeName: string): VMOpCode =
   of "sample": vocSample2D
   else: assert false, "Unsupported builtin opcode: " & name
 
-proc unaryMathSelector(name: string): uint32 =
+proc unaryMathSelector(name: string): VMMathSelector =
   case name
-  of "tan": 0'u32
-  of "asin": 1'u32
-  of "acos": 2'u32
-  of "atan": 3'u32
-  of "exp": 4'u32
-  of "log": 5'u32
-  of "exp2": 6'u32
-  of "log2": 7'u32
-  of "ceil": 8'u32
-  of "trunc": 9'u32
-  of "round": 10'u32
-  of "sign": 11'u32
-  of "radians": 12'u32
-  of "degrees": 13'u32
-  of "sinh": 14'u32
-  of "cosh": 15'u32
-  of "tanh": 16'u32
-  of "asinh": 17'u32
-  of "acosh": 18'u32
-  of "atanh": 19'u32
-  of "abs": 20'u32
-  of "inversesqrt": 21'u32
+  of "tan": vmsTan
+  of "asin": vmsAsin
+  of "acos": vmsAcos
+  of "atan": vmsAtan
+  of "exp": vmsExp
+  of "log": vmsLog
+  of "exp2": vmsExp2
+  of "log2": vmsLog2
+  of "ceil": vmsCeil
+  of "trunc": vmsTrunc
+  of "round": vmsRound
+  of "sign": vmsSign
+  of "radians": vmsRadians
+  of "degrees": vmsDegrees
+  of "sinh": vmsSinh
+  of "cosh": vmsCosh
+  of "tanh": vmsTanH
+  of "asinh": vmsAsinh
+  of "acosh": vmsAcosh
+  of "atanh": vmsAtanh
+  of "abs": vmsAbs
+  of "inversesqrt": vmsInversesqrt
   else: assert false, "Unsupported unary shading function: " & name
 
 # ################################################################################################################################ #
@@ -272,6 +275,7 @@ proc getFieldReg(ctx: var CodeGenCtx, baseReg: CAllocation, c: CIRNode): CAlloca
       offset += field.offset
       currentType = field.ty
   
+  # Getting the last field
   let f = current.name.split(".")[0]
   let fid = ctx.cache.getType(currentType).nameToId.getOrDefault(f, -1)
   if fid >= 0:
@@ -286,6 +290,48 @@ proc getFieldReg(ctx: var CodeGenCtx, baseReg: CAllocation, c: CIRNode): CAlloca
 # ############################################################# EXPRESSIONS ###################################################### #
 # ################################################################################################################################ #
 
+proc getMatVecMulCode(op, lhsTyName, rhsTyName: string): VMOpCode =
+  result = vocNoOp
+  if op == "*" and lhsTyName.startsWith("mat") and rhsTyName.startsWith("vec"):
+    if lhsTyName == "mat2f" and rhsTyName == "vec2f": 
+      result = vocMmatvec2f
+    elif lhsTyName == "mat2i" and rhsTyName == "vec2i": 
+      result = vocMmatvec2i
+    elif lhsTyName == "mat3f" and rhsTyName == "vec3f": 
+      result = vocMmatvec3f
+    elif lhsTyName == "mat3i" and rhsTyName == "vec3i": 
+      result = vocMmatvec3i
+    elif lhsTyName == "mat4f" and (rhsTyName == "vec4f" or rhsTyName == "vec3f"): 
+      result = vocMmatvec4f
+    elif lhsTyName == "mat4i" and (rhsTyName == "vec4i" or rhsTyName == "vec3i"): 
+      result = vocMmatvec4i
+
+proc getMatMulCode(op, lhsTyName, rhsTyName: string): VMOpCode =
+  result = vocNoOp
+  if op == "*" and lhsTyName.startsWith("mat") and rhsTyName.startsWith("mat"):
+    if lhsTyName == "mat2f" and rhsTyName == "mat2f": result = vocMmat2f
+    elif lhsTyName == "mat2i" and rhsTyName == "mat2i": result = vocMmat2i
+    elif lhsTyName == "mat3f" and rhsTyName == "mat3f": result = vocMmat3f
+    elif lhsTyName == "mat3i" and rhsTyName == "mat3i": result = vocMmat3i
+    elif lhsTyName == "mat4f" and rhsTyName == "mat4f": result = vocMmat4f
+    elif lhsTyName == "mat4i" and rhsTyName == "mat4i": result = vocMmat4i
+
+proc getVecScalarMulCode(op, lhsTyName, rhsTyName: string): tuple[code: VMOpCode, size: int] =
+  result = (vocNoOp, 0)
+  let isLhsVec = lhsTyName.startsWith("vec")
+  let isRhsVec = rhsTyName.startsWith("vec")
+  if (isLhsVec and not isRhsVec) or (isRhsVec and not isLhsVec):
+    let vecTyName = lhsTyName
+    let vecDim = if vecTyName.contains("2"): 2 elif vecTyName.contains("3"): 3 else: 4
+    result.size = vecDim * 4
+    
+    case op
+    of "*": result.op = if opIsFloat: vocVecMulf else: vocVecMuli
+    of "+": result.op = if opIsFloat: vocVecAddf else: vocVecAddi
+    of "-": result.op = if opIsFloat: vocVecSubf else: vocVecSubi
+    else: discard
+
+# Generate the bytecode for a given expression in the register `target` if valid
 proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(pos: -1)): CAllocation =
   result = default(CAllocation)
   case c.kind
@@ -293,11 +339,12 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
     let opName = c.args[0].name
     let opTypeName = ctx.cache.inferType(c)
     let isCmp = opName in ["<", "<=", "==", "!="]
-    let operandTyName = if isCmp: ctx.cache.inferType(c.args[1]) else: opTypeName
+    let operandTyName = ctx.cache.inferType(c.args[1])
     let opIsFloat  = operandTyName.isFloatName or
       (operandTyName.startsWith("vec") and operandTyName.endsWith("f"))
     let operandTy = ctx.cache.getType(operandTyName)
     let opSize = operandTy.size
+    let retSize = ctx.cache.getType(opTyName).size
 
     var lhsNode = c.args[1]
     var rhsNode = c.args[2]
@@ -305,78 +352,44 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
     let lhsTyName = ctx.cache.inferType(lhsNode)
     let rhsTyName = ctx.cache.inferType(rhsNode)
 
-    if opName == "*" and lhsTyName.startsWith("mat") and rhsTyName.startsWith("vec"):
-      var mmatvecOp = vocNoOp
-      if lhsTyName == "mat2f" and rhsTyName == "vec2f": 
-        mmatvecOp = vocMmatvec2f
-      elif lhsTyName == "mat2i" and rhsTyName == "vec2i": 
-        mmatvecOp = vocMmatvec2i
-      elif lhsTyName == "mat3f" and rhsTyName == "vec3f": 
-        mmatvecOp = vocMmatvec3f
-      elif lhsTyName == "mat3i" and rhsTyName == "vec3i": 
-        mmatvecOp = vocMmatvec3i
-      elif lhsTyName == "mat4f" and (rhsTyName == "vec4f" or rhsTyName == "vec3f"): 
-        mmatvecOp = vocMmatvec4f
-      elif lhsTyName == "mat4i" and (rhsTyName == "vec4i" or rhsTyName == "vec3i"): 
-        mmatvecOp = vocMmatvec4i
+    var mmatvecOp = getMatVecMulCode(opName, lhsTyName, rhsTyName)
+    if mmatvecOp != vocNoOp:
+      let r1 = ctx.genExpr(lhsNode)
+      let r2 = ctx.genExpr(rhsNode)
+      result = if target.size >= retSize: target else: ctx.code.allocator.alloc(retSize)
+      if result.pos != r2.pos:
+        ctx.emitInst(vocMov, result.pos, r2.pos, r2.size)
+      ctx.emitInst(mmatvecOp, result.pos, r1.pos, r2.size)
+      ctx.freeIfTemp(r1)
+      ctx.freeIfTemp(r2)
+      return
 
-      if mmatvecOp != vocNoOp:
-        let r1 = ctx.genExpr(lhsNode)
-        let r2 = ctx.genExpr(rhsNode)
-        let retSize = max(1, operandTy.size)
-        result = if target.size >= retSize: target else: ctx.code.allocator.alloc(retSize)
-        if result.pos != r2.pos:
-          ctx.emitInst(vocMov, result.pos, r2.pos, r2.size)
-        ctx.emitInst(mmatvecOp, result.pos, r1.pos, r2.size)
-        ctx.freeIfTemp(r1)
-        ctx.freeIfTemp(r2)
-        return
+    var mmatOp = getMatMulCode(opName, lhsTyName, rhsTyName)
+    if mmatOp != vocNoOp:
+      let r1 = ctx.genExpr(lhsNode)
+      let r2 = ctx.genExpr(rhsNode)
+      let retSize = max(1, operandTy.size)
+      result = if target.size >= retSize: target else: ctx.code.allocator.alloc(retSize)
+      if result.pos != r1.pos:
+        ctx.emitInst(vocMov, result.pos, r1.pos, retSize)
+      ctx.emitInst(mmatOp, result.pos, r2.pos, retSize)
+      ctx.freeIfTemp(r1)
+      ctx.freeIfTemp(r2)
+      return
 
-    if opName == "*" and lhsTyName.startsWith("mat") and rhsTyName.startsWith("mat"):
-      var mmatOp = vocNoOp
-      if lhsTyName == "mat2f" and rhsTyName == "mat2f": mmatOp = vocMmat2f
-      elif lhsTyName == "mat2i" and rhsTyName == "mat2i": mmatOp = vocMmat2i
-      elif lhsTyName == "mat3f" and rhsTyName == "mat3f": mmatOp = vocMmat3f
-      elif lhsTyName == "mat3i" and rhsTyName == "mat3i": mmatOp = vocMmat3i
-      elif lhsTyName == "mat4f" and rhsTyName == "mat4f": mmatOp = vocMmat4f
-      elif lhsTyName == "mat4i" and rhsTyName == "mat4i": mmatOp = vocMmat4i
 
-      if mmatOp != vocNoOp:
-        let r1 = ctx.genExpr(lhsNode)
-        let r2 = ctx.genExpr(rhsNode)
-        let retSize = max(1, operandTy.size)
-        result = if target.size >= retSize: target else: ctx.code.allocator.alloc(retSize)
-        if result.pos != r1.pos:
-          ctx.emitInst(vocMov, result.pos, r1.pos, retSize)
-        ctx.emitInst(mmatOp, result.pos, r2.pos, retSize)
-        ctx.freeIfTemp(r1)
-        ctx.freeIfTemp(r2)
-        return
-
-    let isLhsVec = lhsTyName.startsWith("vec")
-    let isRhsVec = rhsTyName.startsWith("vec")
-    if (isLhsVec and not isRhsVec) or (isRhsVec and not isLhsVec):
-      let (vecNode, scalarNode) = if isLhsVec: (lhsNode, rhsNode) else: (rhsNode, lhsNode)
-      let vecTyName = if isLhsVec: lhsTyName else: rhsTyName
-      let vecDim = if vecTyName.contains("2"): 2 elif vecTyName.contains("3"): 3 else: 4
-      let vecSize = vecDim * 4
-      var vecOp = vocNoOp
-      case opName
-      of "*": vecOp = if opIsFloat: vocVecMulf else: vocVecMuli
-      of "+": vecOp = if opIsFloat: vocVecAddf else: vocVecAddi
-      of "-": vecOp = if opIsFloat: vocVecSubf else: vocVecSubi
-      else: discard
-
-      if vecOp != vocNoOp:
-        let rVec = ctx.genExpr(vecNode)
-        let rScalar = ctx.genExpr(scalarNode)
-        result = if target.size >= vecSize: target else: ctx.code.allocator.alloc(vecSize)
-        if result.pos != rVec.pos:
-          ctx.emitInst(vocMov, result.pos, rVec.pos, vecSize)
-        ctx.emitInst(vecOp, result.pos, rScalar.pos, vecDim)
-        ctx.freeIfTemp(rVec)
-        ctx.freeIfTemp(rScalar)
-        return
+    let (vecOp, vecSize) = getVecScalarMulCode(op, lhsTyName, rhsTyName)
+    if vecOp != vocNoOp:
+      let rVec = ctx.genExpr(lhsNode)
+      let rScalar = ctx.genExpr(rhsrNode)
+      let vecDim = vecSize div 4
+      result = if target.size >= vecSize: target else: ctx.code.allocator.alloc(vecSize)
+      if result.pos != rVec.pos:
+        ctx.emitInst(vocMov, result.pos, rVec.pos, vecSize)
+      ctx.emitInst(vecOp, result.pos, rScalar.pos, vecDim)
+      ctx.freeIfTemp(rVec)
+      ctx.freeIfTemp(rScalar)
+      return
 
     # Addition and multiplication are commutative, so put a literal on the
     # immediate side regardless of which operand it appeared on.
@@ -384,6 +397,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
        not rhsNode.isImmediateLiteral:
       swap(lhsNode, rhsNode)
 
+    # Generate immediate operations instead of a load + op we do a variant with the second operand as a constant
     if opName in ["+", "-", "*"] and rhsNode.isImmediateLiteral:
       let lhs = ctx.genExpr(lhsNode)
       result = if target.pos != -1: target else: ctx.code.allocator.alloc(opSize)
@@ -394,6 +408,9 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       ctx.freeIfTemp(lhs)
       return
 
+    # Generating regular opcode
+    # Use `load` for constant
+    # etc etc 
     let r1 = ctx.genExpr(lhsNode)
     let r2 = ctx.genExpr(rhsNode)
 

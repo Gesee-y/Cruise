@@ -63,7 +63,6 @@ proc registerBuiltins*(c: var TypeCache) =
   for ty in floatVectorTypes:
     for sTy in ["float", "float32"]:
       c.registerBinaryOp("*", ty, sTy, ty)
-      c.registerBinaryOp("*", sTy, ty, ty)
       c.registerBinaryOp("/", ty, sTy, ty)
       c.registerBinaryOp("+", ty, sTy, ty)
       c.registerBinaryOp("-", ty, sTy, ty)

@@ -17,6 +17,30 @@ type
     vctFloat64 = 10
     vctBool = 11
 
+  VMMathSelector = enum
+    vmsTan = 0'u32
+    vmsAsin = 1'u32
+    vmsAcos = 2'u32
+    vmsAtan = 3'u32
+    vmsExp = 4'u32
+    vmsLog = 5'u32
+    vmsExp2 = 6'u32
+    vmsLog2 = 7'u32
+    vmsCeil = 8'u32
+    vmsTrunc = 9'u32
+    vmsRound = 10'u32
+    vmsSign = 11'u32
+    vmsRadians = 12'u32
+    vmsDegrees = 13'u32
+    vmsSinh = 14'u32
+    vmsCosh = 15'u32
+    vmsTanh = 16'u32
+    vmsAsinh = 17'u32
+    vmsAcosh = 18'u32
+    vmsAtanh = 19'u32
+    vmsAbs = 20'u32
+    vmsInversesqrt = 21'u32
+
   # All operations the virtual machine can execute.
   # Integer and float variants are kept separate so the back-end can select the
   # right hardware instruction without extra type information at runtime.

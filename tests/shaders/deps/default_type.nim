@@ -56,9 +56,9 @@ proc `-`*(v: Vec3, s: float32): Vec3 = v
 proc `*`*(v: Vec2, s: float): Vec2 = v
 proc `*`*(v: Vec3, s: float): Vec3 = v
 proc `*`*(v: Vec4, s: float): Vec4 = v
-proc `*`*(s: float, v: Vec2): Vec2 = v
-proc `*`*(s: float, v: Vec3): Vec3 = v
-proc `*`*(s: float, v: Vec4): Vec4 = v
+template `*`*(s: float, v: Vec2): Vec2 = v * s
+template `*`*(s: float, v: Vec3): Vec3 = v * s
+template `*`*(s: float, v: Vec4): Vec4 = v * s
 proc `+`*(v: Vec3, s: float): Vec3 = v
 proc `-`*(v: Vec3, s: float): Vec3 = v
 
