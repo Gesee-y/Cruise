@@ -104,12 +104,12 @@ type
 
     # Memory model (uniforms, buffers, GPU indexing)
     vocLoadUni  = 37  ## dst = uniforms[src]
-    vocLoadBuf  = 38  ## dst = ssbo[src][index] (followed by vocNoOp index)
-    vocStoreBuf = 39  ## ssbo[src][index] = dst (followed by vocNoOp index)
-    vocLoadAt   = 40  ## dst = src[index] (followed by vocNoOp index)
-    vocStoreAt  = 41  ## src[index] = dst (followed by vocNoOp index)
+    vocLoadBuf  = 38  ## dst = ssbo[src][index] (followed by index register byte offset)
+    vocStoreBuf = 39  ## ssbo[src][index] = dst (followed by index register byte offset)
+    vocLoadAt   = 40  ## dst = src[index] (followed by index register byte offset)
+    vocStoreAt  = 41  ## src[index] = dst (followed by index register byte offset)
     vocLoadGI   = 42  ## dst = globalIndex
-    vocNoOp     = 43  ## No operation / index operand carrier
+    vocNoOp     = 43  ## No operation
     vocMaddf    = 44  ## dst = src * rhsReg + addReg; two packed source registers follow
     vocMaddi    = 45  ## Integer dst = src * rhsReg + addReg; two packed source registers follow
     vocAbsi    = 46  ## dst = abs(src), signed integer
@@ -123,7 +123,7 @@ type
     vocMaxu    = 54  ## dst = max(dst, src), unsigned integer
     vocSqrtf   = 55  ## dst = sqrt(src), float
     vocRsqrtf  = 56  ## dst = 1 / sqrt(src), float
-    vocAddCi   = 57  ## dst += signed/unsigned immediate (next word, or two for size 8)
+    vocAddCi   = 57  ## dst += signed/unsigned immediate (next word)
     vocSubCi   = 58  ## dst -= signed/unsigned immediate
     vocMulCi   = 59  ## dst *= signed/unsigned immediate
     vocAddCf   = 60  ## dst += float immediate

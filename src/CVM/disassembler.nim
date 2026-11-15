@@ -46,19 +46,12 @@ proc disassemble*(code: openArray[uint32]) =
         echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED IMM>"
         pc += 1
 
-    # Arithmetic immediates carry one word (up to 32 bits) or two words (64 bits).
+    # Arithmetic immediate payload is always one word; size describes the destination.
     of vocAddCi, vocSubCi, vocMulCi, vocAddCf, vocSubCf, vocMulCf:
       if pc + 1 < code.len:
-        var imm = uint64(code[pc + 1])
+        let imm = code[pc + 1]
         pc += 2
-        if size > 4 and pc < code.len:
-          imm = imm or (uint64(code[pc]) shl 32)
-          inc pc
-          echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, #0x{imm.toHex(16)}"
-        elif size > 4:
-          echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED IMM64>"
-        else:
-          echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, #0x{imm.toHex(8)}"
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, #0x{imm.toHex(8)}"
       else:
         echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED IMM>"
         pc += 1
@@ -159,21 +152,21 @@ proc disassemble*(code: openArray[uint32]) =
       echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, U{src}"
       pc += 1
 
-    of vocLoadBuf:
-      echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, B{src}"
-      pc += 1
+    of vocLoadBuf, vocLoadAt:
+      if pc + 1 < code.len:
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, src={src}, index=R{code[pc]}"
+        pc += 2
+      else:
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} <TRUNCATED INDEX REGISTER>"
+        pc += 1
 
-    of vocStoreBuf:
-      echo &"{addrStr} | {hexStr}   | {opStr:<12} B{src}, R{dst}"
-      pc += 1
-
-    of vocLoadAt:
-      echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, [R{src}]"
-      pc += 1
-
-    of vocStoreAt:
-      echo &"{addrStr} | {hexStr}   | {opStr:<12} [R{src}], R{dst}"
-      pc += 1
+    of vocStoreBuf, vocStoreAt:
+      if pc + 1 < code.len:
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} dst=R{dst}, src={src}, index=R{code[pc]}"
+        pc += 2
+      else:
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} <TRUNCATED INDEX REGISTER>"
+        pc += 1
 
     # Instructions standard à deux opérandes (R_dst, R_src)
     else:

@@ -1,4 +1,4 @@
-import std/[os, strutils]
+import std/os
 import ../../externalModule/opengl/src/opengl
 
 const
@@ -130,15 +130,13 @@ proc createVmProgram*(vertexSource, fragmentSource: string): GLuint =
     glDeleteProgram(result)
     raise newException(IOError, "GLSL VM program link failed:\n" & details)
 
-proc uploadBytecode*(program: GLuint, uniformName, lengthName: string,
+proc uploadBytecode*(program: GLuint, uniformName: string,
                     code: openArray[uint32]) =
   let baseName = uniformName & "[0]"
   let bytecodeLocation = glGetUniformLocation(program, baseName.cstring)
-  let lengthLocation = glGetUniformLocation(program, lengthName.cstring)
-  if bytecodeLocation < 0 or lengthLocation < 0:
+  if bytecodeLocation < 0:
     raise newException(IOError, "GLSL VM bytecode uniforms are missing")
   glUniform1uiv(bytecodeLocation, code.len.GLsizei, addr code[0])
-  glUniform1i(lengthLocation, code.len.GLint)
 
 proc uploadUniformBlock*(program: GLuint, uniformName: string,
                         values: openArray[uint32]) =

@@ -153,8 +153,8 @@ proc triangle() =
       cast[pointer](index * sizeof(uint32)))
 
   glUseProgram(program)
-  uploadBytecode(program, "uVertexBytecode", "uVertexBytecodeLen", vertexBytecode)
-  uploadBytecode(program, "uFragmentBytecode", "uFragmentBytecodeLen", fragmentBytecode)
+  uploadBytecode(program, "uVertexBytecode", vertexBytecode)
+  uploadBytecode(program, "uFragmentBytecode", fragmentBytecode)
   bindSamplers(program, "uSamplers", 8)
 
   # Load image texture from assets using SDL3

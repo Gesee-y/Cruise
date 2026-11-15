@@ -1014,11 +1014,11 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
     if c.args[0].name in ctx.cache.shaderParams.ssboToId:
       let bufId = ctx.cache.shaderParams.ssboToId.getOrDefault(c.args[0].name, 0)
       ctx.emitInst(vocLoadBuf, dest.pos, bufId, elemSize)
-      ctx.emitInst(vocNoOp, indexAlloc.pos, 0, max(1, indexAlloc.size))
+      ctx.emitWord(uint32(indexAlloc.pos))
     else:
       let arrAlloc = ctx.genExpr(c.args[0])
       ctx.emitInst(vocLoadAt, dest.pos, arrAlloc.pos, elemSize)
-      ctx.emitInst(vocNoOp, indexAlloc.pos, 0, max(1, indexAlloc.size))
+      ctx.emitWord(uint32(indexAlloc.pos))
       ctx.freeIfTemp(arrAlloc)
 
     ctx.freeIfTemp(indexAlloc)
@@ -1283,11 +1283,11 @@ proc genArrAsgn(ctx: var CodeGenCtx, c: CIRNode) =
   if c.args[0].kind in {cnkSym, cnkRSym} and c.args[0].name in ctx.cache.shaderParams.ssboToId:
     let bufId = ctx.cache.shaderParams.ssboToId.getOrDefault(c.args[0].name, 0)
     ctx.emitInst(vocStoreBuf, valAlloc.pos, bufId, elemSize)
-    ctx.emitInst(vocNoOp, indexAlloc.pos, 0, max(1, indexAlloc.size))
+    ctx.emitWord(uint32(indexAlloc.pos))
   else:
     let arrAlloc = ctx.genExpr(c.args[0])
     ctx.emitInst(vocStoreAt, valAlloc.pos, arrAlloc.pos, elemSize)
-    ctx.emitInst(vocNoOp, indexAlloc.pos, 0, max(1, indexAlloc.size))
+    ctx.emitWord(uint32(indexAlloc.pos))
     ctx.freeIfTemp(arrAlloc)
 
   ctx.freeIfTemp(valAlloc)
@@ -1470,11 +1470,11 @@ proc genInfix(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation
     if containerName in ctx.cache.shaderParams.ssboToId:
       let bufferId = ctx.cache.shaderParams.ssboToId.getOrDefault(containerName, 0)
       ctx.emitInst(vocStoreBuf, lhs.pos, bufferId, elemSize)
-      ctx.emitInst(vocNoOp, index.pos, 0, max(1, index.size))
+      ctx.emitWord(uint32(index.pos))
     else:
       let container = ctx.genExpr(lhsNode.args[0])
       ctx.emitInst(vocStoreAt, lhs.pos, container.pos, elemSize)
-      ctx.emitInst(vocNoOp, index.pos, 0, max(1, index.size))
+      ctx.emitWord(uint32(index.pos))
       ctx.freeIfTemp(container)
     ctx.freeIfTemp(index)
   ctx.freeIfTemp(rhs)

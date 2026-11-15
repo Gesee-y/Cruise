@@ -328,11 +328,6 @@ proc light() =
     fragmentUniforms[4] = cast[uint32](lightColor.y)
     fragmentUniforms[5] = cast[uint32](lightColor.z)
 
-    fragmentUniforms[12] = cast[uint32](accentColor.x)
-    fragmentUniforms[13] = cast[uint32](accentColor.y)
-    fragmentUniforms[14] = cast[uint32](accentColor.z)
-    fragmentUniforms[15] = cast[uint32](timer)
-
     glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
 
     let aspect = 800.0'f32 / 600.0'f32
@@ -362,6 +357,10 @@ proc light() =
     fragmentUniforms[9] = cast[uint32](camPos.x)
     fragmentUniforms[10] = cast[uint32](camPos.y)
     fragmentUniforms[11] = cast[uint32](camPos.z)
+    fragmentUniforms[12] = cast[uint32](accentColor.x)
+    fragmentUniforms[13] = cast[uint32](accentColor.y)
+    fragmentUniforms[14] = cast[uint32](accentColor.z)
+    fragmentUniforms[15] = cast[uint32](timer)
     uploadUniformBlock(program, "uFragmentUniforms", fragmentUniforms)
 
     var i = 0
@@ -387,12 +386,12 @@ proc light() =
 
       if i == 0:
         glBindVertexArray(vao)
-        uploadBytecode(program, "uVertexBytecode", "uVertexBytecodeLen", objectVertexBytecode)
-        uploadBytecode(program, "uFragmentBytecode", "uFragmentBytecodeLen", objectFragmentBytecode)
+        uploadBytecode(program, "uVertexBytecode", objectVertexBytecode)
+        uploadBytecode(program, "uFragmentBytecode", objectFragmentBytecode)
       else:
         glBindVertexArray(vao2)
-        uploadBytecode(program, "uVertexBytecode", "uVertexBytecodeLen", lightVertexBytecode)
-        uploadBytecode(program, "uFragmentBytecode", "uFragmentBytecodeLen", lightFragmentBytecode)
+        uploadBytecode(program, "uVertexBytecode", lightVertexBytecode)
+        uploadBytecode(program, "uFragmentBytecode", lightFragmentBytecode)
 
       glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, nil)
       inc i

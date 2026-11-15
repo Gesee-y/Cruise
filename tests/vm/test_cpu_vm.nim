@@ -193,9 +193,9 @@ proc testGeneratedUserFunctions() =
   vm.runVM(program)
   assert output[0] == 41'i32,
     "Expected nested generated function result 41, got " & $output[0]
-  assert vm.callStack.len == 0 and vm.stack.len == 0,
-    "Generated calls should restore the caller and argument stack"
-  echo "  -> Pipeline-generated nested calls return 41 and restore both frames"
+  assert vm.stack.len == 0,
+    "Generated calls should clean up their argument and frame data on the stack"
+  echo "  -> Pipeline-generated nested calls return 41 and clean the stack"
 
 proc testMemoryModel() =
   echo "[TEST] Memory Model (Uniforms, SSBO, GlobalID)..."
@@ -213,9 +213,9 @@ proc testMemoryModel() =
     encodeInst(vocAddi, 4, 0, 4),
     encodeInst(vocLoadi, 12, 0, 4), 2u32,
     encodeInst(vocStoreBuf, 4, 0, 4),
-    encodeInst(vocNoOp, 12, 0, 0),
+    12u32,
     encodeInst(vocLoadBuf, 16, 0, 4),
-    encodeInst(vocNoOp, 12, 0, 0),
+    12u32,
     encodeInst(vocHalt, 0, 0, 0)
   ]
 
@@ -483,8 +483,6 @@ proc testBuiltinOpcodes() =
        vocLoadBuf, vocStoreBuf, vocLoadAt, vocStoreAt,
        vocAddCi, vocSubCi, vocMulCi, vocAddCf, vocSubCf, vocMulCf:
       inc pc
-      if op in {vocAddCi, vocSubCi, vocMulCi, vocAddCf, vocSubCf, vocMulCf} and size > 4:
-        inc pc
     else:
       discard
 

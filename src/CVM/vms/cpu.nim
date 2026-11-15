@@ -8,25 +8,16 @@ const
   REGA_POS   = 8
 
 type
-  CallFrame = object
-    returnPc: int
-    parentRegisterBase: int
-    parentStackBase: int
-    argsBase: int
-    returnDst: int
-    returnSize: int
-    calleeRegisterBase: int
-
   CpuVm* = object
     pc*: int
     globalId*: int
     uniform*: seq[uint32]
     memory* {.align: 8.}: array[MAX_MEM, uint8]
     buffers*: seq[pointer]
-    callStack*: seq[CallFrame]
     stack*: seq[uint8]
     registerBase: int
     stackBase: int
+    callFrameBase: int
     halted*: bool
 
 proc initCpuVm*(globalId: int = 0, uniforms: seq[uint32] = @[], buffers: seq[pointer] = @[]): CpuVm =
@@ -34,8 +25,8 @@ proc initCpuVm*(globalId: int = 0, uniforms: seq[uint32] = @[], buffers: seq[poi
   result.globalId = globalId
   result.uniform = uniforms
   result.buffers = buffers
-  result.callStack = @[]
   result.stack = @[]
+  result.callFrameBase = -1
   result.halted = false
 
 proc setUniform*[T](vm: var CpuVm, uniformId: int, val: T) =
@@ -129,8 +120,14 @@ template writeMemFloat(vm: var CpuVm, address: int, size: int, val: float64) =
   else:
     cast[ptr float32](addr vm.memory[address])[] = float32(val)
 
+template readFloatWord(vm: CpuVm, wordIndex: int): float32 =
+  cast[ptr UncheckedArray[float32]](unsafeAddr vm.memory[0])[wordIndex]
+
+template writeFloatWord(vm: var CpuVm, wordIndex: int, value: float32) =
+  cast[ptr UncheckedArray[float32]](addr vm.memory[0])[wordIndex] = value
+
 proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
-  while vm.pc < program.len and not vm.halted:
+  while not vm.halted:
     let word = program[vm.pc]
     var op: VMOpCode
     var dst, src: uint8
@@ -139,23 +136,13 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
     decodeWord(word, op, dst, src, size)
     inc vm.pc
 
-    # Function bytecode uses register addresses local to its own frame.
-    # Address fields that encode immediates, stack slots, IO offsets, or IDs
-    # are deliberately excluded here and handled by their opcode case.
-    let dstIsRegister = op notin {vocHalt, vocCall, vocJmp, vocRet, vocNoOp}
-    let srcIsRegister = op notin {vocHalt, vocLoadi, vocLoadf, vocMovCi,
-      vocMovCf, vocRet, vocJmp, vocJmpFalse, vocSMov,
-      vocLoadUni, vocLoadBuf, vocStoreBuf, vocLoadVertexInput,
-      vocLoadFragmentInput, vocStoreVertexVarying, vocNoOp, vocLoadGI}
-    if dstIsRegister: dst = uint8(int(dst) + vm.registerBase)
-    if srcIsRegister: src = uint8(int(src) + vm.registerBase)
-
     case op
     of vocHalt:
       vm.halted = true
       break
 
     of vocLoadi, vocMovCi:
+      dst = uint8(int(dst) + vm.registerBase)
       let imm = program[vm.pc]
       inc vm.pc
       if size == 8:
@@ -166,6 +153,7 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         vm.writeMemInt(int(dst), size, int64(cast[int32](imm)))
 
     of vocLoadf, vocMovCf:
+      dst = uint8(int(dst) + vm.registerBase)
       let imm = program[vm.pc]
       inc vm.pc
       let fval = cast[float32](imm)
@@ -175,6 +163,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         vm.writeMemFloat(int(dst), size, float64(fval))
 
     of vocConv:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let descriptor = program[vm.pc]
       inc vm.pc
       let sourceType = VMConvType(descriptor and 0xFF'u32)
@@ -220,6 +210,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
           vm.writeMemInt(int(dst), targetSize, value)
 
     of vocMov:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       case size
       of 8:
         cast[ptr uint64](addr vm.memory[dst])[] = cast[ptr uint64](unsafeAddr vm.memory[src])[]
@@ -231,63 +223,88 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         copyMem(addr vm.memory[dst], unsafeAddr vm.memory[src], size)
 
     of vocAbsi:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       vm.writeMemInt(int(dst), size, abs(vm.readMemInt(int(src), size)))
 
     of vocAbsf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       vm.writeMemFloat(int(dst), size, abs(vm.readMemFloat(int(src), size)))
 
     of vocAbsu:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       if dst != src:
         copyMem(addr vm.memory[dst], unsafeAddr vm.memory[src], size)
 
     of vocMini:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let a = vm.readMemInt(int(dst), size)
       let b = vm.readMemInt(int(src), size)
       vm.writeMemInt(int(dst), size, if a < b: a else: b)
 
     of vocMaxi:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let a = vm.readMemInt(int(dst), size)
       let b = vm.readMemInt(int(src), size)
       vm.writeMemInt(int(dst), size, if a > b: a else: b)
 
     of vocMinf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let a = vm.readMemFloat(int(dst), size)
       let b = vm.readMemFloat(int(src), size)
       vm.writeMemFloat(int(dst), size, if a < b: a else: b)
 
     of vocMaxf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let a = vm.readMemFloat(int(dst), size)
       let b = vm.readMemFloat(int(src), size)
       vm.writeMemFloat(int(dst), size, if a > b: a else: b)
 
     of vocMinu:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let a = vm.readMemUInt(int(dst), size)
       let b = vm.readMemUInt(int(src), size)
       vm.writeMemUInt(int(dst), size, if a < b: a else: b)
 
     of vocMaxu:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let a = vm.readMemUInt(int(dst), size)
       let b = vm.readMemUInt(int(src), size)
       vm.writeMemUInt(int(dst), size, if a > b: a else: b)
 
     of vocSqrtf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       vm.writeMemFloat(int(dst), size, sqrt(vm.readMemFloat(int(src), size)))
 
     of vocRsqrtf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       vm.writeMemFloat(int(dst), size, 1.0 / sqrt(vm.readMemFloat(int(src), size)))
 
     of vocSinf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       vm.writeMemFloat(int(dst), size, sin(vm.readMemFloat(int(src), size)))
 
     of vocCosf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       vm.writeMemFloat(int(dst), size, cos(vm.readMemFloat(int(src), size)))
 
     of vocAddCi, vocSubCi, vocMulCi:
-      var immediate = uint64(program[vm.pc])
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
+      let immediate = uint64(program[vm.pc])
       inc vm.pc
-      if size > 4:
-        immediate = immediate or (uint64(program[vm.pc]) shl 32)
-        inc vm.pc
       let value = vm.readMemUInt(int(dst), size)
       case op
       of vocAddCi: vm.writeMemUInt(int(dst), size, value + immediate)
@@ -296,15 +313,12 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       else: discard
 
     of vocAddCf, vocSubCf, vocMulCf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       var immediate: float64
       let low = program[vm.pc]
       inc vm.pc
-      if size > 4:
-        let high = program[vm.pc]
-        inc vm.pc
-        immediate = cast[float64](uint64(low) or (uint64(high) shl 32))
-      else:
-        immediate = float64(cast[float32](low))
+      immediate = float64(cast[float32](low))
       let value = vm.readMemFloat(int(dst), size)
       case op
       of vocAddCf: vm.writeMemFloat(int(dst), size, value + immediate)
@@ -313,6 +327,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       else: discard
 
     of vocAddi:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       if size == 8:
         cast[ptr int64](addr vm.memory[dst])[] += cast[ptr int64](unsafeAddr vm.memory[src])[]
       elif size == 4:
@@ -323,6 +339,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         vm.writeMemInt(int(dst), size, a + b)
 
     of vocSubi:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       if size == 8:
         cast[ptr int64](addr vm.memory[dst])[] -= cast[ptr int64](unsafeAddr vm.memory[src])[]
       elif size == 4:
@@ -333,6 +351,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         vm.writeMemInt(int(dst), size, a - b)
 
     of vocMuli:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       if size == 8:
         cast[ptr int64](addr vm.memory[dst])[] *= cast[ptr int64](unsafeAddr vm.memory[src])[]
       elif size == 4:
@@ -343,64 +363,87 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         vm.writeMemInt(int(dst), size, a * b)
 
     of vocDivi:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let a = vm.readMemInt(int(dst), size)
       let b = vm.readMemInt(int(src), size)
       if b != 0:
         vm.writeMemInt(int(dst), size, a div b)
 
     of vocMod:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let a = vm.readMemInt(int(dst), size)
       let b = vm.readMemInt(int(src), size)
       if b != 0:
         vm.writeMemInt(int(dst), size, a mod b)
 
     of vocAddf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       if size == 4:
-        cast[ptr float32](addr vm.memory[dst])[] += cast[ptr float32](unsafeAddr vm.memory[src])[]
+        let dstWord = int(dst) shr 2
+        let srcWord = int(src) shr 2
+        vm.writeFloatWord(dstWord, vm.readFloatWord(dstWord) + vm.readFloatWord(srcWord))
       else:
         let a = vm.readMemFloat(int(dst), size)
         let b = vm.readMemFloat(int(src), size)
         vm.writeMemFloat(int(dst), size, a + b)
 
     of vocSubf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       if size == 4:
-        cast[ptr float32](addr vm.memory[dst])[] -= cast[ptr float32](unsafeAddr vm.memory[src])[]
+        let dstWord = int(dst) shr 2
+        let srcWord = int(src) shr 2
+        vm.writeFloatWord(dstWord, vm.readFloatWord(dstWord) - vm.readFloatWord(srcWord))
       else:
         let a = vm.readMemFloat(int(dst), size)
         let b = vm.readMemFloat(int(src), size)
         vm.writeMemFloat(int(dst), size, a - b)
 
     of vocMulf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       if size == 4:
-        cast[ptr float32](addr vm.memory[dst])[] *= cast[ptr float32](unsafeAddr vm.memory[src])[]
+        let dstWord = int(dst) shr 2
+        let srcWord = int(src) shr 2
+        vm.writeFloatWord(dstWord, vm.readFloatWord(dstWord) * vm.readFloatWord(srcWord))
       else:
         let a = vm.readMemFloat(int(dst), size)
         let b = vm.readMemFloat(int(src), size)
         vm.writeMemFloat(int(dst), size, a * b)
 
     of vocMaddf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let packedSources = program[vm.pc]
       inc vm.pc
       let mulReg = int(src)
       let rhsReg = int(packedSources and 0xFF'u32) + vm.registerBase
       let addReg = int((packedSources shr 8) and 0xFF'u32) + vm.registerBase
       if size > 4:
-        for offset in countup(0, size - 4, 4):
-          let lhs = cast[ptr float32](unsafeAddr vm.memory[mulReg + offset])[]
-          let rhs = cast[ptr float32](unsafeAddr vm.memory[rhsReg + offset])[]
-          let addend = cast[ptr float32](unsafeAddr vm.memory[addReg + offset])[]
-          cast[ptr float32](addr vm.memory[int(dst) + offset])[] = lhs * rhs + addend
+        let mulWord = mulReg shr 2
+        let rhsWord = rhsReg shr 2
+        let addWord = addReg shr 2
+        let dstWord = int(dst) shr 2
+        for lane in 0 ..< (size shr 2):
+          let lhs = vm.readFloatWord(mulWord + lane)
+          let rhs = vm.readFloatWord(rhsWord + lane)
+          let addend = vm.readFloatWord(addWord + lane)
+          vm.writeFloatWord(dstWord + lane, lhs * rhs + addend)
       elif size == 4:
-        let product = cast[ptr float32](unsafeAddr vm.memory[mulReg])[] *
-                      cast[ptr float32](unsafeAddr vm.memory[rhsReg])[]
-        let addend = cast[ptr float32](unsafeAddr vm.memory[addReg])[]
-        cast[ptr float32](addr vm.memory[dst])[] = product + addend
+        let product = vm.readFloatWord(mulReg shr 2) * vm.readFloatWord(rhsReg shr 2)
+        let addend = vm.readFloatWord(addReg shr 2)
+        vm.writeFloatWord(int(dst) shr 2, product + addend)
       else:
         let product = vm.readMemFloat(mulReg, size) * vm.readMemFloat(rhsReg, size)
         let addend = vm.readMemFloat(addReg, size)
         vm.writeMemFloat(int(dst), size, product + addend)
 
     of vocMaddi:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let packedSources = program[vm.pc]
       inc vm.pc
       let mulReg = int(src)
@@ -414,14 +457,20 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       vm.writeMemInt(int(dst), size, truncatedProduct + addend)
 
     of vocDivf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       if size == 4:
-        cast[ptr float32](addr vm.memory[dst])[] /= cast[ptr float32](unsafeAddr vm.memory[src])[]
+        let dstWord = int(dst) shr 2
+        let srcWord = int(src) shr 2
+        vm.writeFloatWord(dstWord, vm.readFloatWord(dstWord) / vm.readFloatWord(srcWord))
       else:
         let a = vm.readMemFloat(int(dst), size)
         let b = vm.readMemFloat(int(src), size)
         vm.writeMemFloat(int(dst), size, a / b)
 
     of vocNegi:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       if size == 8:
         cast[ptr int64](addr vm.memory[dst])[] = -cast[ptr int64](unsafeAddr vm.memory[src])[]
       elif size == 4:
@@ -431,6 +480,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         vm.writeMemInt(int(dst), size, -b)
 
     of vocNegf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       if size == 4:
         cast[ptr float32](addr vm.memory[dst])[] = -cast[ptr float32](unsafeAddr vm.memory[src])[]
       else:
@@ -438,6 +489,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         vm.writeMemFloat(int(dst), size, -b)
 
     of vocAnd:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       if size == 8:
         cast[ptr uint64](addr vm.memory[dst])[] = cast[ptr uint64](unsafeAddr vm.memory[dst])[] and cast[ptr uint64](unsafeAddr vm.memory[src])[]
       elif size == 4:
@@ -448,6 +501,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         vm.writeMemInt(int(dst), size, a and b)
 
     of vocOr:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       if size == 8:
         cast[ptr uint64](addr vm.memory[dst])[] = cast[ptr uint64](unsafeAddr vm.memory[dst])[] or cast[ptr uint64](unsafeAddr vm.memory[src])[]
       elif size == 4:
@@ -458,6 +513,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         vm.writeMemInt(int(dst), size, a or b)
 
     of vocXor:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       if size == 8:
         cast[ptr uint64](addr vm.memory[dst])[] = cast[ptr uint64](unsafeAddr vm.memory[dst])[] xor cast[ptr uint64](unsafeAddr vm.memory[src])[]
       elif size == 4:
@@ -468,6 +525,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         vm.writeMemInt(int(dst), size, a xor b)
 
     of vocNot:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       if size == 8:
         cast[ptr uint64](addr vm.memory[dst])[] = not cast[ptr uint64](unsafeAddr vm.memory[src])[]
       elif size == 4:
@@ -477,41 +536,57 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         vm.writeMemInt(int(dst), size, not b)
 
     of vocEqi:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let a = vm.readMemInt(int(dst), size)
       let b = vm.readMemInt(int(src), size)
       vm.writeMemInt(int(dst), 1, if a == b: 1 else: 0)
 
     of vocNeqi:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let a = vm.readMemInt(int(dst), size)
       let b = vm.readMemInt(int(src), size)
       vm.writeMemInt(int(dst), 1, if a != b: 1 else: 0)
 
     of vocLti:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let a = vm.readMemInt(int(dst), size)
       let b = vm.readMemInt(int(src), size)
       vm.writeMemInt(int(dst), 1, if a < b: 1 else: 0)
 
     of vocLei:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let a = vm.readMemInt(int(dst), size)
       let b = vm.readMemInt(int(src), size)
       vm.writeMemInt(int(dst), 1, if a <= b: 1 else: 0)
 
     of vocEqf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let a = vm.readMemFloat(int(dst), size)
       let b = vm.readMemFloat(int(src), size)
       vm.writeMemInt(int(dst), 1, if a == b: 1 else: 0)
 
     of vocNeqf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let a = vm.readMemFloat(int(dst), size)
       let b = vm.readMemFloat(int(src), size)
       vm.writeMemInt(int(dst), 1, if a != b: 1 else: 0)
 
     of vocLtf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let a = vm.readMemFloat(int(dst), size)
       let b = vm.readMemFloat(int(src), size)
       vm.writeMemInt(int(dst), 1, if a < b: 1 else: 0)
 
     of vocLef:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let a = vm.readMemFloat(int(dst), size)
       let b = vm.readMemFloat(int(src), size)
       vm.writeMemInt(int(dst), 1, if a <= b: 1 else: 0)
@@ -521,6 +596,7 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       vm.pc = int(target)
 
     of vocJmpFalse:
+      dst = uint8(int(dst) + vm.registerBase)
       let target = program[vm.pc]
       inc vm.pc
       let cond = vm.memory[dst]
@@ -528,9 +604,7 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         vm.pc = int(target)
 
     of vocCall:
-      if vm.pc + 1 >= program.len:
-        vm.halted = true
-        break
+      src = uint8(int(src) + vm.registerBase)
       let target = int(program[vm.pc])
       let frameInfo = program[vm.pc + 1]
       vm.pc += 2
@@ -538,38 +612,57 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       let frameBytes = int(frameInfo shr 16)
       let argsBase = vm.stack.len - argumentBytes
       let calleeBase = vm.registerBase + int(dst)
-      if argsBase < 0 or calleeBase + frameBytes > MAX_MEM:
+      if argsBase < 0 or vm.stack.len > int(high(uint16)) or
+          vm.stackBase > int(high(uint16)) or vm.callFrameBase > int(high(uint16)) or
+          calleeBase + frameBytes > MAX_MEM:
         vm.halted = true
         break
-      vm.callStack.add(CallFrame(returnPc: vm.pc,
-        parentRegisterBase: vm.registerBase, parentStackBase: vm.stackBase,
-        argsBase: argsBase, returnDst: int(src), returnSize: size,
-        calleeRegisterBase: calleeBase))
+      let frameBase = vm.stack.len
+      let previousFrame = if vm.callFrameBase < 0: int(high(uint16)) else: vm.callFrameBase
+      let frame = [uint32(vm.pc),
+        uint32(vm.registerBase) or (uint32(vm.stackBase) shl 16),
+        uint32(previousFrame) or (uint32(argsBase) shl 16),
+        uint32(src) or (uint32(size) shl 8) or (uint32(calleeBase) shl 16)]
+      vm.stack.setLen(frameBase + sizeof(frame))
+      copyMem(addr vm.stack[frameBase], unsafeAddr frame[0], sizeof(frame))
+      vm.callFrameBase = frameBase
       vm.registerBase = calleeBase
       vm.stackBase = argsBase
       vm.pc = target
 
     of vocRet:
-      if vm.callStack.len > 0:
-        let frame = vm.callStack.pop()
-        if frame.returnSize > 0:
-          copyMem(addr vm.memory[frame.returnDst],
-            unsafeAddr vm.memory[frame.calleeRegisterBase], frame.returnSize)
-        vm.stack.setLen(frame.argsBase)
-        vm.registerBase = frame.parentRegisterBase
-        vm.stackBase = frame.parentStackBase
-        vm.pc = frame.returnPc
+      if vm.callFrameBase >= 0 and vm.callFrameBase + 16 <= vm.stack.len:
+        var frame: array[4, uint32]
+        copyMem(addr frame[0], unsafeAddr vm.stack[vm.callFrameBase], sizeof(frame))
+        let parentRegisterBase = int(frame[1] and 0xFFFF'u32)
+        let parentStackBase = int(frame[1] shr 16)
+        let previousFrame = int(frame[2] and 0xFFFF'u32)
+        let argsBase = int(frame[2] shr 16)
+        let returnDst = int(frame[3] and 0xFF'u32)
+        let returnSize = int((frame[3] shr 8) and 0xFF'u32)
+        let calleeBase = int(frame[3] shr 16)
+        if returnSize > 0:
+          copyMem(addr vm.memory[returnDst], unsafeAddr vm.memory[calleeBase], returnSize)
+        vm.stack.setLen(argsBase)
+        vm.registerBase = parentRegisterBase
+        vm.stackBase = parentStackBase
+        vm.callFrameBase = if previousFrame == high(uint16).int: -1 else: previousFrame
+        vm.pc = int(frame[0])
       else:
         vm.halted = true
         break
 
     of vocPush:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let reg = if dst != 0: dst else: src
       let startIdx = vm.stack.len
       vm.stack.setLen(startIdx + size)
       copyMem(addr vm.stack[startIdx], unsafeAddr vm.memory[reg], size)
 
     of vocPop:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let popSize = min(size, vm.stack.len)
       if popSize > 0:
         let startIdx = vm.stack.len - popSize
@@ -577,19 +670,25 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         vm.stack.setLen(startIdx)
 
     of vocSMov:
+      dst = uint8(int(dst) + vm.registerBase)
       let offset = vm.stackBase + int(src)
       if offset + size <= vm.stack.len:
         copyMem(addr vm.memory[dst], unsafeAddr vm.stack[offset], size)
 
     of vocLoad:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let addrReg = vm.memory[src]
       copyMem(addr vm.memory[dst], unsafeAddr vm.memory[addrReg], size)
 
     of vocStore:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let addrReg = vm.memory[dst]
       copyMem(addr vm.memory[addrReg], unsafeAddr vm.memory[src], size)
 
     of vocLoadUni:
+      dst = uint8(int(dst) + vm.registerBase)
       let uIdx = int(src)
       if uIdx < vm.uniform.len:
         if size == 8 and uIdx + 2 <= vm.uniform.len:
@@ -603,12 +702,11 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
           copyMem(addr vm.memory[dst], uBytes, copyBytes)
 
     of vocLoadBuf:
+      dst = uint8(int(dst) + vm.registerBase)
       let bufId = int(src)
-      let nextW = program[vm.pc]
+      let idxReg = int(program[vm.pc]) + vm.registerBase
       inc vm.pc
-      let idxReg = int((nextW shr REGA_POS) and 0xFF'u32) + vm.registerBase
-      let idxSize = max(1, int((nextW shr SIZE_POS) and 0xFF'u32))
-      let index = vm.readMemInt(idxReg, idxSize)
+      let index = vm.readMemInt(idxReg, 4)
       let basePtr = cast[uint](vm.buffers[bufId])
       let elemPtr = cast[pointer](basePtr + uint(index * int64(size)))
       case size
@@ -622,12 +720,11 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         copyMem(addr vm.memory[dst], elemPtr, size)
 
     of vocStoreBuf:
+      dst = uint8(int(dst) + vm.registerBase)
       let bufId = int(src)
-      let nextW = program[vm.pc]
+      let idxReg = int(program[vm.pc]) + vm.registerBase
       inc vm.pc
-      let idxReg = int((nextW shr REGA_POS) and 0xFF'u32) + vm.registerBase
-      let idxSize = max(1, int((nextW shr SIZE_POS) and 0xFF'u32))
-      let index = vm.readMemInt(idxReg, idxSize)
+      let index = vm.readMemInt(idxReg, 4)
       let basePtr = cast[uint](vm.buffers[bufId])
       let elemPtr = cast[pointer](basePtr + uint(index * int64(size)))
       case size
@@ -641,24 +738,27 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         copyMem(elemPtr, unsafeAddr vm.memory[dst], size)
 
     of vocLoadAt:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let arrBase = int(src)
-      let nextW = program[vm.pc]
+      let idxReg = int(program[vm.pc]) + vm.registerBase
       inc vm.pc
-      let idxReg = int((nextW shr REGA_POS) and 0xFF'u32) + vm.registerBase
       let index = int(vm.readMemInt(idxReg, 4))
       let elemAddr = arrBase + index * size
       copyMem(addr vm.memory[dst], unsafeAddr vm.memory[elemAddr], size)
 
     of vocStoreAt:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let arrBase = int(src)
-      let nextW = program[vm.pc]
+      let idxReg = int(program[vm.pc]) + vm.registerBase
       inc vm.pc
-      let idxReg = int((nextW shr REGA_POS) and 0xFF'u32) + vm.registerBase
       let index = int(vm.readMemInt(idxReg, 4))
       let elemAddr = arrBase + index * size
       copyMem(addr vm.memory[elemAddr], unsafeAddr vm.memory[dst], size)
 
     of vocLoadGI:
+      dst = uint8(int(dst) + vm.registerBase)
       if size == 8:
         cast[ptr int64](addr vm.memory[dst])[] = int64(vm.globalId)
       elif size == 4:
@@ -671,15 +771,22 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
 
     of vocLoadVertexInput, vocLoadFragmentInput, vocStoreVertexOutput,
        vocStoreVertexVarying, vocStoreFragmentOutput:
+      dst = uint8(int(dst) + vm.registerBase)
       discard # Stage I/O is provided by the GLSL VM, not the CPU interpreter.
 
     of vocSample2D:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       inc vm.pc # texture id follows; sampling itself is GPU-only
 
     of vocSampleLod:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       inc vm.pc # packed texture id and LOD register follow; GPU-only
 
     of vocMmatvec2f:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let vx = cast[ptr float32](unsafeAddr vm.memory[dst])[]
       let vy = cast[ptr float32](unsafeAddr vm.memory[dst + 4])[]
       let c0x = cast[ptr float32](unsafeAddr vm.memory[src])[]
@@ -690,6 +797,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       cast[ptr float32](addr vm.memory[dst + 4])[] = c0y * vx + c1y * vy
 
     of vocMmatvec2i:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let vx = cast[ptr int32](unsafeAddr vm.memory[dst])[]
       let vy = cast[ptr int32](unsafeAddr vm.memory[dst + 4])[]
       let c0x = cast[ptr int32](unsafeAddr vm.memory[src])[]
@@ -700,6 +809,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       cast[ptr int32](addr vm.memory[dst + 4])[] = c0y * vx + c1y * vy
 
     of vocMmatvec3f:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let vx = cast[ptr float32](unsafeAddr vm.memory[dst])[]
       let vy = cast[ptr float32](unsafeAddr vm.memory[dst + 4])[]
       let vz = if size >= 12: cast[ptr float32](unsafeAddr vm.memory[dst + 8])[] else: 1.0'f32
@@ -712,6 +823,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       copyMem(addr vm.memory[dst], addr res[0], 12)
 
     of vocMmatvec3i:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let vx = cast[ptr int32](unsafeAddr vm.memory[dst])[]
       let vy = cast[ptr int32](unsafeAddr vm.memory[dst + 4])[]
       let vz = if size >= 12: cast[ptr int32](unsafeAddr vm.memory[dst + 8])[] else: 1'i32
@@ -724,6 +837,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       copyMem(addr vm.memory[dst], addr res[0], 12)
 
     of vocMmatvec4f:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let vx = cast[ptr float32](unsafeAddr vm.memory[dst])[]
       let vy = cast[ptr float32](unsafeAddr vm.memory[dst + 4])[]
       let vz = if size >= 12: cast[ptr float32](unsafeAddr vm.memory[dst + 8])[] else: 0.0'f32
@@ -737,6 +852,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       copyMem(addr vm.memory[dst], addr res[0], 16)
 
     of vocMmatvec4i:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let vx = cast[ptr int32](unsafeAddr vm.memory[dst])[]
       let vy = cast[ptr int32](unsafeAddr vm.memory[dst + 4])[]
       let vz = if size >= 12: cast[ptr int32](unsafeAddr vm.memory[dst + 8])[] else: 0'i32
@@ -750,6 +867,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       copyMem(addr vm.memory[dst], addr res[0], 16)
 
     of vocMmat2f:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       var res: array[4, float32]
       for c in 0..<2:
         for r in 0..<2:
@@ -762,6 +881,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       copyMem(addr vm.memory[dst], addr res[0], 16)
 
     of vocMmat2i:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       var res: array[4, int32]
       for c in 0..<2:
         for r in 0..<2:
@@ -774,6 +895,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       copyMem(addr vm.memory[dst], addr res[0], 16)
 
     of vocMmat3f:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       var res: array[9, float32]
       for c in 0..<3:
         for r in 0..<3:
@@ -786,6 +909,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       copyMem(addr vm.memory[dst], addr res[0], 36)
 
     of vocMmat3i:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       var res: array[9, int32]
       for c in 0..<3:
         for r in 0..<3:
@@ -798,6 +923,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       copyMem(addr vm.memory[dst], addr res[0], 36)
 
     of vocMmat4f:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       var res: array[16, float32]
       for c in 0..<4:
         for r in 0..<4:
@@ -810,6 +937,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       copyMem(addr vm.memory[dst], addr res[0], 64)
 
     of vocMmat4i:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       var res: array[16, int32]
       for c in 0..<4:
         for r in 0..<4:
@@ -822,42 +951,56 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       copyMem(addr vm.memory[dst], addr res[0], 64)
 
     of vocVecAddi:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let count = max(1, size)
       let sVal = cast[ptr int32](unsafeAddr vm.memory[src])[]
       for i in 0..<count:
         cast[ptr int32](addr vm.memory[int(dst) + i * 4])[] += sVal
 
     of vocVecAddf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let count = max(1, size)
       let sVal = cast[ptr float32](unsafeAddr vm.memory[src])[]
       for i in 0..<count:
         cast[ptr float32](addr vm.memory[int(dst) + i * 4])[] += sVal
 
     of vocVecSubi:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let count = max(1, size)
       let sVal = cast[ptr int32](unsafeAddr vm.memory[src])[]
       for i in 0..<count:
         cast[ptr int32](addr vm.memory[int(dst) + i * 4])[] -= sVal
 
     of vocVecSubf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let count = max(1, size)
       let sVal = cast[ptr float32](unsafeAddr vm.memory[src])[]
       for i in 0..<count:
         cast[ptr float32](addr vm.memory[int(dst) + i * 4])[] -= sVal
 
     of vocVecMuli:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let count = max(1, size)
       let sVal = cast[ptr int32](unsafeAddr vm.memory[src])[]
       for i in 0..<count:
         cast[ptr int32](addr vm.memory[int(dst) + i * 4])[] *= sVal
 
     of vocVecMulf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let count = max(1, size)
       let sVal = cast[ptr float32](unsafeAddr vm.memory[src])[]
       for i in 0..<count:
         cast[ptr float32](addr vm.memory[int(dst) + i * 4])[] *= sVal
 
     of vocNormalize:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let dim = max(2, size)
       var sumSq = 0.0'f32
       for i in 0..<dim:
@@ -870,6 +1013,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         cast[ptr float32](addr vm.memory[int(dst) + i * 4])[] = val * invLen
 
     of vocDot2:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let ax = cast[ptr float32](unsafeAddr vm.memory[src])[]
       let ay = cast[ptr float32](unsafeAddr vm.memory[src + 4])[]
       let bx = cast[ptr float32](unsafeAddr vm.memory[size])[]
@@ -877,6 +1022,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       cast[ptr float32](addr vm.memory[dst])[] = ax * bx + ay * by
 
     of vocDot3:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let ax = cast[ptr float32](unsafeAddr vm.memory[src])[]
       let ay = cast[ptr float32](unsafeAddr vm.memory[src + 4])[]
       let az = cast[ptr float32](unsafeAddr vm.memory[src + 8])[]
@@ -886,6 +1033,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       cast[ptr float32](addr vm.memory[dst])[] = ax * bx + ay * by + az * bz
 
     of vocDot4:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       var sum = 0.0'f32
       for i in 0..<4:
         sum += cast[ptr float32](unsafeAddr vm.memory[int(src) + i * 4])[] *
@@ -893,6 +1042,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       cast[ptr float32](addr vm.memory[dst])[] = sum
 
     of vocTranspose2:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       var res: array[4, float32]
       for c in 0..<2:
         for r in 0..<2:
@@ -900,6 +1051,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       copyMem(addr vm.memory[dst], addr res[0], 16)
 
     of vocTranspose3:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       var res: array[9, float32]
       for c in 0..<3:
         for r in 0..<3:
@@ -907,6 +1060,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       copyMem(addr vm.memory[dst], addr res[0], 36)
 
     of vocTranspose4:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       var res: array[16, float32]
       for c in 0..<4:
         for r in 0..<4:
@@ -914,6 +1069,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       copyMem(addr vm.memory[dst], addr res[0], 64)
 
     of vocInvert2:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let a = cast[ptr float32](unsafeAddr vm.memory[src])[]
       let b = cast[ptr float32](unsafeAddr vm.memory[src + 4])[]
       let c = cast[ptr float32](unsafeAddr vm.memory[src + 8])[]
@@ -924,10 +1081,14 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       copyMem(addr vm.memory[dst], addr res[0], 16)
 
     of vocInvert3, vocInvert4:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       # Copy through for fallback if general 4x4 inverse not needed on CPU
       copyMem(addr vm.memory[dst], unsafeAddr vm.memory[src], if op == vocInvert3: 36 else: 64)
 
     of vocReflect2:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let ix = cast[ptr float32](unsafeAddr vm.memory[dst])[]
       let iy = cast[ptr float32](unsafeAddr vm.memory[dst + 4])[]
       let nx = cast[ptr float32](unsafeAddr vm.memory[src])[]
@@ -937,6 +1098,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       cast[ptr float32](addr vm.memory[dst + 4])[] = iy - 2.0'f32 * dotProd * ny
 
     of vocReflect3:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let ix = cast[ptr float32](unsafeAddr vm.memory[dst])[]
       let iy = cast[ptr float32](unsafeAddr vm.memory[dst + 4])[]
       let iz = cast[ptr float32](unsafeAddr vm.memory[dst + 8])[]
@@ -949,6 +1112,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       cast[ptr float32](addr vm.memory[dst + 8])[] = iz - 2.0'f32 * dotProd * nz
 
     of vocCross3:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let ax = cast[ptr float32](unsafeAddr vm.memory[dst])[]
       let ay = cast[ptr float32](unsafeAddr vm.memory[dst + 4])[]
       let az = cast[ptr float32](unsafeAddr vm.memory[dst + 8])[]
@@ -960,6 +1125,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       cast[ptr float32](addr vm.memory[dst + 8])[] = ax * by - ay * bx
 
     of vocLengthf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       var sumSq = 0.0'f32
       for i in 0..<max(2, size):
         let v = cast[ptr float32](unsafeAddr vm.memory[int(src) + i * 4])[]
@@ -967,6 +1134,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       cast[ptr float32](addr vm.memory[dst])[] = sqrt(sumSq)
 
     of vocRefractf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let etaReg = int(program[vm.pc] and 0xFF'u32) + vm.registerBase
       inc vm.pc
       let count = max(2, size)
@@ -985,6 +1154,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
           else: eta * iVal - (eta * dotNI + sqrt(k)) * nVal
 
     of vocUnaryMathf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let selector = program[vm.pc]
       inc vm.pc
       for i in 0..<max(1, size):
@@ -1020,6 +1191,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         cast[ptr float32](addr vm.memory[int(dst) + i * 4])[] = output
 
     of vocBinaryMathf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let descriptor = program[vm.pc]
       inc vm.pc
       let selector = descriptor and 0xFF'u32
@@ -1039,6 +1212,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         cast[ptr float32](addr vm.memory[leftAddr])[] = output
 
     of vocFaceforward:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let refNormal = int(program[vm.pc] and 0xFF'u32) + vm.registerBase
       inc vm.pc
       var dotProduct = 0.0'f32
@@ -1051,12 +1226,16 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         cast[ptr float32](addr vm.memory[address])[] *= sign
 
     of vocMatrixCompMult:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       for i in 0..<max(1, size):
         let address = int(dst) + i * 4
         let rhs = cast[ptr float32](unsafeAddr vm.memory[int(src) + i * 4])[]
         cast[ptr float32](addr vm.memory[address])[] *= rhs
 
     of vocDeterminantf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let dim = max(2, size)
       var matrix: array[16, float32]
       for i in 0..<(dim * dim):
@@ -1084,6 +1263,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       cast[ptr float32](addr vm.memory[dst])[] = determinant
 
     of vocPowi:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let count = max(1, size)
       let expVal = int(cast[ptr int32](unsafeAddr vm.memory[src])[])
       for i in 0..<count:
@@ -1093,6 +1274,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         cast[ptr int32](addr vm.memory[int(dst) + i * 4])[] = r
 
     of vocPowf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let count = max(1, size)
       let expVal = cast[ptr float32](unsafeAddr vm.memory[src])[]
       for i in 0..<count:
@@ -1100,18 +1283,24 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         cast[ptr float32](addr vm.memory[int(dst) + i * 4])[] = pow(baseVal, expVal)
 
     of vocVecNegf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       for i in 0..<max(1, size):
         let address = int(dst) + i * sizeof(float32)
         cast[ptr float32](addr vm.memory[address])[] =
           -cast[ptr float32](unsafeAddr vm.memory[address])[]
 
     of vocVecNegi:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       for i in 0..<max(1, size):
         let address = int(dst) + i * sizeof(int32)
         cast[ptr int32](addr vm.memory[address])[] =
           -cast[ptr int32](unsafeAddr vm.memory[address])[]
 
     of vocFloorf, vocFractf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       for i in 0..<max(1, size):
         let address = int(dst) + i * 4
         let value = cast[ptr float32](unsafeAddr vm.memory[int(src) + i * 4])[]
@@ -1119,6 +1308,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
           if op == vocFloorf: floor(value).float32 else: value - floor(value).float32
 
     of vocStepf, vocSmoothstepf, vocMixf, vocClampf:
+      dst = uint8(int(dst) + vm.registerBase)
+      src = uint8(int(src) + vm.registerBase)
       let descriptor = program[vm.pc]
       inc vm.pc
       let count = max(1, size)
