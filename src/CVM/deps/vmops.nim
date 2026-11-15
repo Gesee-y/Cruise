@@ -51,8 +51,8 @@ type
     vocStore   = 19  ## mem[dst] = src  (indirect store)
 
     # Control flow
-    vocCall    = 20  ## call procedure at address encoded in the next word
-    vocRet     = 21  ## return from current procedure
+    vocCall    = 20  ## call: dst=callee frame offset, src=caller return dst, size=return bytes; target and packed (frame bytes, arg bytes) follow
+    vocRet     = 21  ## return R0 from current frame to the callsite
     vocJmp     = 22  ## unconditional jump; target in the next bytecode word
     vocJmpFalse = 23 ## jump if dst == 0; target in the next bytecode word
 

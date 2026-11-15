@@ -152,24 +152,47 @@ proc testLoopsAndBranches() =
   echo "  -> OK (sum=45, i=10)"
 
 proc testProcedureCall() =
-  echo "[TEST] Procedure Call & Return..."
+  echo "[TEST] Nested Procedure Call, Arguments & Return..."
   var vm = initCpuVm()
   var prog: seq[uint32] = @[
-    encodeInst(vocLoadi, 0, 0, 4), 5u32,
-    encodeInst(vocLoadi, 4, 0, 4), 12u32,
+    encodeInst(vocMovCi, 0, 0, 4), 5u32,
     encodeInst(vocPush, 0, 0, 4),
-    encodeInst(vocPush, 4, 0, 4),
-    encodeInst(vocCall, 0, 0, 0), 9u32,
+    encodeInst(vocCall, 8, 4, 4), 7u32, (12'u32 shl 16) or 4'u32,
     encodeInst(vocHalt, 0, 0, 0),
-    encodeInst(vocPop, 8, 0, 4),
-    encodeInst(vocPop, 12, 0, 4),
-    encodeInst(vocAddi, 8, 12, 4),
+    encodeInst(vocSMov, 4, 0, 4),
+    encodeInst(vocPush, 4, 0, 4),
+    encodeInst(vocCall, 12, 8, 4), 14u32, (8'u32 shl 16) or 4'u32,
+    encodeInst(vocMov, 0, 8, 4),
+    encodeInst(vocRet, 0, 0, 0),
+    encodeInst(vocSMov, 4, 0, 4),
+    encodeInst(vocMovCi, 0, 0, 4), 2u32,
+    encodeInst(vocAddi, 4, 0, 4),
+    encodeInst(vocMov, 0, 4, 4),
     encodeInst(vocRet, 0, 0, 0)
   ]
   vm.runVM(prog)
-  let res = cast[ptr int32](addr vm.memory[8])[]
-  assert res == 17, "Expected R8 == 17, got " & $res
-  echo "  -> OK (call & ret returned 17)"
+  let res = cast[ptr int32](addr vm.memory[4])[]
+  assert res == 7, "Expected nested call result 7 in R4, got " & $res
+  assert vm.stack.len == 0, "Expected call arguments to be cleaned up"
+  echo "  -> OK (nested argument call returned 7 in the caller frame)"
+
+proc testGeneratedUserFunctions() =
+  echo "[TEST] User-defined function bytecode pipeline..."
+  var f = open("test_user_functions.cbc", fmRead)
+  var program: seq[uint32] = @[]
+  var word: uint32
+  while f.readBuffer(addr word, sizeof(uint32)) == sizeof(uint32):
+    program.add(word)
+  close(f)
+  assert program.len > 0, "test_user_functions.cbc is empty"
+  var output = @[0'i32]
+  var vm = initCpuVm(buffers = @[cast[pointer](addr output[0])])
+  vm.runVM(program)
+  assert output[0] == 41'i32,
+    "Expected nested generated function result 41, got " & $output[0]
+  assert vm.callStack.len == 0 and vm.stack.len == 0,
+    "Generated calls should restore the caller and argument stack"
+  echo "  -> Pipeline-generated nested calls return 41 and restore both frames"
 
 proc testMemoryModel() =
   echo "[TEST] Memory Model (Uniforms, SSBO, GlobalID)..."
@@ -255,14 +278,14 @@ proc testVectorAddShader() =
   assert program.len > 0, "test_vector_add.cbc is empty"
 
   const N = 8
-  var a = newSeq[int](N)
-  var b = newSeq[int](N)
-  var c = newSeq[int](N)
+  var a = newSeq[float32](N)
+  var b = newSeq[float32](N)
+  var c = newSeq[float32](N)
 
   for i in 0 ..< N:
-    a[i] = (i + 1) * 10    # 10, 20, 30, ...
-    b[i] = (i + 1) * 5     # 5, 10, 15, ...
-    c[i] = 0
+    a[i] = float32((i + 1) * 10)    # 10, 20, 30, ...
+    b[i] = float32((i + 1) * 5)     # 5, 10, 15, ...
+    c[i] = 0.0'f32
 
   # Simulate dispatching GPU threads: globalId from 0 to N-1
   for gid in 0 ..< N:
@@ -418,9 +441,9 @@ proc testBuiltinOpcodes() =
   var a = @[-4.0'f32, 9.0'f32, -1.0'f32, 2.25'f32]
   var b = @[1.0'f32, -16.0'f32, 4.0'f32, -1.0'f32]
   var c = newSeq[float32](a.len)
-  var ia = @[-7'i64, 2'i64, -1'i64, 8'i64]
-  var ib = @[3'i64, -4'i64, 5'i64, -2'i64]
-  var ic = newSeq[int64](ia.len)
+  var ia = @[-7'i32, 2'i32, -1'i32, 8'i32]
+  var ib = @[3'i32, -4'i32, 5'i32, -2'i32]
+  var ic = newSeq[int32](ia.len)
   for gid in 0 ..< a.len:
     var vm = initCpuVm(globalId = gid)
     vm.setBuffer(0, cast[pointer](addr a[0]))
@@ -455,6 +478,7 @@ proc main() =
   testGeneratedConversion()
   testLoopsAndBranches()
   testProcedureCall()
+  testGeneratedUserFunctions()
   testMemoryModel()
   testGeneratedObjAndLoopsBytecode()
   testVectorAddShader()

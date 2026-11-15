@@ -7,7 +7,11 @@
 # ################################################################################################################################ #
 
 type
-  CMemLoc = int ## Virtual-memory address (word index).
+  CMemLoc = int ## Virtual-memory byte address.
+
+  CallPatch = object
+    targetPos: int
+    frameInfoPos: int
 
   CBytecode = object
     data: seq[uint32]
@@ -15,7 +19,8 @@ type
     ## Maps each proc name to its starting word index in `data`.
     ## Entries start at -1 (placeholder) and are backpatched by `genFunc`.
     procTable: Table[string, int]
-    callToPatch: Table[string, seq[int]]
+    callToPatch: Table[string, seq[CallPatch]]
+    frameSizes: Table[string, int]
     currentPos: int
 
   LoopContext = object
@@ -843,12 +848,22 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       ctx.freeIfTemp(arg)
       return
 
-    result = target
+    let returnTypeName = ctx.cache.inferType(c)
+    let returnSize = if returnTypeName in ["", "void", "auto"]: 0
+                     else: max(0, ctx.cache.getType(returnTypeName).size)
+    result = if returnSize == 0: CAllocation(pos: 0, size: 0)
+             elif target.size >= returnSize: target
+             else: ctx.code.allocator.alloc(returnSize)
+    # The call header has one byte for a register-file offset (memory is 256
+    # bytes). A saturated frame will be rejected by the VM's frame-size check.
+    let frameOffset = min(255, ctx.code.allocator.highWaterMark)
     var argsToFree: seq[CAllocation] = @[]
+    var argumentBytes = 0
 
     for i in 1 ..< c.args.len:
       let argAlloc = ctx.genExpr(c.args[i])
       ctx.emitInst(vocPush, argAlloc.pos, 0, argAlloc.size)
+      argumentBytes += argAlloc.size
       argsToFree.add(argAlloc)
 
     for argAlloc in argsToFree:
@@ -856,13 +871,18 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
 
     let procPos = ctx.code.procTable.getOrDefault(procName, -1)
 
-    ctx.emitInst(vocCall, 0, result.pos)
-    let patchPos = ctx.code.data.len
+    ctx.emitInst(vocCall, frameOffset, result.pos, returnSize)
+    let targetPos = ctx.code.data.len
     ctx.emitWord(if procPos >= 0: uint32(procPos) else: 0u32)
+    let frameInfoPos = ctx.code.data.len
+    let calleeFrameSize = ctx.code.frameSizes.getOrDefault(procName, -1)
+    let packedFrameInfo = (uint32(max(0, calleeFrameSize)) shl 16) or
+                          uint32(argumentBytes and 0xFFFF)
+    ctx.emitWord(packedFrameInfo)
 
-    if procPos < 0:
+    if procPos < 0 or calleeFrameSize < 0:
       var list = ctx.code.callToPatch.getOrDefault(procName, @[])
-      list.add(patchPos)
+      list.add(CallPatch(targetPos: targetPos, frameInfoPos: frameInfoPos))
       ctx.code.callToPatch[procName] = list
     return
 
@@ -1250,6 +1270,8 @@ proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
     ctx.entryPoint = ctx.code.currentPos
   ctx.currentProcName = name
   ctx.code.procTable[name] = ctx.code.currentPos
+  let parentAllocator = ctx.code.allocator
+  ctx.code.allocator = newVramAllocator()
   
   # Stack offset, yeah could have a better name but who cares ?
   var offset = 0
@@ -1312,9 +1334,8 @@ proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
 
   if ctx.code.callToPatch.hasKey(name):
     let patchList = ctx.code.callToPatch.getOrDefault(name, @[])
-    for patchPos in patchList:
-      ctx.code.data[patchPos] = uint32(ctx.code.currentPos)
-    ctx.code.callToPatch.del(name)
+    for patch in patchList:
+      ctx.code.data[patch.targetPos] = uint32(ctx.code.currentPos)
 
   ctx.genStmt(c.args[3])
 
@@ -1340,6 +1361,16 @@ proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
         else: discard
 
   ctx.emitInst(vocRet, 0, 0)
+
+  let frameSize = ctx.code.allocator.highWaterMark
+  ctx.code.frameSizes[name] = frameSize
+  for patch in ctx.code.callToPatch.getOrDefault(name, @[]):
+    ctx.code.data[patch.targetPos] = uint32(ctx.code.procTable.getOrDefault(name, 0))
+    ctx.code.data[patch.frameInfoPos] = (uint32(frameSize) shl 16) or
+      (ctx.code.data[patch.frameInfoPos] and 0xFFFF'u32)
+  if ctx.code.callToPatch.hasKey(name):
+    ctx.code.callToPatch.del(name)
+  ctx.code.allocator = parentAllocator
 
 proc genStmt*(ctx: var CodeGenCtx, c: CIRNode) =
   case c.kind

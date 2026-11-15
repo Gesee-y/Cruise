@@ -21,8 +21,8 @@ const
 
 type
   # Representation of an allocation.
-  # `pos`    – start address in virtual memory (word index).
-  # `size`   – number of virtual-memory words owned by this allocation.
+  # `pos`    – start byte address in virtual memory.
+  # `size`   – number of virtual-memory bytes owned by this allocation.
   # `isTemp` – true when the allocation is a scratch temporary that must be freed
   #            manually; false when it is a named variable managed by `updateTick`.
   CAllocation* = object
@@ -99,6 +99,7 @@ proc alloc*(c: var CVramAllocator, size, line, col: int,
                                 lastUse: compactifyLineInfo(lline, lcol),
                                 isTemp: false)
   c.allocator.fillAlloc(s, size)
+  c.maxMem = max(c.maxMem, s + size)
   c.active[compactifyLineInfo(line, col)] = allocation
   result = allocation
 
@@ -108,6 +109,7 @@ proc alloc*(c: var CVramAllocator, size: int): CAllocation =
   ## `isTemp` is set to `true` to signal this obligation.
   let s = c.allocator.getSpace(size)
   c.allocator.fillAlloc(s, size)
+  c.maxMem = max(c.maxMem, s + size)
   result = CAllocation(pos: s, size: size, isTemp: true)
 
 proc lookup*(c: var CVramAllocator, line, col: int): CAllocation =
@@ -118,3 +120,7 @@ proc lookup*(c: var CVramAllocator, line, col: int): CAllocation =
 
 proc newVramAllocator*(): CVramAllocator =
   result = CVramAllocator(active: initTable[uint, CAllocation]())
+
+proc highWaterMark*(c: CVramAllocator): int {.inline.} =
+  ## Highest byte address reached, even if that allocation has since been freed.
+  c.maxMem

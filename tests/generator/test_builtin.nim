@@ -8,8 +8,8 @@ setShaderName("test_builtin")
 
 proc main(gid {.globalIndex.}: int, a {.ssbo.}: seq[float32],
           b {.ssbo.}: seq[float32], c {.ssbo.}: var seq[float32],
-          ia {.ssbo.}: seq[int], ib {.ssbo.}: seq[int],
-          ic {.ssbo.}: var seq[int]) =
+          ia {.ssbo.}: seq[int32], ib {.ssbo.}: seq[int32],
+          ic {.ssbo.}: var seq[int32]) =
   var x = a[gid]
   var y = b[gid]
   var addf = x + float32(2)

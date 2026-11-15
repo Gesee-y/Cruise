@@ -633,7 +633,7 @@ proc toIR(n: NifCursor): CIRNode =
       result.add(toIR(it))
     of NoExpr:
       case c.stmtKind:
-      of VarS, LetS, GvarS, GletS:
+      of VarS, LetS, GvarS, GletS, ResultS:
         result = newCIRNode(c.info, cnkVarTy)
         let isGlobal = c.stmtKind in {GletS, GvarS}
         let symNode = firstChild(n)
@@ -664,7 +664,7 @@ proc toIR(n: NifCursor): CIRNode =
         result.add(sd)
         skip typ
 
-        if typ.kind == DotToken:
+        if typ.kind == DotToken and c.stmtKind != ResultS:
           reportIRError typ.info, "A variable can't be uninitialized to be translated to bytecode."
         result.add(toIR(typ))
       of AsgnS:

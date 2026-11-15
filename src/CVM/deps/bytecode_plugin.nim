@@ -50,7 +50,8 @@ proc generateBytecode(n: var NifCursor): NifBuilder =
     code: CBytecode(
       allocator: newVramAllocator(),
       procTable: initTable[string, int](),
-      callToPatch: initTable[string, seq[int]](),
+      callToPatch: initTable[string, seq[CallPatch]](),
+      frameSizes: initTable[string, int](),
       data: @[]
     )
   )

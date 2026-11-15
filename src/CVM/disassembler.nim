@@ -64,7 +64,7 @@ proc disassemble*(code: openArray[uint32]) =
         pc += 1
 
     # Instructions de saut / appel dont la cible est dans le mot suivant
-    of vocJmp, vocJmpFalse, vocCall:
+    of vocJmp, vocJmpFalse:
       if pc + 1 < code.len:
         let target = code[pc + 1]
         let targetHex = "0x" & target.toHex(4)
@@ -73,6 +73,19 @@ proc disassemble*(code: openArray[uint32]) =
       else:
         echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED TARGET>"
         pc += 1
+
+    of vocCall:
+      if pc + 2 < code.len:
+        let target = code[pc + 1]
+        let frameInfo = code[pc + 2]
+        let targetHex = "0x" & target.toHex(4)
+        let argumentBytes = frameInfo and 0xFFFF'u32
+        let frameBytes = frameInfo shr 16
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}->R{src}, frame +{dst}, ret={size}B, args={argumentBytes}B, callee={frameBytes}B, @{targetHex}"
+        pc += 3
+      else:
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} <TRUNCATED CALL>"
+        pc = code.len
 
     of vocMaddf, vocMaddi:
       if pc + 1 < code.len:

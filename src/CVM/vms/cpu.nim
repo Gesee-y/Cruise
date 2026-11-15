@@ -8,14 +8,25 @@ const
   REGA_POS   = 8
 
 type
+  CallFrame = object
+    returnPc: int
+    parentRegisterBase: int
+    parentStackBase: int
+    argsBase: int
+    returnDst: int
+    returnSize: int
+    calleeRegisterBase: int
+
   CpuVm* = object
     pc*: int
     globalId*: int
     uniform*: seq[uint32]
     memory* {.align: 8.}: array[MAX_MEM, uint8]
     buffers*: seq[pointer]
-    callStack*: seq[int]
+    callStack*: seq[CallFrame]
     stack*: seq[uint8]
+    registerBase: int
+    stackBase: int
     halted*: bool
 
 proc initCpuVm*(globalId: int = 0, uniforms: seq[uint32] = @[], buffers: seq[pointer] = @[]): CpuVm =
@@ -43,9 +54,9 @@ proc setBuffer*(vm: var CpuVm, bufId: int, bufPtr: pointer) =
   vm.buffers[bufId] = bufPtr
 
 proc decodeWord*(word: uint32, op: var VMOpCode, dst, src: var uint8, size: var int) {.inline.} =
-  size = int((word shr SIZE_POS) and 0xFF'u32)
-  if size == 0: size = 1
   op   = VMOpCode((word shr OPCODE_POS) and 0xFF'u32)
+  size = int((word shr SIZE_POS) and 0xFF'u32)
+  if size == 0 and op != vocCall: size = 1
   dst  = uint8((word shr REGA_POS) and 0xFF'u32)
   src  = uint8(word and 0xFF'u32)
 
@@ -127,6 +138,17 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
 
     decodeWord(word, op, dst, src, size)
     inc vm.pc
+
+    # Function bytecode uses register addresses local to its own frame.
+    # Address fields that encode immediates, stack slots, IO offsets, or IDs
+    # are deliberately excluded here and handled by their opcode case.
+    let dstIsRegister = op notin {vocHalt, vocCall, vocJmp, vocRet, vocNoOp}
+    let srcIsRegister = op notin {vocHalt, vocLoadi, vocLoadf, vocMovCi,
+      vocMovCf, vocRet, vocJmp, vocJmpFalse, vocSMov,
+      vocLoadUni, vocLoadBuf, vocStoreBuf, vocLoadVertexInput,
+      vocLoadFragmentInput, vocStoreVertexVarying, vocNoOp, vocLoadGI}
+    if dstIsRegister: dst = uint8(int(dst) + vm.registerBase)
+    if srcIsRegister: src = uint8(int(src) + vm.registerBase)
 
     case op
     of vocHalt:
@@ -360,8 +382,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       let packedSources = program[vm.pc]
       inc vm.pc
       let mulReg = int(src)
-      let rhsReg = int(packedSources and 0xFF'u32)
-      let addReg = int((packedSources shr 8) and 0xFF'u32)
+      let rhsReg = int(packedSources and 0xFF'u32) + vm.registerBase
+      let addReg = int((packedSources shr 8) and 0xFF'u32) + vm.registerBase
       if size == 4:
         let product = cast[ptr float32](unsafeAddr vm.memory[mulReg])[] *
                       cast[ptr float32](unsafeAddr vm.memory[rhsReg])[]
@@ -376,8 +398,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       let packedSources = program[vm.pc]
       inc vm.pc
       let mulReg = int(src)
-      let rhsReg = int(packedSources and 0xFF'u32)
-      let addReg = int((packedSources shr 8) and 0xFF'u32)
+      let rhsReg = int(packedSources and 0xFF'u32) + vm.registerBase
+      let addReg = int((packedSources shr 8) and 0xFF'u32) + vm.registerBase
       let product = vm.readMemInt(mulReg, size) * vm.readMemInt(rhsReg, size)
       # Preserve the intermediate-width truncation of separate multiply/add
       # instructions for int8 and int16 values.
@@ -501,14 +523,37 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         vm.pc = int(target)
 
     of vocCall:
-      let target = program[vm.pc]
-      inc vm.pc
-      vm.callStack.add(vm.pc)
-      vm.pc = int(target)
+      if vm.pc + 1 >= program.len:
+        vm.halted = true
+        break
+      let target = int(program[vm.pc])
+      let frameInfo = program[vm.pc + 1]
+      vm.pc += 2
+      let argumentBytes = int(frameInfo and 0xFFFF'u32)
+      let frameBytes = int(frameInfo shr 16)
+      let argsBase = vm.stack.len - argumentBytes
+      let calleeBase = vm.registerBase + int(dst)
+      if argsBase < 0 or calleeBase + frameBytes > MAX_MEM:
+        vm.halted = true
+        break
+      vm.callStack.add(CallFrame(returnPc: vm.pc,
+        parentRegisterBase: vm.registerBase, parentStackBase: vm.stackBase,
+        argsBase: argsBase, returnDst: int(src), returnSize: size,
+        calleeRegisterBase: calleeBase))
+      vm.registerBase = calleeBase
+      vm.stackBase = argsBase
+      vm.pc = target
 
     of vocRet:
       if vm.callStack.len > 0:
-        vm.pc = vm.callStack.pop()
+        let frame = vm.callStack.pop()
+        if frame.returnSize > 0:
+          copyMem(addr vm.memory[frame.returnDst],
+            unsafeAddr vm.memory[frame.calleeRegisterBase], frame.returnSize)
+        vm.stack.setLen(frame.argsBase)
+        vm.registerBase = frame.parentRegisterBase
+        vm.stackBase = frame.parentStackBase
+        vm.pc = frame.returnPc
       else:
         vm.halted = true
         break
@@ -527,7 +572,7 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         vm.stack.setLen(startIdx)
 
     of vocSMov:
-      let offset = int(src)
+      let offset = vm.stackBase + int(src)
       if offset + size <= vm.stack.len:
         copyMem(addr vm.memory[dst], unsafeAddr vm.stack[offset], size)
 
@@ -560,6 +605,7 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       var idxReg, dummySrc: uint8
       var idxSize: int
       decodeWord(nextW, noopOp, idxReg, dummySrc, idxSize)
+      idxReg = uint8(int(idxReg) + vm.registerBase)
       let index = vm.readMemInt(int(idxReg), idxSize)
       let basePtr = cast[uint](vm.buffers[bufId])
       let elemPtr = cast[pointer](basePtr + uint(index * int64(size)))
@@ -581,6 +627,7 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       var idxReg, dummySrc: uint8
       var idxSize: int
       decodeWord(nextW, noopOp, idxReg, dummySrc, idxSize)
+      idxReg = uint8(int(idxReg) + vm.registerBase)
       let index = vm.readMemInt(int(idxReg), idxSize)
       let basePtr = cast[uint](vm.buffers[bufId])
       let elemPtr = cast[pointer](basePtr + uint(index * int64(size)))
@@ -602,6 +649,7 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       var idxReg, dummySrc: uint8
       var dummySize: int
       decodeWord(nextW, noopOp, idxReg, dummySrc, dummySize)
+      idxReg = uint8(int(idxReg) + vm.registerBase)
       let index = int(vm.readMemInt(int(idxReg), 4))
       let elemAddr = arrBase + index * size
       copyMem(addr vm.memory[dst], unsafeAddr vm.memory[elemAddr], size)
@@ -614,6 +662,7 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       var idxReg, dummySrc: uint8
       var dummySize: int
       decodeWord(nextW, noopOp, idxReg, dummySrc, dummySize)
+      idxReg = uint8(int(idxReg) + vm.registerBase)
       let index = int(vm.readMemInt(int(idxReg), 4))
       let elemAddr = arrBase + index * size
       copyMem(addr vm.memory[elemAddr], unsafeAddr vm.memory[dst], size)
@@ -927,7 +976,7 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       cast[ptr float32](addr vm.memory[dst])[] = sqrt(sumSq)
 
     of vocRefractf:
-      let etaReg = int(program[vm.pc] and 0xFF'u32)
+      let etaReg = int(program[vm.pc] and 0xFF'u32) + vm.registerBase
       inc vm.pc
       let count = max(2, size)
       var dotNI = 0.0'f32
@@ -999,7 +1048,7 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
         cast[ptr float32](addr vm.memory[leftAddr])[] = output
 
     of vocFaceforward:
-      let refNormal = int(program[vm.pc] and 0xFF'u32)
+      let refNormal = int(program[vm.pc] and 0xFF'u32) + vm.registerBase
       inc vm.pc
       var dotProduct = 0.0'f32
       for i in 0..<max(2, size):
@@ -1084,7 +1133,7 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       let count = max(1, size)
       let firstBroadcast = (descriptor and 0x100'u32) != 0
       let secondBroadcast = (descriptor and 0x200'u32) != 0
-      let thirdSrc = int(descriptor and 0xFF'u32)
+      let thirdSrc = int(descriptor and 0xFF'u32) + vm.registerBase
       for i in 0..<count:
         let outAddr = int(dst) + i * 4
         let secondAddr = int(src) + (if firstBroadcast: 0 else: i * 4)
