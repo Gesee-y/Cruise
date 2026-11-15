@@ -37,7 +37,7 @@ proc disassemble*(code: openArray[uint32]) =
 
     case op
     # Instructions avec valeur immédiate dans le mot suivant (ex: vocLoadi R0, #10)
-    of vocLoadi, vocLoadf:
+    of vocLoadi, vocLoadf, vocMovCi, vocMovCf:
       if pc + 1 < code.len:
         let imm = code[pc + 1]
         echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, #{imm}"

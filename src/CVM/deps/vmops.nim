@@ -75,7 +75,7 @@ type
     # Immediate loads — value is encoded in the *next* bytecode word
     vocLoadi   = 34  ## dst = <next word>  (int immediate)
     vocLoadf   = 35  ## dst = <next word>  (float immediate)
-    
+
     vocSMov    = 36  ## A move from a value on the stack to a register
 
     # Memory model (uniforms, buffers, GPU indexing)
@@ -155,3 +155,6 @@ type
     vocSmoothstepf = 108 ## dst=x; src=edge0; descriptor carries edge1 and broadcast flags
     vocMixf = 109 ## dst=x; src=y; descriptor carries factor and broadcast flag
     vocClampf = 110 ## dst=x; src=lower; descriptor carries upper and broadcast flags
+    
+    vocMovCi = 111 ## dst = next bytecode word interpreted as an integer immediate
+    vocMovCf = 112 ## dst = next bytecode word interpreted as a float32 immediate

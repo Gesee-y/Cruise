@@ -399,7 +399,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
                  result.pos, lhs.pos, opSize)
     ctx.emitWord(uint32(rhs.pos and 0xFF) or (uint32(addend.pos and 0xFF) shl 8))
 
-    if result.pos != target.pos:
+    if target.pos != -1 and result.pos != target.pos:
       ctx.emitInst(vocMov, target.pos, result.pos, opSize)
       ctx.code.allocator.free(result)
       result = target
@@ -706,8 +706,8 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
     return
 
   of cnkBoolLit:
-    result = target
-    ctx.emitInst(vocLoadi, result.pos, 0)
+    result = if target.pos != -1: target else: ctx.code.allocator.alloc(1)
+    ctx.emitInst(vocMovCi, result.pos, 0)
     ctx.emitWord(if c.boolVal: 1u32 else: 0u32)
     return
 
@@ -779,25 +779,25 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
 
   of cnkIntLit:
     result = if target.size >= INT_SIZE: target else: ctx.code.allocator.alloc(INT_SIZE)
-    ctx.emitInst(vocLoadi, result.pos, 0, INT_SIZE)
+    ctx.emitInst(vocMovCi, result.pos, 0, INT_SIZE)
     ctx.emitWord(cast[uint32](c.intVal))
     return
 
   of cnkUintLit:
     result = if target.size >= INT_SIZE: target else: ctx.code.allocator.alloc(INT_SIZE)
-    ctx.emitInst(vocLoadi, result.pos, 0, INT_SIZE)
+    ctx.emitInst(vocMovCi, result.pos, 0, INT_SIZE)
     ctx.emitWord(cast[uint32](c.uintVal))
     return
 
   of cnkFloatLit:
     result = if target.size >= FLOAT_SIZE: target else: ctx.code.allocator.alloc(FLOAT_SIZE)
-    ctx.emitInst(vocLoadf, result.pos, 0, FLOAT_SIZE)
+    ctx.emitInst(vocMovCf, result.pos, 0, FLOAT_SIZE)
     ctx.emitWord(cast[uint32](float32(c.floatVal)))
     return
 
   of cnkCharLit:
     result = if target.size >= CHAR_SIZE: target else: ctx.code.allocator.alloc(CHAR_SIZE)
-    ctx.emitInst(vocLoadi, result.pos, 0)
+    ctx.emitInst(vocMovCi, result.pos, 0)
     ctx.emitWord(uint32(ord(c.charVal)))
     return
 
@@ -984,7 +984,7 @@ proc genFor(ctx: var CodeGenCtx, c: CIRNode) =
 
   # Increment: varAlloc += 1
   let oneAlloc = ctx.code.allocator.alloc(1)
-  ctx.emitInst(vocLoadi, oneAlloc.pos, 0)
+  ctx.emitInst(vocMovCi, oneAlloc.pos, 0)
   ctx.emitWord(1u32)
   ctx.emitInst(vocAddi, varAlloc.pos, oneAlloc.pos)
   ctx.freeIfTemp(oneAlloc)

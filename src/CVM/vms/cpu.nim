@@ -133,7 +133,7 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       vm.halted = true
       break
 
-    of vocLoadi:
+    of vocLoadi, vocMovCi:
       let imm = program[vm.pc]
       inc vm.pc
       if size == 8:
@@ -143,7 +143,7 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       else:
         vm.writeMemInt(int(dst), size, int64(cast[int32](imm)))
 
-    of vocLoadf:
+    of vocLoadf, vocMovCf:
       let imm = program[vm.pc]
       inc vm.pc
       let fval = cast[float32](imm)
