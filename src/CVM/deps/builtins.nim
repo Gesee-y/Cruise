@@ -96,6 +96,22 @@ proc registerBuiltins*(c: var TypeCache) =
   # Reflect
   c.registerBinaryOp("reflect", "vec2f", "vec2f", "vec2f")
   c.registerBinaryOp("reflect", "vec3f", "vec3f", "vec3f")
+  c.registerBinaryOp("cross", "vec3f", "vec3f", "vec3f")
+  c.registerUnaryOp("length", "float", "float")
+  c.registerUnaryOp("length", "float32", "float32")
+  c.registerUnaryOp("length", "vec2f", "float32")
+  c.registerUnaryOp("length", "vec3f", "float32")
+  c.registerUnaryOp("length", "vec4f", "float32")
+  for ty in floatVectorTypes:
+    for scalarTy in ["float", "float32"]:
+      c.registerFn("refract", [ty, ty, scalarTy], ty)
+    c.registerBinaryOp("distance", ty, ty, "float32")
+  c.registerBinaryOp("distance", "float", "float", "float")
+  c.registerBinaryOp("distance", "float32", "float32", "float32")
+  c.registerFn("sampleLod", ["sampler2D", "vec2f", "float32"], "vec4f")
+  c.registerFn("sampleLod", ["sampler2D", "vec2f", "float"], "vec4f")
+  c.registerFn("textureLod", ["sampler2D", "vec2f", "float32"], "vec4f")
+  c.registerFn("textureLod", ["sampler2D", "vec2f", "float"], "vec4f")
 
   # Pow
   for sTy in ["float", "float32"]:
@@ -108,6 +124,8 @@ proc registerBuiltins*(c: var TypeCache) =
     c.registerUnaryOp("transpose", mTy, mTy)
     c.registerUnaryOp("inverse", mTy, mTy)
     c.registerUnaryOp("invert", mTy, mTy)
+    c.registerUnaryOp("determinant", mTy, "float32")
+    c.registerBinaryOp("matrixCompMult", mTy, mTy, mTy)
 
   # Vector constructors (newVec2f, newVec3f, newVec4f)
   for name in ["newVec2", "newVec2f"]:
@@ -134,6 +152,31 @@ proc registerBuiltins*(c: var TypeCache) =
     c.registerUnaryOp("abs", ty, ty)
     c.registerBinaryOp("min", ty, ty, ty)
     c.registerBinaryOp("max", ty, ty, ty)
+
+  const shaderUnaryMath = ["tan", "asin", "acos", "atan", "exp", "log",
+    "exp2", "log2", "ceil", "trunc", "round", "sign", "radians",
+    "degrees", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh"]
+  for ty in ["float", "float32"]:
+    for name in shaderUnaryMath:
+      c.registerUnaryOp(name, ty, ty)
+    c.registerBinaryOp("atan", ty, ty, ty)
+    c.registerBinaryOp("mod", ty, ty, ty)
+  for ty in floatVectorTypes:
+    c.registerUnaryOp("inversesqrt", ty, ty)
+    c.registerUnaryOp("abs", ty, ty)
+    c.registerBinaryOp("min", ty, ty, ty)
+    c.registerBinaryOp("max", ty, ty, ty)
+    c.registerBinaryOp("min", ty, "float", ty)
+    c.registerBinaryOp("min", ty, "float32", ty)
+    c.registerBinaryOp("max", ty, "float", ty)
+    c.registerBinaryOp("max", ty, "float32", ty)
+    for name in shaderUnaryMath:
+      c.registerUnaryOp(name, ty, ty)
+    c.registerBinaryOp("atan", ty, ty, ty)
+    c.registerBinaryOp("mod", ty, ty, ty)
+    c.registerBinaryOp("mod", ty, "float", ty)
+    c.registerBinaryOp("mod", ty, "float32", ty)
+    c.registerFn("faceforward", [ty, ty, ty], ty)
   
   c.registerUnaryOp("not", "bool", "bool")
   c.registerUnaryOp("sqrt", "float", "float")
@@ -142,6 +185,9 @@ proc registerBuiltins*(c: var TypeCache) =
   c.registerUnaryOp("rsqrt", "float", "float")
   c.registerUnaryOp("rsqrt", "float32", "float32")
   c.registerUnaryOp("rsqrt", "float64", "float64")
+  c.registerUnaryOp("inversesqrt", "float", "float")
+  c.registerUnaryOp("inversesqrt", "float32", "float32")
+  c.registerUnaryOp("inversesqrt", "float64", "float64")
   for op in ["sin", "cos"]:
     c.registerUnaryOp(op, "float", "float")
     c.registerUnaryOp(op, "float32", "float32")

@@ -105,6 +105,24 @@ proc disassemble*(code: openArray[uint32]) =
         echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED TEXID>"
         pc += 1
 
+    of vocRefractf, vocSampleLod, vocUnaryMathf, vocBinaryMathf, vocFaceforward:
+      if pc + 1 < code.len:
+        let descriptor = code[pc + 1]
+        if op == vocRefractf:
+          echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src}, eta=R{descriptor and 0xFF'u32}"
+        elif op == vocSampleLod:
+          echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, Tex{descriptor and 0xFF'u32}, UV=R{src}, LOD=R{(descriptor shr 8) and 0xFF'u32}"
+        elif op == vocFaceforward:
+          echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src}, Nref=R{descriptor and 0xFF'u32}"
+        elif op == vocBinaryMathf:
+          echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src}, descriptor=0x{descriptor.toHex(8)}"
+        else:
+          echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, selector={descriptor}"
+        pc += 2
+      else:
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src}, <TRUNCATED DESCRIPTOR>"
+        pc += 1
+
     of vocStepf, vocSmoothstepf, vocMixf, vocClampf:
       if pc + 1 < code.len:
         let descriptor = code[pc + 1]

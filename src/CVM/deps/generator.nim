@@ -201,13 +201,39 @@ proc builtinOpcode(name, typeName: string): VMOpCode =
     elif isUnsigned: vocMaxu
     else: vocMaxi
   of "sqrt": vocSqrtf
-  of "rsqrt": vocRsqrtf
+  of "rsqrt", "inversesqrt": vocRsqrtf
   of "cos": vocCosf
   of "sin": vocSinf
   of "floor": vocFloorf
   of "fract": vocFractf
   of "sample": vocSample2D
   else: assert false, "Unsupported builtin opcode: " & name
+
+proc unaryMathSelector(name: string): uint32 =
+  case name
+  of "tan": 0'u32
+  of "asin": 1'u32
+  of "acos": 2'u32
+  of "atan": 3'u32
+  of "exp": 4'u32
+  of "log": 5'u32
+  of "exp2": 6'u32
+  of "log2": 7'u32
+  of "ceil": 8'u32
+  of "trunc": 9'u32
+  of "round": 10'u32
+  of "sign": 11'u32
+  of "radians": 12'u32
+  of "degrees": 13'u32
+  of "sinh": 14'u32
+  of "cosh": 15'u32
+  of "tanh": 16'u32
+  of "asinh": 17'u32
+  of "acosh": 18'u32
+  of "atanh": 19'u32
+  of "abs": 20'u32
+  of "inversesqrt": 21'u32
+  else: assert false, "Unsupported unary shading function: " & name
 
 # ################################################################################################################################ #
 # ##################################################### VARIABLE RESOLUTION ###################################################### #
@@ -461,7 +487,72 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
 
   of cnkCall:
     let procName = c.args[0].name
-    if procName in ["abs", "sqrt", "rsqrt", "sin", "cos", "floor", "fract"]:
+    if procName in ["tan", "asin", "acos", "atan", "exp", "log", "exp2",
+                    "log2", "ceil", "trunc", "round", "sign", "radians",
+                    "degrees", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh",
+                    "inversesqrt"] and
+       c.args.len == 2:
+      let arg = ctx.genExpr(c.args[1])
+      let tyName = ctx.cache.inferType(c.args[1])
+      let argSize = max(4, ctx.cache.getType(tyName).size)
+      let lanes = argSize div 4
+      result = if target.size >= argSize: target else: ctx.code.allocator.alloc(argSize)
+      ctx.emitInst(vocUnaryMathf, result.pos, arg.pos, lanes)
+      ctx.emitWord(unaryMathSelector(procName))
+      ctx.freeIfTemp(arg)
+      return
+
+    if procName == "abs" and c.args.len == 2 and
+       ctx.cache.inferType(c.args[1]).startsWith("vec"):
+      let arg = ctx.genExpr(c.args[1])
+      let tyName = ctx.cache.inferType(c.args[1])
+      let argSize = max(4, ctx.cache.getType(tyName).size)
+      result = if target.size >= argSize: target else: ctx.code.allocator.alloc(argSize)
+      ctx.emitInst(vocUnaryMathf, result.pos, arg.pos, argSize div 4)
+      ctx.emitWord(unaryMathSelector("abs"))
+      ctx.freeIfTemp(arg)
+      return
+
+    if procName in ["atan", "mod", "min", "max"] and c.args.len == 3 and
+       (procName in ["atan", "mod"] or ctx.cache.inferType(c.args[1]).startsWith("vec")):
+      let lhs = ctx.genExpr(c.args[1])
+      let rhs = ctx.genExpr(c.args[2])
+      let tyName = ctx.cache.inferType(c.args[1])
+      let resultSize = max(4, ctx.cache.getType(tyName).size)
+      let lanes = resultSize div 4
+      result = if target.size >= resultSize: target else: ctx.code.allocator.alloc(resultSize)
+      if result.pos != lhs.pos:
+        ctx.emitInst(vocMov, result.pos, lhs.pos, resultSize)
+      let selector = case procName
+        of "atan": 0'u32
+        of "mod": 1'u32
+        of "min": 2'u32
+        else: 3'u32
+      let broadcast = lanes > 1 and rhs.size == 4
+      ctx.emitInst(vocBinaryMathf, result.pos, rhs.pos, lanes)
+      ctx.emitWord(selector or (if broadcast: 0x100'u32 else: 0'u32))
+      ctx.freeIfTemp(lhs)
+      ctx.freeIfTemp(rhs)
+      return
+
+    if procName == "faceforward":
+      let normal = ctx.genExpr(c.args[1])
+      let incident = ctx.genExpr(c.args[2])
+      let refNormal = ctx.genExpr(c.args[3])
+      let tyName = ctx.cache.inferType(c.args[1])
+      let size = max(8, ctx.cache.getType(tyName).size)
+      let lanes = size div 4
+      result = if target.size >= size: target else: ctx.code.allocator.alloc(size)
+      if result.pos != normal.pos:
+        ctx.emitInst(vocMov, result.pos, normal.pos, size)
+      ctx.emitInst(vocFaceforward, result.pos, incident.pos, lanes)
+      ctx.emitWord(uint32(refNormal.pos and 0xFF))
+      ctx.freeIfTemp(normal)
+      ctx.freeIfTemp(incident)
+      ctx.freeIfTemp(refNormal)
+      return
+
+    if procName in ["abs", "sqrt", "rsqrt", "inversesqrt", "sin", "cos", "floor", "fract"]:
       var argNode = c.args[1]
       let typeName = ctx.cache.inferType(argNode)
       let size = max(1, ctx.cache.getType(typeName).size)
@@ -562,6 +653,18 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       ctx.freeIfTemp(uvAlloc)
       return
 
+    if procName in ["sampleLod", "textureLod"]:
+      let texName = c.args[1].name
+      let texId = ctx.cache.shaderParams.textureToId.getOrDefault(texName, 0)
+      let uvAlloc = ctx.genExpr(c.args[2])
+      let lodAlloc = ctx.genExpr(c.args[3])
+      result = if target.size >= 16: target else: ctx.code.allocator.alloc(16)
+      ctx.emitInst(vocSampleLod, result.pos, uvAlloc.pos, 4)
+      ctx.emitWord(uint32(texId and 0xFF) or (uint32(lodAlloc.pos and 0xFF) shl 8))
+      ctx.freeIfTemp(uvAlloc)
+      ctx.freeIfTemp(lodAlloc)
+      return
+
     if procName in ["newVec2", "newVec2f", "newVec3", "newVec3f", "newVec4", "newVec4f"]:
       let totalWords = if procName in ["newVec2", "newVec2f"]: 2
                        elif procName in ["newVec3", "newVec3f"]: 3
@@ -622,6 +725,64 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       ctx.freeIfTemp(r2)
       return
 
+    if procName == "distance":
+      let a = ctx.genExpr(c.args[1])
+      let b = ctx.genExpr(c.args[2])
+      let vecSize = a.size
+      let delta = ctx.code.allocator.alloc(vecSize)
+      result = if target.size >= 4: target else: ctx.code.allocator.alloc(4)
+      if delta.pos != a.pos:
+        ctx.emitInst(vocMov, delta.pos, a.pos, vecSize)
+      ctx.emitInst(vocSubf, delta.pos, b.pos, vecSize)
+      if vecSize == 4:
+        ctx.emitInst(vocAbsf, result.pos, delta.pos, 4)
+      else:
+        ctx.emitInst(vocLengthf, result.pos, delta.pos, vecSize div 4)
+      ctx.code.allocator.free(delta)
+      ctx.freeIfTemp(a)
+      ctx.freeIfTemp(b)
+      return
+
+    if procName == "cross":
+      let lhs = ctx.genExpr(c.args[1])
+      let rhs = ctx.genExpr(c.args[2])
+      result = if target.size >= 12: target else: ctx.code.allocator.alloc(12)
+      if result.pos != lhs.pos:
+        ctx.emitInst(vocMov, result.pos, lhs.pos, 12)
+      ctx.emitInst(vocCross3, result.pos, rhs.pos, 3)
+      ctx.freeIfTemp(lhs)
+      ctx.freeIfTemp(rhs)
+      return
+
+    if procName == "length":
+      let arg = ctx.genExpr(c.args[1])
+      let tyName = ctx.cache.inferType(c.args[1])
+      result = if target.size >= 4: target else: ctx.code.allocator.alloc(4)
+      let argSize = ctx.cache.getType(tyName).size
+      if argSize == 4:
+        ctx.emitInst(vocAbsf, result.pos, arg.pos, 4)
+      else:
+        ctx.emitInst(vocLengthf, result.pos, arg.pos, argSize div 4)
+      ctx.freeIfTemp(arg)
+      return
+
+    if procName == "refract":
+      let incident = ctx.genExpr(c.args[1])
+      let normal = ctx.genExpr(c.args[2])
+      let eta = ctx.genExpr(c.args[3])
+      let tyName = ctx.cache.inferType(c.args[1])
+      let bytes = max(8, ctx.cache.getType(tyName).size)
+      let lanes = bytes div 4
+      result = if target.size >= bytes: target else: ctx.code.allocator.alloc(bytes)
+      if result.pos != incident.pos:
+        ctx.emitInst(vocMov, result.pos, incident.pos, bytes)
+      ctx.emitInst(vocRefractf, result.pos, normal.pos, lanes)
+      ctx.emitWord(uint32(eta.pos and 0xFF))
+      ctx.freeIfTemp(incident)
+      ctx.freeIfTemp(normal)
+      ctx.freeIfTemp(eta)
+      return
+
     if procName == "pow":
       let arg0 = c.args[1]
       let tyName = ctx.cache.inferType(arg0)
@@ -636,6 +797,28 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       ctx.emitInst(op, result.pos, r2.pos, count)
       ctx.freeIfTemp(r1)
       ctx.freeIfTemp(r2)
+      return
+
+    if procName == "matrixCompMult":
+      let tyName = ctx.cache.inferType(c.args[1])
+      let matrixSize = max(16, ctx.cache.getType(tyName).size)
+      let lhs = ctx.genExpr(c.args[1])
+      let rhs = ctx.genExpr(c.args[2])
+      result = if target.size >= matrixSize: target else: ctx.code.allocator.alloc(matrixSize)
+      if result.pos != lhs.pos:
+        ctx.emitInst(vocMov, result.pos, lhs.pos, matrixSize)
+      ctx.emitInst(vocMatrixCompMult, result.pos, rhs.pos, matrixSize div 4)
+      ctx.freeIfTemp(lhs)
+      ctx.freeIfTemp(rhs)
+      return
+
+    if procName == "determinant":
+      let tyName = ctx.cache.inferType(c.args[1])
+      let dim = if tyName.contains("2"): 2 elif tyName.contains("3"): 3 else: 4
+      let matrix = ctx.genExpr(c.args[1])
+      result = if target.size >= 4: target else: ctx.code.allocator.alloc(4)
+      ctx.emitInst(vocDeterminantf, result.pos, matrix.pos, dim)
+      ctx.freeIfTemp(matrix)
       return
 
     if procName == "transpose":

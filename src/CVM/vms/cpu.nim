@@ -634,7 +634,10 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       discard # Stage I/O is provided by the GLSL VM, not the CPU interpreter.
 
     of vocSample2D:
-      discard # Sampler2D is handled by GPU VMs
+      inc vm.pc # texture id follows; sampling itself is GPU-only
+
+    of vocSampleLod:
+      inc vm.pc # packed texture id and LOD register follow; GPU-only
 
     of vocMmatvec2f:
       let vx = cast[ptr float32](unsafeAddr vm.memory[dst])[]
@@ -904,6 +907,141 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       cast[ptr float32](addr vm.memory[dst])[] = ix - 2.0'f32 * dotProd * nx
       cast[ptr float32](addr vm.memory[dst + 4])[] = iy - 2.0'f32 * dotProd * ny
       cast[ptr float32](addr vm.memory[dst + 8])[] = iz - 2.0'f32 * dotProd * nz
+
+    of vocCross3:
+      let ax = cast[ptr float32](unsafeAddr vm.memory[dst])[]
+      let ay = cast[ptr float32](unsafeAddr vm.memory[dst + 4])[]
+      let az = cast[ptr float32](unsafeAddr vm.memory[dst + 8])[]
+      let bx = cast[ptr float32](unsafeAddr vm.memory[src])[]
+      let by = cast[ptr float32](unsafeAddr vm.memory[src + 4])[]
+      let bz = cast[ptr float32](unsafeAddr vm.memory[src + 8])[]
+      cast[ptr float32](addr vm.memory[dst])[] = ay * bz - az * by
+      cast[ptr float32](addr vm.memory[dst + 4])[] = az * bx - ax * bz
+      cast[ptr float32](addr vm.memory[dst + 8])[] = ax * by - ay * bx
+
+    of vocLengthf:
+      var sumSq = 0.0'f32
+      for i in 0..<max(2, size):
+        let v = cast[ptr float32](unsafeAddr vm.memory[int(src) + i * 4])[]
+        sumSq += v * v
+      cast[ptr float32](addr vm.memory[dst])[] = sqrt(sumSq)
+
+    of vocRefractf:
+      let etaReg = int(program[vm.pc] and 0xFF'u32)
+      inc vm.pc
+      let count = max(2, size)
+      var dotNI = 0.0'f32
+      for i in 0..<count:
+        let iVal = cast[ptr float32](unsafeAddr vm.memory[int(dst) + i * 4])[]
+        let nVal = cast[ptr float32](unsafeAddr vm.memory[int(src) + i * 4])[]
+        dotNI += nVal * iVal
+      let eta = cast[ptr float32](unsafeAddr vm.memory[etaReg])[]
+      let k = 1.0'f32 - eta * eta * (1.0'f32 - dotNI * dotNI)
+      for i in 0..<count:
+        let iVal = cast[ptr float32](unsafeAddr vm.memory[int(dst) + i * 4])[]
+        let nVal = cast[ptr float32](unsafeAddr vm.memory[int(src) + i * 4])[]
+        cast[ptr float32](addr vm.memory[int(dst) + i * 4])[] =
+          if k < 0.0'f32: 0.0'f32
+          else: eta * iVal - (eta * dotNI + sqrt(k)) * nVal
+
+    of vocUnaryMathf:
+      let selector = program[vm.pc]
+      inc vm.pc
+      for i in 0..<max(1, size):
+        let address = int(src) + i * 4
+        let value = cast[ptr float32](unsafeAddr vm.memory[address])[]
+        var output: float32
+        case selector
+        of 0: output = sin(value) / cos(value)
+        of 1: output = arcsin(value)
+        of 2: output = arccos(value)
+        of 3: output = arctan(value)
+        of 4: output = exp(value)
+        of 5: output = ln(value)
+        of 6: output = pow(2.0'f32, value)
+        of 7: output = ln(value) / ln(2.0'f32)
+        of 8: output = -floor(-value).float32
+        of 9: output = (if value < 0.0'f32: -1.0'f32 else: 1.0'f32) * floor(abs(value)).float32
+        of 10: output = (if value < 0.0'f32: -1.0'f32 else: 1.0'f32) * floor(abs(value) + 0.5'f32).float32
+        of 11: output = if value > 0.0'f32: 1.0'f32 elif value < 0.0'f32: -1.0'f32 else: 0.0'f32
+        of 12: output = value * 0.017453292519943295'f32
+        of 13: output = value * 57.29577951308232'f32
+        of 14: output = (exp(value) - exp(-value)) * 0.5'f32
+        of 15: output = (exp(value) + exp(-value)) * 0.5'f32
+        of 16:
+          let e = exp(2.0'f32 * value)
+          output = (e - 1.0'f32) / (e + 1.0'f32)
+        of 17: output = ln(value + sqrt(value * value + 1.0'f32))
+        of 18: output = ln(value + sqrt(value * value - 1.0'f32))
+        of 19: output = 0.5'f32 * ln((1.0'f32 + value) / (1.0'f32 - value))
+        of 20: output = abs(value)
+        of 21: output = 1.0'f32 / sqrt(value)
+        else: output = value
+        cast[ptr float32](addr vm.memory[int(dst) + i * 4])[] = output
+
+    of vocBinaryMathf:
+      let descriptor = program[vm.pc]
+      inc vm.pc
+      let selector = descriptor and 0xFF'u32
+      let broadcast = (descriptor and 0x100'u32) != 0
+      for i in 0..<max(1, size):
+        let leftAddr = int(dst) + i * 4
+        let rightAddr = int(src) + (if broadcast: 0 else: i * 4)
+        let left = cast[ptr float32](unsafeAddr vm.memory[leftAddr])[]
+        let right = cast[ptr float32](unsafeAddr vm.memory[rightAddr])[]
+        let output =
+          case selector
+          of 0: arctan2(left, right).float32
+          of 1: left - right * floor(left / right).float32
+          of 2: min(left, right)
+          of 3: max(left, right)
+          else: left
+        cast[ptr float32](addr vm.memory[leftAddr])[] = output
+
+    of vocFaceforward:
+      let refNormal = int(program[vm.pc] and 0xFF'u32)
+      inc vm.pc
+      var dotProduct = 0.0'f32
+      for i in 0..<max(2, size):
+        dotProduct += cast[ptr float32](unsafeAddr vm.memory[refNormal + i * 4])[] *
+                      cast[ptr float32](unsafeAddr vm.memory[int(src) + i * 4])[]
+      let sign = if dotProduct < 0.0'f32: 1.0'f32 else: -1.0'f32
+      for i in 0..<max(2, size):
+        let address = int(dst) + i * 4
+        cast[ptr float32](addr vm.memory[address])[] *= sign
+
+    of vocMatrixCompMult:
+      for i in 0..<max(1, size):
+        let address = int(dst) + i * 4
+        let rhs = cast[ptr float32](unsafeAddr vm.memory[int(src) + i * 4])[]
+        cast[ptr float32](addr vm.memory[address])[] *= rhs
+
+    of vocDeterminantf:
+      let dim = max(2, size)
+      var matrix: array[16, float32]
+      for i in 0..<(dim * dim):
+        matrix[i] = cast[ptr float32](unsafeAddr vm.memory[int(src) + i * 4])[]
+      var determinant = 1.0'f32
+      for col in 0..<dim:
+        var pivot = col
+        for row in (col + 1)..<dim:
+          if abs(matrix[row * dim + col]) > abs(matrix[pivot * dim + col]):
+            pivot = row
+        let pivotValue = matrix[pivot * dim + col]
+        if abs(pivotValue) <= 1e-20'f32:
+          determinant = 0.0'f32
+          break
+        if pivot != col:
+          for j in 0..<dim:
+            swap(matrix[col * dim + j], matrix[pivot * dim + j])
+          determinant = -determinant
+        let diagonal = matrix[col * dim + col]
+        determinant *= diagonal
+        for row in (col + 1)..<dim:
+          let factor = matrix[row * dim + col] / diagonal
+          for j in (col + 1)..<dim:
+            matrix[row * dim + j] -= factor * matrix[col * dim + j]
+      cast[ptr float32](addr vm.memory[dst])[] = determinant
 
     of vocPowi:
       let count = max(1, size)

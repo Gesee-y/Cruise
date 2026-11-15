@@ -11,7 +11,7 @@ type
     data: seq[byte]
     elementSize: int
 
-proc readBytecode*(path: string, maxBytecodeWord=256): seq[uint32] =
+proc readBytecode*(path: string, maxBytecodeWord=512): seq[uint32] =
   if not fileExists(path):
     raise newException(IOError, "Bytecode file not found: " & path)
   var file = open(path, fmRead)

@@ -113,7 +113,7 @@ type
 
     vocSinf = 68 ## dst = sin(src), float
     vocCosf = 69 ## dst = cos(src), float
-    
+
     vocSample2D = 70 ## vocSample2D.16 dstReg, coordReg (next word is the Texture ID)
     vocMmatvec2f = 71 ## vocMmatvec2f dstAndVecReg, matReg, multiply a mat2 by a vec2
     vocMmatvec2i = 72
@@ -155,6 +155,15 @@ type
     vocSmoothstepf = 108 ## dst=x; src=edge0; descriptor carries edge1 and broadcast flags
     vocMixf = 109 ## dst=x; src=y; descriptor carries factor and broadcast flag
     vocClampf = 110 ## dst=x; src=lower; descriptor carries upper and broadcast flags
-    
+
     vocMovCi = 111 ## dst = next bytecode word interpreted as an integer immediate
     vocMovCf = 112 ## dst = next bytecode word interpreted as a float32 immediate
+    vocCross3 = 113 ## dst = cross(dst, src), three float lanes
+    vocLengthf = 114 ## dst = length(src), size is source vector lane count
+    vocRefractf = 115 ## dst=incident, src=normal; size is lane count; eta register follows
+    vocSampleLod = 116 ## dst=vec4, src=uv; packed texture ID and LOD register follows
+    vocUnaryMathf = 117 ## dst[i] = unaryMath(op, src[i]); operation selector follows
+    vocBinaryMathf = 118 ## dst[i] = binaryMath(dst[i], src[i]); selector/broadcast flags follow
+    vocFaceforward = 119 ## dst=N, src=I; Nref register follows
+    vocMatrixCompMult = 120 ## dst[i] *= src[i]; size is matrix float lane count
+    vocDeterminantf = 121 ## dst=determinant(src); size is matrix dimension
