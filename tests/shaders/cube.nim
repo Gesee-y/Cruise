@@ -1,8 +1,10 @@
-import std/[os, strutils, math, random, times]
+import std/[os, math, random, times]
 import ../../../../Github/Cruise/src/windows/windows
 import ../../../../Github/Cruise/stdplugin/sdlwin/sdlwin
 import ../../../../Github/Cruise/src/la/LA
 import ../../externalModule/opengl/src/opengl
+import ../../src/CVM/vms/glsl33
+import ../../src/CVM/vms/object_config
 import shader_setup
 
 type
@@ -14,8 +16,6 @@ proc triangle() =
   let appDir = getAppDir()
   let vertexBytecode = readBytecode(appDir / "deps" / "cube_vert.cbc")
   let fragmentBytecode = readBytecode(appDir / "deps" / "cube_frag.cbc")
-  var vertexSource = readFile(appDir / "glsl_vm_vertex.glsl")
-  let fragmentSource = readFile(appDir / "glsl_vm_fragment.glsl")
 
   discard SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3)
   discard SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3)
@@ -30,6 +30,9 @@ proc triangle() =
   var ctx = SDL_GL_CreateContext(win.handle)
   defer: SDL_GL_DestroyContext(ctx)
   loadExtensions()
+  var vm = initGlslVm()
+  defer: vm.destroy()
+  var objectConfig = initVmShaderConfig(vertexBytecode, fragmentBytecode)
     
   # Connection to the close notifier: when the close button is clicked
   var running = true
@@ -54,26 +57,6 @@ proc triangle() =
     const maxPitch = 1.5'f32
     if pitch > maxPitch: pitch = maxPitch
     if pitch < -maxPitch: pitch = -maxPitch
-
-  var maxVertexAttributes: GLint
-  glGetIntegerv(GL_MAX_VERTEX_ATTRIBS, addr maxVertexAttributes)
-  let inputWords = vertexInputWordCount(vertexBytecode)
-  if inputWords <= 0:
-    raise newException(IOError, "Vertex bytecode does not declare a packed input")
-  if inputWords > maxVertexAttributes:
-    raise newException(IOError, "Vertex bytecode reads " & $inputWords &
-      " uint input words, but this OpenGL device exposes only " &
-      $maxVertexAttributes & " vertex attribute locations")
-  # Keep the GLSL VM's 128-byte input-block ABI while avoiding unused attribute
-  # locations on devices whose GL_MAX_VERTEX_ATTRIBS is below 32.
-  let declaration = "uint inputs[32];"
-  if declaration notin vertexSource:
-    raise newException(IOError, "GLSL VM shader is missing uint inputs[32]")
-  vertexSource = vertexSource.replace(declaration,
-    "uint inputs[" & $inputWords & "];")
-
-  let program = createVmProgram(vertexSource, fragmentSource)
-  defer: glDeleteProgram(program)
 
   type VertexPosition = array[3, GLfloat]
   let positions: array[24, VertexPosition] = [
@@ -131,60 +114,35 @@ proc triangle() =
     16u32, 17, 18, 16, 18, 19, # Right
     20u32, 21, 22, 20, 22, 23  # Left
   ]
-  let inputBlock = packVertexInputBlock(vertexBytecode,
-    [vertexAttribute(positions), vertexAttribute(texCoords)])
-  var vao, vbo, ebo: GLuint
-  glGenVertexArrays(1, addr vao)
-  glBindVertexArray(vao)
-
-  glGenBuffers(1, addr vbo)
-  glBindBuffer(GL_ARRAY_BUFFER, vbo)
-  glBufferData(GL_ARRAY_BUFFER,
-    GLsizeiptr(inputBlock.len * sizeof(uint32)), unsafeAddr inputBlock[0],
-    GL_STATIC_DRAW)
-
-  glGenBuffers(1, addr ebo)
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo)
-  glBufferData(GL_ELEMENT_ARRAY_BUFFER, (sizeof(indices[0])*indices.len).GLsizeiptr, unsafeAddr indices[0], GL_STATIC_DRAW)
-
-  for index in 0..<inputWords:
-    glEnableVertexAttribArray(index.GLuint)
-    glVertexAttribIPointer(index.GLuint, 1, GL_UNSIGNED_INT, ShaderBlockBytes.GLsizei,
-      cast[pointer](index * sizeof(uint32)))
-
-  glUseProgram(program)
-  uploadBytecode(program, "uVertexBytecode", vertexBytecode)
-  uploadBytecode(program, "uFragmentBytecode", fragmentBytecode)
-  bindSamplers(program, "uSamplers", 8)
+  objectConfig.setBuffer(0, unsafeAddr positions[0], sizeof(positions))
+  objectConfig.setBuffer(1, unsafeAddr texCoords[0], sizeof(texCoords))
+  objectConfig.addVertexAttribute(0, sizeof(VertexPosition))
+  objectConfig.addVertexAttribute(1, sizeof(texCoords[0]))
 
   # Load image texture from assets using SDL3
   let assetPath = appDir / ".." / ".." / "assets" / "box21.png"
   var surface = SDL_LoadPNG(assetPath.cstring)
-  if surface == nil:
-    raise newException(IOError, "Failed to load texture image from: " & assetPath & " error: " & sdlError())
+  assert surface != nil, "Failed to load texture image from: " & assetPath & " error: " & sdlError()
   var convertedSurface = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA32)
-  if convertedSurface == nil:
-    convertedSurface = surface
-  else:
-    SDL_DestroySurface(surface)
+  assert convertedSurface != nil, "Failed to convert texture image from: " & assetPath & " error: " & sdlError()
+  SDL_DestroySurface(surface)
 
-  var textureId: GLuint
-  glGenTextures(1, addr textureId)
-  glActiveTexture(GL_TEXTURE0)
-  glBindTexture(GL_TEXTURE_2D, textureId)
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE.GLint)
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE.GLint)
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR.GLint)
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR.GLint)
-  glTexImage2D(GL_TEXTURE_2D, 0.GLint, GL_RGBA.GLint, convertedSurface.w.GLsizei,
-               convertedSurface.h.GLsizei, 0.GLint, GL_RGBA, GL_UNSIGNED_BYTE,
-               convertedSurface.pixels)
+  let textureWidth = int(convertedSurface.w)
+  let textureHeight = int(convertedSurface.h)
+  var rgbaPixels = newSeq[byte](textureWidth * textureHeight * 4)
+  copyMem(addr rgbaPixels[0], convertedSurface.pixels, rgbaPixels.len)
+  objectConfig.setTexture(0, rgbaPixels, textureWidth, textureHeight)
   SDL_DestroySurface(convertedSurface)
 
   var vertexUniforms: array[16, uint32]
   var timer = 0.0'f32
   var fragmentUniforms = [cast[uint32](timer)]
-  glBindVertexArray(vao)
+  vm.runVm(objectConfig)
+  var indexBuffer: GLuint
+  glGenBuffers(1, addr indexBuffer)
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer)
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+    (indices.len * sizeof(uint32)).GLsizeiptr, unsafeAddr indices[0], GL_STATIC_DRAW)
 
   # Randomized 3D distribution for 36 cubes
   type
@@ -274,7 +232,7 @@ proc triangle() =
 
     timer += 0.016'f32
     fragmentUniforms[0] = cast[uint32](timer)
-    uploadUniformBlock(program, "uFragmentUniforms", fragmentUniforms)
+    objectConfig.setUniforms(fragmentUniforms, vusFragment)
 
     glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
 
@@ -311,14 +269,13 @@ proc triangle() =
       for j in 0 ..< 16:
         vertexUniforms[j] = cast[uint32](mvp.m[j])
 
-      uploadUniformBlock(program, "uVertexUniforms", vertexUniforms)
-      glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, nil)
+      objectConfig.setUniforms(vertexUniforms, vusVertex)
+      vm.runVm(objectConfig)
+      glDrawElements(GL_TRIANGLES, indices.len.GLsizei, GL_UNSIGNED_INT, nil)
 
     discard SDL_GL_SwapWindow(win.handle)
 
-  glDeleteTextures(1, addr textureId)
-  glDeleteBuffers(1, addr vbo)
-  glDeleteVertexArrays(1, addr vao)
+  glDeleteBuffers(1, addr indexBuffer)
   win.quitWindow()
   app.quitSDL3App()
   SDL_Quit_proc()

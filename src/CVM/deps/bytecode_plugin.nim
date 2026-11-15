@@ -9,7 +9,7 @@ import std/[syncio, tables, strutils]
 
 include "errors.nim"
 include "types.nim"
-include "../allocator.nim"
+include "allocator.nim"
 include "vmops.nim"
 include "ir.nim"
 include "sem.nim"

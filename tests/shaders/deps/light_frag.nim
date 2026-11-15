@@ -2,7 +2,7 @@
 
 import std/[syncio, math]
 import ../../../src/CVM/bytecode
-import default_type
+import ../../../src/CVM/default_type
 
 translateToBytecode()
 setShaderName("light_frag")

@@ -12,15 +12,14 @@ type
     elementSize: int
 
 proc readBytecode*(path: string, maxBytecodeWord=512): seq[uint32] =
-  if not fileExists(path):
-    raise newException(IOError, "Bytecode file not found: " & path)
+  assert fileExists(path), "Bytecode file not found: " & path
   var file = open(path, fmRead)
   defer: file.close()
   var word: uint32
   while file.readBuffer(addr word, sizeof(word)) == sizeof(word):
     result.add word
-  if result.len == 0 or result.len > maxBytecodeWord:
-    raise newException(IOError, "Invalid bytecode size in " & path)
+  assert result.len > 0 and result.len <= maxBytecodeWord,
+    "Invalid bytecode size in " & path
 
 proc vertexAttribute*[T](values: openArray[T]): VertexAttribute =
   result.elementSize = sizeof(T)
@@ -29,8 +28,7 @@ proc vertexAttribute*[T](values: openArray[T]): VertexAttribute =
     copyMem(addr result.data[0], unsafeAddr values[0], result.data.len)
 
 proc vertexInputLayout*(code: openArray[uint32]): seq[tuple[offset, size: int]] =
-  if code.len < 2:
-    raise newException(IOError, "Vertex bytecode has no entry point")
+  assert code.len >= 2, "Vertex bytecode has no entry point"
   var pc = int(code[1])
   while pc >= 0 and pc < code.len:
     let instruction = code[pc]
@@ -40,8 +38,8 @@ proc vertexInputLayout*(code: openArray[uint32]): seq[tuple[offset, size: int]] 
     var size = int((instruction shr 24) and 255'u32)
     if size == 0: size = 1
     let offset = int(instruction and 255'u32)
-    if offset + size > ShaderBlockBytes:
-      raise newException(IOError, "Vertex input field exceeds the 128-byte block")
+    assert offset + size <= ShaderBlockBytes,
+      "Vertex input field exceeds the 128-byte block"
     result.add (offset, size)
     inc pc
 
@@ -53,27 +51,24 @@ proc vertexInputWordCount*(code: openArray[uint32]): int =
 proc packVertexInputBlock*(code: openArray[uint32],
                           attributes: openArray[VertexAttribute]): seq[uint32] =
   let layout = vertexInputLayout(code)
-  if layout.len != attributes.len:
-    raise newException(IOError, "Expected " & $layout.len &
-      " vertex attribute arrays, got " & $attributes.len)
-  if attributes.len == 0:
-    raise newException(IOError, "At least one vertex input array is required")
+  assert layout.len == attributes.len, "Expected " & $layout.len &
+    " vertex attribute arrays, got " & $attributes.len
+  assert attributes.len > 0, "At least one vertex input array is required"
 
   let first = attributes[0]
-  if first.elementSize <= 0 or first.data.len mod first.elementSize != 0:
-    raise newException(IOError, "Invalid first vertex attribute array")
+  assert first.elementSize > 0 and first.data.len mod first.elementSize == 0,
+    "Invalid first vertex attribute array"
   let vertexCount = first.data.len div first.elementSize
   var packedBytes = newSeq[byte](vertexCount * ShaderBlockBytes)
 
   for attributeIndex, attribute in attributes:
     let field = layout[attributeIndex]
-    if attribute.elementSize != field.size:
-      raise newException(IOError, "Vertex attribute " & $attributeIndex &
-        " has " & $attribute.elementSize & " bytes per element; bytecode expects " &
-        $field.size)
-    if attribute.data.len mod attribute.elementSize != 0 or
-       attribute.data.len div attribute.elementSize != vertexCount:
-      raise newException(IOError, "Vertex attribute arrays must have equal vertex counts")
+    assert attribute.elementSize == field.size, "Vertex attribute " & $attributeIndex &
+      " has " & $attribute.elementSize & " bytes per element; bytecode expects " &
+      $field.size
+    assert attribute.data.len mod attribute.elementSize == 0 and
+       attribute.data.len div attribute.elementSize == vertexCount,
+      "Vertex attribute arrays must have equal vertex counts"
     for vertex in 0..<vertexCount:
       let srcOffset = vertex * attribute.elementSize
       let dstOffset = vertex * ShaderBlockBytes + field.offset
@@ -100,18 +95,14 @@ proc programLog*(program: GLuint): string =
 
 proc compileShader*(shaderType: GLenum, source: string, label: string): GLuint =
   result = glCreateShader(shaderType)
-  if result == 0:
-    raise newException(IOError, "glCreateShader failed for " & label)
+  assert result != 0, "glCreateShader failed for " & label
   var sourcePtr = source.cstring
   var sources = [sourcePtr]
   glShaderSource(result, 1, cast[cstringArray](addr sources[0]), nil)
   glCompileShader(result)
   var compiled: GLint
   glGetShaderiv(result, GL_COMPILE_STATUS, addr compiled)
-  if compiled == 0:
-    let details = shaderLog(result)
-    glDeleteShader(result)
-    raise newException(IOError, label & " GLSL compilation failed:\n" & details)
+  assert compiled != 0, label & " GLSL compilation failed:\n" & shaderLog(result)
 
 proc createVmProgram*(vertexSource, fragmentSource: string): GLuint =
   let vertexShader = compileShader(GL_VERTEX_SHADER, vertexSource, "Vertex VM")
@@ -125,27 +116,23 @@ proc createVmProgram*(vertexSource, fragmentSource: string): GLuint =
 
   var linked: GLint
   glGetProgramiv(result, GL_LINK_STATUS, addr linked)
-  if linked == 0:
-    let details = programLog(result)
-    glDeleteProgram(result)
-    raise newException(IOError, "GLSL VM program link failed:\n" & details)
+  assert linked != 0, "GLSL VM program link failed:\n" & programLog(result)
 
 proc uploadBytecode*(program: GLuint, uniformName: string,
                     code: openArray[uint32]) =
   let baseName = uniformName & "[0]"
   let bytecodeLocation = glGetUniformLocation(program, baseName.cstring)
-  if bytecodeLocation < 0:
-    raise newException(IOError, "GLSL VM bytecode uniforms are missing")
-  glUniform1uiv(bytecodeLocation, code.len.GLsizei, addr code[0])
+  assert bytecodeLocation >= 0, "GLSL VM bytecode uniforms are missing"
+  assert code.len > 0, "GLSL VM bytecode cannot be empty"
+  glUniform1uiv(bytecodeLocation, code.len.GLsizei, unsafeAddr code[0])
 
 proc uploadUniformBlock*(program: GLuint, uniformName: string,
                         values: openArray[uint32]) =
   let baseName = uniformName & "[0]"
   let location = glGetUniformLocation(program, baseName.cstring)
-  if location < 0:
-    raise newException(IOError, "GLSL VM uniform table is missing: " & uniformName)
-  if values.len > UniformTableWords:
-    raise newException(IOError, "Uniform table exceeds " & $UniformTableWords & " uint32 words")
+  assert location >= 0, "GLSL VM uniform table is missing: " & uniformName
+  assert values.len <= UniformTableWords,
+    "Uniform table exceeds " & $UniformTableWords & " uint32 words"
   var table: array[UniformTableWords, uint32]
   for index, value in values:
     table[index] = value

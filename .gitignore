@@ -1,12 +1,10 @@
 memo
 nimcache
 tests/vm
-src/CVM/vms
 externalModule
 assets
 tests/shaders
 .nimcache_light
-*.glsl
 *.sh
 *.dll
 *.cbc

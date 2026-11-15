@@ -1,5 +1,6 @@
 import std/[math]
 import ../deps/vmops
+import ./object_config
 
 const
   MAX_MEM* = 256
@@ -12,7 +13,7 @@ type
     pc*: int
     globalId*: int
     uniform*: seq[uint32]
-    memory* {.align: 8.}: array[MAX_MEM, uint8]
+    memory*: array[MAX_MEM, uint8]
     buffers*: seq[pointer]
     stack*: seq[uint8]
     registerBase: int
@@ -43,6 +44,31 @@ proc setBuffer*(vm: var CpuVm, bufId: int, bufPtr: pointer) =
   if vm.buffers.len <= bufId:
     vm.buffers.setLen(bufId + 1)
   vm.buffers[bufId] = bufPtr
+
+proc loadConfig(vm: var CpuVm, config: VmObjectConfig) =
+  ## Apply backend-neutral uniforms and input buffers. Keep `config` alive while
+  ## the VM may read its buffers; the CPU VM stores their addresses directly.
+  if config.uniforms.len > 0:
+    vm.setUniforms(config.uniforms)
+  elif config.vertexUniforms.len > 0:
+    vm.setUniforms(config.vertexUniforms)
+  elif config.fragmentUniforms.len > 0:
+    vm.setUniforms(config.fragmentUniforms)
+  var bufferCount = 0
+  for buffer in config.buffers:
+    bufferCount = max(bufferCount, buffer.id + 1)
+  vm.buffers.setLen(bufferCount)
+  for index in 0 ..< bufferCount:
+    vm.buffers[index] = nil
+  for buffer in config.buffers:
+    let data = if buffer.bytes.len > 0: unsafeAddr buffer.bytes[0] else: nil
+    vm.setBuffer(buffer.id, cast[pointer](data))
+
+proc runVM*(vm: var CpuVm, program: openArray[uint32])
+
+proc runVM*(vm: var CpuVm, config: VmObjectConfig) =
+  vm.loadConfig(config)
+  vm.runVM(config.bytecode)
 
 proc decodeWord*(word: uint32, op: var VMOpCode, dst, src: var uint8, size: var int) {.inline.} =
   op   = VMOpCode((word shr OPCODE_POS) and 0xFF'u32)
