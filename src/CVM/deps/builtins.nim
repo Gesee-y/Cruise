@@ -2,29 +2,7 @@
  # ############################################################ SEMANTIC PASS ########################################################### #
 # ###################################################################################################################################### #
 
-proc registerBinaryOp(c: var TypeCache, op: string, leftTy, rightTy, retTy: string) =
-  var inst = TypeInst(
-    name: op,
-    kind: ProcType,
-    returnType: retTy,
-    size: 0
-  )
-  inst.fields.add(TypeField(name: "a", ty: leftTy))
-  inst.fields.add(TypeField(name: "b", ty: rightTy))
-  
-  c.addInstance(inst)
-
-proc registerUnaryOp(c: var TypeCache, op: string, argTy, retTy: string) =
-  var inst = TypeInst(
-    name: op,
-    kind: ProcType,
-    returnType: retTy,
-    size: 0
-  )
-  inst.fields.add(TypeField(name: "a", ty: argTy))
-  
-  c.addInstance(inst)
-
+# Register a function with an undetermined nombuer of argument
 proc registerFn(c: var TypeCache, name: string, argTys: openArray[string], retTy: string) =
   var inst = TypeInst(
     name: name,
@@ -36,6 +14,15 @@ proc registerFn(c: var TypeCache, name: string, argTys: openArray[string], retTy
     inst.fields.add(TypeField(name: "p" & $i, ty: a))
   c.addInstance(inst)
 
+# Register a binary operation into the cache
+proc registerBinaryOp(c: var TypeCache, op: string, leftTy, rightTy, retTy: string) =
+  c.registerFn(op, [leftTy, rightTy], retTy)
+
+# Same as above but with binary op
+proc registerUnaryOp(c: var TypeCache, op: string, argTy, retTy: string) =
+  c.registerFn(op, [argTy], retTy)
+
+# This register every builtin types/functions in the cache to make it accepted during semantic check 
 proc registerBuiltins*(c: var TypeCache) =
   const numericTypes = ["int8", "int16", "int32", "int64", "float", "float32", "float64", "uint", "uint32"]
   const allTypes = ["int8", "int16", "int32", "int64", "float", "float32", "float64", "uint", "uint32", "bool"]
