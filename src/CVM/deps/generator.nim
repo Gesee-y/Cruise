@@ -387,11 +387,14 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       let rVec = ctx.genExpr(lhsNode)
       let rScalar = ctx.genExpr(rhsNode)
       let vecDim = vecSize div 4
-      result = if target.size >= vecSize: target else: ctx.code.allocator.alloc(vecSize)
+      result = if target.size >= vecSize: target
+               elif rVec.isTemp: rVec
+               else: ctx.code.allocator.alloc(vecSize)
       if result.pos != rVec.pos:
         ctx.emitInst(vocMov, result.pos, rVec.pos, vecSize)
       ctx.emitInst(vecOp, result.pos, rScalar.pos, vecDim)
-      ctx.freeIfTemp(rVec)
+      if result.pos != rVec.pos:
+        ctx.freeIfTemp(rVec)
       ctx.freeIfTemp(rScalar)
       return
 
@@ -404,12 +407,15 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
     # Generate immediate operations instead of a load + op we do a variant with the second operand as a constant
     if opName in ["+", "-", "*"] and rhsNode.isImmediateLiteral:
       let lhs = ctx.genExpr(lhsNode)
-      result = if target.pos != -1: target else: ctx.code.allocator.alloc(opSize)
+      result = if target.pos != -1: target
+               elif lhs.isTemp: lhs
+               else: ctx.code.allocator.alloc(opSize)
       if result.pos != lhs.pos:
         ctx.emitInst(vocMov, result.pos, lhs.pos, opSize)
       let imm = immediateBits(rhsNode, opIsFloat, opSize)
       ctx.emitImmediate(immediateOpcodeFor(opName, opIsFloat), result.pos, imm, opSize)
-      ctx.freeIfTemp(lhs)
+      if result.pos != lhs.pos:
+        ctx.freeIfTemp(lhs)
       return
 
     # Generating regular opcode
@@ -420,6 +426,10 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
 
     if target.pos != -1:
       result = target
+    elif r1.isTemp:
+      result = r1
+    elif r2.isTemp and opName in ["+", "*", "and", "or", "xor", "==", "!="]:
+      result = r2
     else:
       result = ctx.code.allocator.alloc(opSize)
 
@@ -431,8 +441,10 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       ctx.emitInst(vocMov, result.pos, r1.pos, opSize)
       ctx.emitInst(opcodeFor(opName, opIsFloat), result.pos, r2.pos, opSize)
 
-    ctx.freeIfTemp(r1)
-    ctx.freeIfTemp(r2)
+    if result.pos != r1.pos:
+      ctx.freeIfTemp(r1)
+    if result.pos != r2.pos:
+      ctx.freeIfTemp(r2)
     return
 
   of cnkFma:
@@ -449,7 +461,9 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
     let lhs = ctx.genExpr(c.args[0])
     let rhs = ctx.genExpr(c.args[1])
     let addend = ctx.genExpr(c.args[2])
-    result = if target.size >= opSize: target else: ctx.code.allocator.alloc(opSize)
+    result = if target.size >= opSize: target
+             elif lhs.isTemp: lhs
+             else: ctx.code.allocator.alloc(opSize)
 
     ctx.emitInst(if isFloat: vocMaddf else: vocMaddi,
                  result.pos, lhs.pos, opSize)
@@ -461,7 +475,8 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       ctx.code.allocator.free(result)
       result = target
 
-    ctx.freeIfTemp(lhs)
+    if result.pos != lhs.pos:
+      ctx.freeIfTemp(lhs)
     ctx.freeIfTemp(rhs)
     ctx.freeIfTemp(addend)
     return

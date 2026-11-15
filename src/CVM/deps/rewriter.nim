@@ -18,7 +18,7 @@ type
 
   PatternGuardKind = enum
     pgNone
-    pgMultiplyByOne
+    pgArithmeticIdentity
     pgDivideBySqrt
     pgConvLiteral
     pgHomogeneousFma
@@ -108,6 +108,15 @@ proc isOne(node: CIRNode): bool =
     node.args.len > 1 and node.args[^1].isOne
   else: false
 
+proc isZero(node: CIRNode): bool =
+  case node.kind
+  of cnkIntLit: node.intVal == 0
+  of cnkUintLit: node.uintVal == 0'u
+  of cnkFloatLit: node.floatVal == 0.0
+  of cnkConv, cnkCast:
+    node.args.len > 1 and node.args[^1].isZero
+  else: false
+
 proc supportsLiteralConversion(targetType: string): bool =
   targetType in ["float", "float32", "int", "int8", "int16", "int32",
                  "uint", "uint8", "uint16", "uint32", "bool", "char"]
@@ -170,11 +179,23 @@ proc rewriteConversionLiteral(node: CIRNode): CIRNode =
   else:
     result = node
 
-proc isMultiplyByOne(node: CIRNode): bool =
-  node.args.len == 3 and (node.args[1].isOne or node.args[2].isOne)
+proc isArithmeticIdentity(node: CIRNode): bool =
+  if node.args.len != 3: return false
+  case node.args[0].name
+  of "+": node.args[1].isZero or node.args[2].isZero
+  of "-": node.args[2].isZero
+  of "*": node.args[1].isOne or node.args[2].isOne
+  of "/": node.args[2].isOne
+  else: false
 
-proc rewriteMultiplyByOne(node: CIRNode): CIRNode =
-  if node.args[1].isOne: node.args[2] else: node.args[1]
+proc rewriteArithmeticIdentity(node: CIRNode): CIRNode =
+  case node.args[0].name
+  of "+":
+    if node.args[1].isZero: node.args[2] else: node.args[1]
+  of "*":
+    if node.args[1].isOne: node.args[2] else: node.args[1]
+  else:
+    node.args[1]
 
 proc rewriteDivideBySqrt(node: CIRNode): CIRNode =
   let root = node.args[2]
@@ -198,12 +219,13 @@ proc newRewriterEngine(): RewriterEngine =
     guard: pgConvLiteral
   ))
 
-  # Multiplication by one does not need a VM operation.
-  result.addPattern(cnkInfix, Pattern(
-    term: product,
-    rewriter: rewriteMultiplyByOne,
-    guard: pgMultiplyByOne
-  ))
+  # Remove arithmetic identities before code generation.
+  for op in ["+", "-", "*", "/"]:
+    result.addPattern(cnkInfix, Pattern(
+      term: operationTerm(cnkInfix, op, @[any, any]),
+      rewriter: rewriteArithmeticIdentity,
+      guard: pgArithmeticIdentity
+    ))
 
   # a * b + c -> fma(a, b, c), including the commuted c + a * b form.
   result.addPattern(cnkInfix, Pattern(
@@ -309,8 +331,8 @@ proc matchPattern*(node: CIRNode, pattern: Pattern,
 
   case pattern.guard
   of pgNone: discard
-  of pgMultiplyByOne:
-    if not node.isMultiplyByOne:
+  of pgArithmeticIdentity:
+    if not node.isArithmeticIdentity:
       return false
   of pgDivideBySqrt:
     if node.args[2].kind != cnkCall or node.args[2].args[0].name != "sqrt":

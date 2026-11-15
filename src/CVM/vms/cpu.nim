@@ -606,12 +606,9 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       let bufId = int(src)
       let nextW = program[vm.pc]
       inc vm.pc
-      var noopOp: VMOpCode
-      var idxReg, dummySrc: uint8
-      var idxSize: int
-      decodeWord(nextW, noopOp, idxReg, dummySrc, idxSize)
-      idxReg = uint8(int(idxReg) + vm.registerBase)
-      let index = vm.readMemInt(int(idxReg), idxSize)
+      let idxReg = int((nextW shr REGA_POS) and 0xFF'u32) + vm.registerBase
+      let idxSize = max(1, int((nextW shr SIZE_POS) and 0xFF'u32))
+      let index = vm.readMemInt(idxReg, idxSize)
       let basePtr = cast[uint](vm.buffers[bufId])
       let elemPtr = cast[pointer](basePtr + uint(index * int64(size)))
       case size
@@ -628,12 +625,9 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       let bufId = int(src)
       let nextW = program[vm.pc]
       inc vm.pc
-      var noopOp: VMOpCode
-      var idxReg, dummySrc: uint8
-      var idxSize: int
-      decodeWord(nextW, noopOp, idxReg, dummySrc, idxSize)
-      idxReg = uint8(int(idxReg) + vm.registerBase)
-      let index = vm.readMemInt(int(idxReg), idxSize)
+      let idxReg = int((nextW shr REGA_POS) and 0xFF'u32) + vm.registerBase
+      let idxSize = max(1, int((nextW shr SIZE_POS) and 0xFF'u32))
+      let index = vm.readMemInt(idxReg, idxSize)
       let basePtr = cast[uint](vm.buffers[bufId])
       let elemPtr = cast[pointer](basePtr + uint(index * int64(size)))
       case size
@@ -650,12 +644,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       let arrBase = int(src)
       let nextW = program[vm.pc]
       inc vm.pc
-      var noopOp: VMOpCode
-      var idxReg, dummySrc: uint8
-      var dummySize: int
-      decodeWord(nextW, noopOp, idxReg, dummySrc, dummySize)
-      idxReg = uint8(int(idxReg) + vm.registerBase)
-      let index = int(vm.readMemInt(int(idxReg), 4))
+      let idxReg = int((nextW shr REGA_POS) and 0xFF'u32) + vm.registerBase
+      let index = int(vm.readMemInt(idxReg, 4))
       let elemAddr = arrBase + index * size
       copyMem(addr vm.memory[dst], unsafeAddr vm.memory[elemAddr], size)
 
@@ -663,12 +653,8 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       let arrBase = int(src)
       let nextW = program[vm.pc]
       inc vm.pc
-      var noopOp: VMOpCode
-      var idxReg, dummySrc: uint8
-      var dummySize: int
-      decodeWord(nextW, noopOp, idxReg, dummySrc, dummySize)
-      idxReg = uint8(int(idxReg) + vm.registerBase)
-      let index = int(vm.readMemInt(int(idxReg), 4))
+      let idxReg = int((nextW shr REGA_POS) and 0xFF'u32) + vm.registerBase
+      let index = int(vm.readMemInt(idxReg, 4))
       let elemAddr = arrBase + index * size
       copyMem(addr vm.memory[elemAddr], unsafeAddr vm.memory[dst], size)
 
