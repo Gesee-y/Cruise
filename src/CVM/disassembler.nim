@@ -92,7 +92,8 @@ proc disassemble*(code: openArray[uint32]) =
         let packedSources = code[pc + 1]
         let rhsReg = packedSources and 0xFF'u32
         let addReg = (packedSources shr 8) and 0xFF'u32
-        echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src} * R{rhsReg} + R{addReg}"
+        let laneKind = if op == vocMaddf and size > 4: " [vector]" else: ""
+        echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src} * R{rhsReg} + R{addReg}{laneKind}"
         pc += 2
       else:
         echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED SOURCES>"

@@ -21,6 +21,7 @@ type
     pgMultiplyByOne
     pgDivideBySqrt
     pgConvLiteral
+    pgHomogeneousFma
 
   # This represent the path to a term going from a parent `Term`
   TermPath = seq[int]
@@ -207,6 +208,7 @@ proc newRewriterEngine(): RewriterEngine =
   # a * b + c -> fma(a, b, c), including the commuted c + a * b form.
   result.addPattern(cnkInfix, Pattern(
     term: operationTerm(cnkInfix, "+", @[product, any]),
+    guard: pgHomogeneousFma,
     rewriter: proc(node: CIRNode): CIRNode =
       result = newCIRNode(node.info, cnkFma)
       result.add(node.args[1].args[1])
@@ -215,6 +217,7 @@ proc newRewriterEngine(): RewriterEngine =
   ))
   result.addPattern(cnkInfix, Pattern(
     term: operationTerm(cnkInfix, "+", @[any, product]),
+    guard: pgHomogeneousFma,
     rewriter: proc(node: CIRNode): CIRNode =
       result = newCIRNode(node.info, cnkFma)
       result.add(node.args[2].args[1])
@@ -293,7 +296,14 @@ proc matchRule*(node: CIRNode, rule: TermRule): bool =
   of trkEq:
     return node.matchEqRule(rule)
 
-proc matchPattern*(node: CIRNode, pattern: Pattern): bool =
+proc isFmaSupportedType(typeName: string): bool =
+  typeName in ["float", "float32",
+    "int", "int8", "int16", "int32", "int64",
+    "uint", "uint8", "uint16", "uint32", "uint64",
+    "vec2f", "vec3f", "vec4f"]
+
+proc matchPattern*(node: CIRNode, pattern: Pattern,
+                   cache: var TypeCache): bool =
   result = node.matchTerm(pattern.term)
   if not result: return
 
@@ -310,14 +320,31 @@ proc matchPattern*(node: CIRNode, pattern: Pattern): bool =
        node.args[0].kind notin {cnkSym, cnkRSym} or
        not supportsLiteralConversion(node.args[0].name):
       return false
+  of pgHomogeneousFma:
+    if node.args.len != 3:
+      return false
+    let productOnLeft = node.args[1].kind == cnkInfix and
+      node.args[1].args.len > 0 and node.args[1].args[0].name == "*"
+    let product = if productOnLeft: node.args[1] else: node.args[2]
+    let addend = if productOnLeft: node.args[2] else: node.args[1]
+    if product.kind != cnkInfix or product.args.len != 3 or
+       product.args[0].name != "*":
+      return false
+    let lhsType = cache.inferType(product.args[1])
+    let rhsType = cache.inferType(product.args[2])
+    let addendType = cache.inferType(addend)
+    if lhsType != rhsType or lhsType != addendType or
+       not isFmaSupportedType(lhsType):
+      return false
 
   for rule in pattern.rules:
     result = node.matchRule(rule)
     if not result: break
 
-proc rewriteIfMatch*(re: RewriterEngine, node: var CIRNode): bool =
+proc rewriteIfMatch*(re: RewriterEngine, node: var CIRNode,
+                     cache: var TypeCache): bool =
   for pattern in re.patterns[node.kind]:
-    if node.matchPattern(pattern):
+    if node.matchPattern(pattern, cache):
       node = pattern.rewriter(node)
       return true
 
@@ -326,15 +353,17 @@ proc rewriteIfMatch*(re: RewriterEngine, node: var CIRNode): bool =
 proc addPattern*(re: var RewriterEngine, kind: CIRNodeKind, p: Pattern) =
   re.patterns[kind].add(p)
 
-proc rewriteNode*(re: RewriterEngine, node: var CIRNode) =
+proc rewriteNode*(re: RewriterEngine, node: var CIRNode,
+                  cache: var TypeCache) =
   if node.isLeaf: return
-  if re.rewriteIfMatch(node):
-    re.rewriteNode(node)
+  if re.rewriteIfMatch(node, cache):
+    re.rewriteNode(node, cache)
     return
 
   for n in node.args.mitems:
-    re.rewriteNode(n)
+    re.rewriteNode(n, cache)
 
-proc rewritePass*(re: RewriterEngine, root: var CIRNode) =
-  re.rewriteNode(root)
+proc rewritePass*(re: RewriterEngine, root: var CIRNode,
+                  cache: var TypeCache) =
+  re.rewriteNode(root, cache)
 

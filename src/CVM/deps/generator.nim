@@ -51,6 +51,7 @@ const
   REGA_POS    = REGB_BITS            ##  8: shift for the destination field
   OPCODE_POS  = REGA_POS + REGA_BITS ## 16: shift for the opcode field
   SIZE_POS    = 24                   ## 24: shift for the size field (unused 8 bits)
+  REG_MASK    = 0xFF
 
 # ################################################################################################################################ #
 # ########################################################## HELPER PROCS ######################################################## #
@@ -235,7 +236,7 @@ proc unaryMathSelector(name: string): VMMathSelector =
   of "degrees": vmsDegrees
   of "sinh": vmsSinh
   of "cosh": vmsCosh
-  of "tanh": vmsTanH
+  of "tanh": vmsTanh
   of "asinh": vmsAsinh
   of "acosh": vmsAcosh
   of "atanh": vmsAtanh
@@ -321,14 +322,15 @@ proc getVecScalarMulCode(op, lhsTyName, rhsTyName: string): tuple[code: VMOpCode
   let isLhsVec = lhsTyName.startsWith("vec")
   let isRhsVec = rhsTyName.startsWith("vec")
   if (isLhsVec and not isRhsVec) or (isRhsVec and not isLhsVec):
-    let vecTyName = lhsTyName
+    let vecTyName = if isLhsVec: lhsTyName else: rhsTyName
     let vecDim = if vecTyName.contains("2"): 2 elif vecTyName.contains("3"): 3 else: 4
+    let opIsFloat = vecTyName.endsWith("f")
     result.size = vecDim * 4
     
     case op
-    of "*": result.op = if opIsFloat: vocVecMulf else: vocVecMuli
-    of "+": result.op = if opIsFloat: vocVecAddf else: vocVecAddi
-    of "-": result.op = if opIsFloat: vocVecSubf else: vocVecSubi
+    of "*": result.code = if opIsFloat: vocVecMulf else: vocVecMuli
+    of "+": result.code = if opIsFloat: vocVecAddf else: vocVecAddi
+    of "-": result.code = if opIsFloat: vocVecSubf else: vocVecSubi
     else: discard
 
 # Generate the bytecode for a given expression in the register `target` if valid
@@ -344,7 +346,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       (operandTyName.startsWith("vec") and operandTyName.endsWith("f"))
     let operandTy = ctx.cache.getType(operandTyName)
     let opSize = operandTy.size
-    let retSize = ctx.cache.getType(opTyName).size
+    let retSize = ctx.cache.getType(opTypeName).size
 
     var lhsNode = c.args[1]
     var rhsNode = c.args[2]
@@ -378,10 +380,12 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       return
 
 
-    let (vecOp, vecSize) = getVecScalarMulCode(op, lhsTyName, rhsTyName)
+    let vecMulResult = getVecScalarMulCode(opName, lhsTyName, rhsTyName)
+    let vecOp = vecMulResult.code
+    let vecSize = vecMulResult.size
     if vecOp != vocNoOp:
       let rVec = ctx.genExpr(lhsNode)
-      let rScalar = ctx.genExpr(rhsrNode)
+      let rScalar = ctx.genExpr(rhsNode)
       let vecDim = vecSize div 4
       result = if target.size >= vecSize: target else: ctx.code.allocator.alloc(vecSize)
       if result.pos != rVec.pos:
@@ -432,11 +436,15 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
     return
 
   of cnkFma:
+    # The instruction size carries the scalar/vector byte size. The trailing
+    # word carries only the two additional source registers.
     var lhsNode = c.args[0]
     let tyName = ctx.cache.inferType(lhsNode)
     let ty = ctx.cache.getType(tyName)
     let opSize = max(1, ty.size)
-    let isFloat = tyName.startsWith("float")
+    let isVector = tyName.startsWith("vec")
+    let isFloat = tyName.startsWith("float") or
+      (isVector and tyName.endsWith("f"))
 
     let lhs = ctx.genExpr(c.args[0])
     let rhs = ctx.genExpr(c.args[1])
@@ -445,7 +453,8 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
 
     ctx.emitInst(if isFloat: vocMaddf else: vocMaddi,
                  result.pos, lhs.pos, opSize)
-    ctx.emitWord(uint32(rhs.pos and 0xFF) or (uint32(addend.pos and 0xFF) shl 8))
+    ctx.emitWord(uint32(rhs.pos and REG_MASK) or
+                 (uint32(addend.pos and REG_MASK) shl 8))
 
     if target.pos != -1 and result.pos != target.pos:
       ctx.emitInst(vocMov, target.pos, result.pos, opSize)
@@ -458,6 +467,8 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
     return
 
   of cnkRsqrt:
+    # Reciprocal square root, almost never explicitly written by the user
+    # Result from the term rewriter
     var argNode = c.args[0]
     let typeName = ctx.cache.inferType(argNode)
     let size = max(1, ctx.cache.getType(typeName).size)
@@ -468,6 +479,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
     return
 
   of cnkPrefix:
+    # Prefix operations, those use only one register as both source and destination (this is `unary` in general)
     let opName = c.args[0].name
     var dummyNode = c
     let opTypeName = ctx.cache.inferType(dummyNode)
@@ -497,6 +509,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
     return
 
   of cnkDotExpr:
+    # Field access, a solved problem since 100 loc
     let base = ctx.genExpr(c.args[0])
     let fieldAlloc = ctx.getFieldReg(base, c)
     if target.size > 0 and target.pos != fieldAlloc.pos:
@@ -508,22 +521,24 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
     return
 
   of cnkCall:
+    # Functions calls
+    # If we encounter a predefined unary ops, then we generate the generic VMop for it
     let procName = c.args[0].name
     if procName in ["tan", "asin", "acos", "atan", "exp", "log", "exp2",
                     "log2", "ceil", "trunc", "round", "sign", "radians",
                     "degrees", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh",
-                    "inversesqrt"] and
-       c.args.len == 2:
+                    "inversesqrt"] and c.args.len == 2:
       let arg = ctx.genExpr(c.args[1])
       let tyName = ctx.cache.inferType(c.args[1])
       let argSize = max(4, ctx.cache.getType(tyName).size)
       let lanes = argSize div 4
       result = if target.size >= argSize: target else: ctx.code.allocator.alloc(argSize)
       ctx.emitInst(vocUnaryMathf, result.pos, arg.pos, lanes)
-      ctx.emitWord(unaryMathSelector(procName))
+      ctx.emitWord(uint32(unaryMathSelector(procName)))
       ctx.freeIfTemp(arg)
       return
 
+    # If we encounter a variant of `abs` (the vectorial one)
     if procName == "abs" and c.args.len == 2 and
        ctx.cache.inferType(c.args[1]).startsWith("vec"):
       let arg = ctx.genExpr(c.args[1])
@@ -531,10 +546,11 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       let argSize = max(4, ctx.cache.getType(tyName).size)
       result = if target.size >= argSize: target else: ctx.code.allocator.alloc(argSize)
       ctx.emitInst(vocUnaryMathf, result.pos, arg.pos, argSize div 4)
-      ctx.emitWord(unaryMathSelector("abs"))
+      ctx.emitWord(uint32(unaryMathSelector("abs")))
       ctx.freeIfTemp(arg)
       return
 
+    # If we encounter vectorial binary ops
     if procName in ["atan", "mod", "min", "max"] and c.args.len == 3 and
        (procName in ["atan", "mod"] or ctx.cache.inferType(c.args[1]).startsWith("vec")):
       let lhs = ctx.genExpr(c.args[1])
@@ -568,7 +584,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       if result.pos != normal.pos:
         ctx.emitInst(vocMov, result.pos, normal.pos, size)
       ctx.emitInst(vocFaceforward, result.pos, incident.pos, lanes)
-      ctx.emitWord(uint32(refNormal.pos and 0xFF))
+      ctx.emitWord(uint32(refNormal.pos and REG_MASK))
       ctx.freeIfTemp(normal)
       ctx.freeIfTemp(incident)
       ctx.freeIfTemp(refNormal)
@@ -615,7 +631,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
         op = vocSmoothstepf
         secondOperand = ctx.genExpr(c.args[1]) # edge0
         thirdOperand = ctx.genExpr(c.args[2]) # edge1
-        descriptor = uint32(thirdOperand.pos and 0xFF)
+        descriptor = uint32(thirdOperand.pos and REG_MASK)
         if ctx.cache.getType(ctx.cache.inferType(c.args[1])).size == 4 and lanes > 1:
           descriptor = descriptor or 0x100'u32
         if ctx.cache.getType(ctx.cache.inferType(c.args[2])).size == 4 and lanes > 1:
@@ -624,14 +640,14 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
         op = vocMixf
         secondOperand = ctx.genExpr(c.args[2]) # y
         thirdOperand = ctx.genExpr(c.args[3]) # factor
-        descriptor = uint32(thirdOperand.pos and 0xFF)
+        descriptor = uint32(thirdOperand.pos and REG_MASK)
         if ctx.cache.getType(ctx.cache.inferType(c.args[3])).size == 4 and lanes > 1:
           descriptor = descriptor or 0x100'u32
       of "clamp":
         op = vocClampf
         secondOperand = ctx.genExpr(c.args[2]) # lower bound
         thirdOperand = ctx.genExpr(c.args[3]) # upper bound
-        descriptor = uint32(thirdOperand.pos and 0xFF)
+        descriptor = uint32(thirdOperand.pos and REG_MASK)
         if ctx.cache.getType(ctx.cache.inferType(c.args[2])).size == 4 and lanes > 1:
           descriptor = descriptor or 0x100'u32
         if ctx.cache.getType(ctx.cache.inferType(c.args[3])).size == 4 and lanes > 1:

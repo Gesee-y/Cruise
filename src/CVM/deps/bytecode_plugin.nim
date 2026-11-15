@@ -43,7 +43,7 @@ proc generateBytecode(n: var NifCursor): NifBuilder =
     return
 
   var re = newRewriterEngine()
-  re.rewritePass(irCode)
+  re.rewritePass(irCode, cache)
 
   var ctx = CodeGenCtx(
     cache: cache,

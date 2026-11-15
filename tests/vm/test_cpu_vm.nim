@@ -2,6 +2,9 @@ import std/[syncio, assertions, math]
 import ../../src/CVM/deps/vmops
 import ../../src/CVM/vms/cpu
 
+type TestVec2 = object
+  x, y: float32
+
 proc encodeInst(op: VMOpCode, dst, src: int, size: int = 1): uint32 =
   (uint32(size and 0xFF) shl 24) or (uint32(ord(op) and 0xFF) shl 16) or (uint32(dst and 0xFF) shl 8) or uint32(src and 0xFF)
 
@@ -323,6 +326,7 @@ proc testFmaGeneratedBytecode() =
   # mistaken for the FMA opcode.
   var pc = 0
   var fmaCount = 0
+  var vectorFmaCount = 0
   var foundIntegerFma = false
   var foundNegate = false
   while pc < program.len:
@@ -332,18 +336,26 @@ proc testFmaGeneratedBytecode() =
     decodeWord(program[pc], op, dst, src, size)
     if op == vocMaddf:
       inc fmaCount
+      if size > 4:
+        inc vectorFmaCount
+      assert pc + 1 < program.len and
+             (program[pc + 1] and 0xFFFF_0000'u32) == 0,
+        "FMA source-register word must not contain extra vector metadata"
     elif op == vocMaddi:
       foundIntegerFma = true
     elif op in {vocNegi, vocNegf}:
       foundNegate = true
     inc pc
     case op
-    of vocLoadi, vocLoadf, vocCall, vocJmp, vocJmpFalse, vocMaddf, vocMaddi,
+    of vocCall:
+      pc += 2
+    of vocLoadi, vocLoadf, vocJmp, vocJmpFalse, vocMaddf, vocMaddi,
        vocLoadBuf, vocStoreBuf, vocLoadAt, vocStoreAt:
       inc pc
     else:
       discard
-  assert fmaCount >= 2, "Both FMA operand orders should emit vocMaddf"
+  assert fmaCount >= 3, "Scalar, commuted, and vector FMA should emit vocMaddf"
+  assert vectorFmaCount > 0, "Vector FMA should encode a multi-lane opSize"
   assert foundIntegerFma, "Integer FMA pattern did not emit vocMaddi"
   assert not foundNegate, "Negation rewrite left a redundant negate instruction"
 
@@ -351,19 +363,32 @@ proc testFmaGeneratedBytecode() =
   var a = @[1.5'f32, 2.0'f32, -3.0'f32, 4.25'f32]
   var b = @[2.0'f32, 3.5'f32, 0.5'f32, -2.0'f32]
   var c = newSeq[float32](N)
+  var va = @[TestVec2(x: 1.0'f32, y: 2.0'f32), TestVec2(x: -1.0'f32, y: 0.5'f32),
+             TestVec2(x: 3.0'f32, y: -2.0'f32), TestVec2(x: 0.25'f32, y: 4.0'f32)]
+  var vb = @[TestVec2(x: 2.0'f32, y: 3.0'f32), TestVec2(x: 4.0'f32, y: -2.0'f32),
+             TestVec2(x: -0.5'f32, y: 1.5'f32), TestVec2(x: 8.0'f32, y: 0.25'f32)]
+  var vc = newSeq[TestVec2](N)
   for gid in 0 ..< N:
     var vm = initCpuVm(globalId = gid)
     vm.setUniform(0, N)
     vm.setBuffer(0, cast[pointer](addr a[0]))
     vm.setBuffer(1, cast[pointer](addr b[0]))
     vm.setBuffer(2, cast[pointer](addr c[0]))
+    vm.setBuffer(3, cast[pointer](addr va[0]))
+    vm.setBuffer(4, cast[pointer](addr vb[0]))
+    vm.setBuffer(5, cast[pointer](addr vc[0]))
     vm.runVM(program)
 
   for i in 0 ..< N:
     let expected = 2 * a[i] * b[i] + 4 * a[i] + b[i]
     assert abs(c[i] - expected) < 0.0001'f32,
       "FMA/rewrite result at index " & $i & ": expected " & $expected & " got " & $c[i]
-  echo "  -> FMA and negation rewrites match expected results"
+    let expectedX = va[i].x * vb[i].x + va[i].x
+    let expectedY = va[i].y * vb[i].y + va[i].y
+    assert abs(vc[i].x - expectedX) < 0.0001'f32 and
+           abs(vc[i].y - expectedY) < 0.0001'f32,
+      "Vector FMA result at index " & $i & " did not match lane-wise expected values"
+  echo "  -> Scalar and Vec2 FMA rewrites match expected results"
 
 proc testBuiltinOpcodes() =
   echo "[TEST] Builtin math opcodes..."

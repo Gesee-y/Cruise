@@ -384,7 +384,13 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       let mulReg = int(src)
       let rhsReg = int(packedSources and 0xFF'u32) + vm.registerBase
       let addReg = int((packedSources shr 8) and 0xFF'u32) + vm.registerBase
-      if size == 4:
+      if size > 4:
+        for offset in countup(0, size - 4, 4):
+          let lhs = cast[ptr float32](unsafeAddr vm.memory[mulReg + offset])[]
+          let rhs = cast[ptr float32](unsafeAddr vm.memory[rhsReg + offset])[]
+          let addend = cast[ptr float32](unsafeAddr vm.memory[addReg + offset])[]
+          cast[ptr float32](addr vm.memory[int(dst) + offset])[] = lhs * rhs + addend
+      elif size == 4:
         let product = cast[ptr float32](unsafeAddr vm.memory[mulReg])[] *
                       cast[ptr float32](unsafeAddr vm.memory[rhsReg])[]
         let addend = cast[ptr float32](unsafeAddr vm.memory[addReg])[]
@@ -401,8 +407,7 @@ proc runVM*(vm: var CpuVm, program: openArray[uint32]) =
       let rhsReg = int(packedSources and 0xFF'u32) + vm.registerBase
       let addReg = int((packedSources shr 8) and 0xFF'u32) + vm.registerBase
       let product = vm.readMemInt(mulReg, size) * vm.readMemInt(rhsReg, size)
-      # Preserve the intermediate-width truncation of separate multiply/add
-      # instructions for int8 and int16 values.
+      # Preserve intermediate-width truncation for narrow scalar integers.
       vm.writeMemInt(int(dst), size, product)
       let truncatedProduct = vm.readMemInt(int(dst), size)
       let addend = vm.readMemInt(addReg, size)
