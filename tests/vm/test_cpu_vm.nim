@@ -390,6 +390,49 @@ proc testFmaGeneratedBytecode() =
       "Vector FMA result at index " & $i & " did not match lane-wise expected values"
   echo "  -> Scalar and Vec2 FMA rewrites match expected results"
 
+proc testGeneratedInplaceOperations() =
+  echo "[TEST] Generated in-place scalar and vector operations..."
+  var f = open("test_inplace_ops.cbc", fmRead)
+  var program: seq[uint32] = @[]
+  var word: uint32
+  while f.readBuffer(addr word, sizeof(uint32)) == sizeof(uint32):
+    program.add(word)
+  close(f)
+  assert program.len > 0, "test_inplace_ops.cbc is empty"
+
+  const N = 4
+  var input = @[1.0'f32, -2.0'f32, 3.5'f32, 8.0'f32]
+  var output = newSeq[float32](N)
+  var vecInput = @[TestVec2(x: 1, y: 2), TestVec2(x: -1, y: 0.5),
+                   TestVec2(x: 3, y: -2), TestVec2(x: 0.25, y: 4)]
+  var vecOutput = newSeq[TestVec2](N)
+  var intInput = @[1'i32, -2'i32, 13'i32, 28'i32]
+  var intOutput = newSeq[int32](N)
+  for gid in 0 ..< N:
+    var vm = initCpuVm(globalId = gid)
+    vm.setUniform(0, N)
+    vm.setBuffer(0, cast[pointer](addr input[0]))
+    vm.setBuffer(1, cast[pointer](addr output[0]))
+    vm.setBuffer(2, cast[pointer](addr vecInput[0]))
+    vm.setBuffer(3, cast[pointer](addr vecOutput[0]))
+    vm.setBuffer(4, cast[pointer](addr intInput[0]))
+    vm.setBuffer(5, cast[pointer](addr intOutput[0]))
+    vm.runVM(program)
+
+  for i in 0 ..< N:
+    let expected = (((input[i] + 4.0'f32) * 2.0'f32) - 3.0'f32) / 5.0'f32
+    assert abs(output[i] - (input[i] + expected)) < 0.0001'f32,
+      "Scalar in-place operations failed at " & $i
+    let expectedX = vecInput[i].x * 3.0'f32
+    let expectedY = vecInput[i].y * 3.0'f32
+    assert abs(vecOutput[i].x - expectedX) < 0.0001'f32 and
+           abs(vecOutput[i].y - expectedY) < 0.0001'f32,
+      "Vector in-place operations failed at " & $i
+    let expectedInt = ((intInput[i] + 4) * 2) - 3
+    assert intOutput[i] == expectedInt,
+      "Integer in-place operations failed at " & $i
+  echo "  -> +=, *=, -= and /= work for scalar and Vec2 values"
+
 proc testBuiltinOpcodes() =
   echo "[TEST] Builtin math opcodes..."
   var f = open("test_builtin.cbc", fmRead)
@@ -508,6 +551,7 @@ proc main() =
   testGeneratedObjAndLoopsBytecode()
   testVectorAddShader()
   testFmaGeneratedBytecode()
+  testGeneratedInplaceOperations()
   testBuiltinOpcodes()
   echo "================ ALL TESTS PASSED SUCCESSFULLY ================"
 

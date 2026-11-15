@@ -317,7 +317,7 @@ proc getMatMulCode(op, lhsTyName, rhsTyName: string): VMOpCode =
     elif lhsTyName == "mat4f" and rhsTyName == "mat4f": result = vocMmat4f
     elif lhsTyName == "mat4i" and rhsTyName == "mat4i": result = vocMmat4i
 
-proc getVecScalarMulCode(op, lhsTyName, rhsTyName: string): tuple[code: VMOpCode, size: int] =
+proc getVecScalarCode(op, lhsTyName, rhsTyName: string): tuple[code: VMOpCode, size: int] =
   result = (vocNoOp, 0)
   let isLhsVec = lhsTyName.startsWith("vec")
   let isRhsVec = rhsTyName.startsWith("vec")
@@ -380,7 +380,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       return
 
 
-    let vecMulResult = getVecScalarMulCode(opName, lhsTyName, rhsTyName)
+    let vecMulResult = getVecScalarCode(opName, lhsTyName, rhsTyName)
     let vecOp = vecMulResult.code
     let vecSize = vecMulResult.size
     if vecOp != vocNoOp:
@@ -1405,6 +1405,64 @@ proc genFunc(ctx: var CodeGenCtx, c: CIRNode) =
     ctx.code.callToPatch.del(name)
   ctx.code.allocator = parentAllocator
 
+proc genInfix(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(pos: -1)): CAllocation =
+  result = default(CAllocation)
+  let sourceOp = c.args[0].name
+  let inplaceOp = sourceOp.inplaceBaseOperator
+  let opName = if inplaceOp.len > 0: inplaceOp else: sourceOp
+  let operandTyName = ctx.cache.inferType(c.args[1])
+  let opIsFloat  = operandTyName.isFloatName or
+    (operandTyName.startsWith("vec") and operandTyName.endsWith("f"))
+  let operandTy = ctx.cache.getType(operandTyName)
+  let opSize = operandTy.size
+  
+  var lhsNode = c.args[1]
+  var rhsNode = c.args[2]
+
+  let lhsTyName = ctx.cache.inferType(lhsNode)
+  let rhsTyName = ctx.cache.inferType(rhsNode)
+
+  let lhs = ctx.genExpr(lhsNode)
+  let rhs = ctx.genExpr(rhsNode)
+  if lhsTyName.startsWith("vec"):
+    if rhsTyName.startsWith("vec"):
+      ctx.emitInst(opcodeFor(inplaceOp, opIsFloat), lhs.pos, rhs.pos, opSize)
+    elif inplaceOp in ["+", "-", "*"]:
+      let (vecOp, _) = getVecScalarCode(inplaceOp, lhsTyName, rhsTyName)
+      if vecOp != vocNoOp:
+        ctx.emitInst(vecOp, lhs.pos, rhs.pos, lanes)
+      else:
+        for lane in 0 ..< lanes:
+          ctx.emitInst(opcodeFor(inplaceOp, isVectorFloat),
+            lhs.pos + lane * FLOAT_SIZE, rhs.pos, FLOAT_SIZE)
+    else:
+      for lane in 0 ..< lanes:
+        ctx.emitInst(opcodeFor(inplaceOp, isVectorFloat),
+          lhs.pos + lane * FLOAT_SIZE, rhs.pos, FLOAT_SIZE)
+  else:
+    ctx.emitInst(opcodeFor(inplaceOp, lhsTyName.isFloatName),
+                 lhs.pos, rhs.pos, max(1, lhs.size))
+  
+  # Inplace operations like v[i] += 2
+  if lhsNode.kind == cnkArrAt:
+    let containerName = lhsNode.args[0].name
+    let index = ctx.genExpr(lhsNode.args[1])
+    let containerType = ctx.cache.inferType(lhsNode.args[0])
+    let elemType = ctx.cache.getType(containerType).returnType
+    let elemSize = max(1, ctx.cache.getType(elemType).size)
+    if containerName in ctx.cache.shaderParams.ssboToId:
+      let bufferId = ctx.cache.shaderParams.ssboToId.getOrDefault(containerName, 0)
+      ctx.emitInst(vocStoreBuf, lhs.pos, bufferId, elemSize)
+      ctx.emitInst(vocNoOp, index.pos, 0, max(1, index.size))
+    else:
+      let container = ctx.genExpr(lhsNode.args[0])
+      ctx.emitInst(vocStoreAt, lhs.pos, container.pos, elemSize)
+      ctx.emitInst(vocNoOp, index.pos, 0, max(1, index.size))
+      ctx.freeIfTemp(container)
+    ctx.freeIfTemp(index)
+  ctx.freeIfTemp(rhs)
+  return lhs
+
 proc genStmt*(ctx: var CodeGenCtx, c: CIRNode) =
   case c.kind
   of cnkEmpty: discard
@@ -1432,6 +1490,10 @@ proc genStmt*(ctx: var CodeGenCtx, c: CIRNode) =
     ctx.genDiscard(c)
   of cnkCall:
     ctx.genCallStmt(c)
+  of cnkInfix:
+    if c.args[0].name.inplaceBaseOperator.len > 0:
+      let value = ctx.genInfix(c)
+      ctx.freeIfTemp(value)
   of cnkFuncDef:
     ctx.genFunc(c)
   of cnkBreakStmt:

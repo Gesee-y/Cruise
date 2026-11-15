@@ -138,6 +138,33 @@ proc registerGlobalIndex(cache: var TypeCache, n: CIRNode) =
 proc isWildCardType(ty: string): bool =
   return ty == "int" or ty == "float" or ty == "uint"
 
+proc isInplaceOperator(op: string): bool =
+  op.startsWith("+=") or op.startsWith("-=") or
+    op.startsWith("*=") or op.startsWith("/=")
+
+proc inplaceBaseOperator(op: string): string =
+  if op.isInplaceOperator: $op[0] else: ""
+
+proc isVectorTypeName(typeName: string): bool =
+  typeName in ["vec2f", "vec3f", "vec4f", "vec2i", "vec3i", "vec4i"]
+
+proc isSameNumericFamily(lhsType, rhsType: string): bool =
+  (lhsType.startsWith("float") and rhsType.startsWith("float")) or
+  (lhsType.startsWith("int") and rhsType.startsWith("int")) or
+  (lhsType.startsWith("uint") and rhsType.startsWith("uint"))
+
+proc isInplaceTypeCompatible(cache: TypeCache, lhsType, rhsType: string): bool =
+  result = false
+  if lhsType == rhsType:
+    return true
+  if isSameNumericFamily(lhsType, rhsType):
+    return cache.getType(lhsType).size == cache.getType(rhsType).size
+  if lhsType.isVectorTypeName:
+    let component = lhsType[^1]
+    return cache.getType(rhsType).size == 4 and
+           ((component == 'f' and rhsType.startsWith("float")) or
+            (component == 'i' and rhsType.startsWith("int")))
+
 proc findSimilar(p: ProcOverloadNode, ty: string, info: LineInfo, pos: int): string =
   result = ty
   var tys: seq[string] = @[]
@@ -198,7 +225,17 @@ proc inferTypeOrAdd*(cache: var TypeCache, node: var CIRNode): string =
     let t = cache.inferTypeOrAdd(node.args[0])
     result = cache.getType(t).returnType
 
-  of cnkPrefix, cnkInfix, cnkCall:
+  of cnkInfix:
+    if node.args[0].name.isInplaceOperator:
+      result = cache.inferTypeOrAdd(node.args[1])
+    else:
+      if node.args[0].kind == cnkSym:
+        resolveCall(cache, node)
+      let tid = node.args[0].tid
+      if tid >= 0 and tid < cache.instances.len:
+        result = cache.instances[tid].returnType
+
+  of cnkPrefix, cnkCall:
     if node.args[0].kind == cnkSym:
       resolveCall(cache, node)
     
@@ -260,7 +297,15 @@ proc inferType*(cache: var TypeCache, node: CIRNode): string =
     let t = cache.inferType(node.args[0])
     result = cache.getType(t).returnType
 
-  of cnkPrefix, cnkInfix, cnkCall:    
+  of cnkInfix:
+    if node.args[0].name.isInplaceOperator:
+      result = cache.inferType(node.args[1])
+    else:
+      let tid = node.args[0].tid
+      if tid >= 0 and tid < cache.instances.len:
+        result = cache.instances[tid].returnType
+
+  of cnkPrefix, cnkCall:
     let tid = node.args[0].tid
     if tid >= 0 and tid < cache.instances.len:
       result = cache.instances[tid].returnType
@@ -356,7 +401,21 @@ proc resolveNode(cache: var TypeCache, n: var CIRNode, inFunc = false) =
     cache.registerVertexInput(n)
   of cnkFragmentInput:
     cache.registerFragmentInput(n)
-  of cnkCall, cnkInfix, cnkPrefix:
+  of cnkInfix:
+    if n.args.len == 3 and n.args[0].name.isInplaceOperator:
+      cache.resolveNode(n.args[1], inFunc = inFunc)
+      cache.resolveNode(n.args[2], inFunc = inFunc)
+      let lhsType = cache.inferTypeOrAdd(n.args[1])
+      let rhsType = cache.inferTypeOrAdd(n.args[2])
+      if not isInplaceTypeCompatible(cache, lhsType, rhsType):
+        reportSemError n.info, "In-place operator `" & n.args[0].name &
+          "` requires matching scalar types or a compatible vector/scalar pair; got `" &
+          lhsType & "` and `" & rhsType & "`."
+    else:
+      if not inFunc:
+        reportSemError n.info, "Top level statements are unsupported on GPU."
+      cache.resolveCall(n)
+  of cnkCall, cnkPrefix:
     if not inFunc:
       reportSemError n.info, "Top level statements are unsupported on GPU."
     cache.resolveCall(n)
