@@ -117,9 +117,12 @@ proc isZero(node: CIRNode): bool =
     node.args.len > 1 and node.args[^1].isZero
   else: false
 
-proc supportsLiteralConversion(targetType: string): bool =
-  targetType in ["float", "float32", "int", "int8", "int16", "int32",
-                 "uint", "uint8", "uint16", "uint32", "bool", "char"]
+proc supportsLiteralConversion(targetType: string, source: CIRNodeKind): bool =
+  case targetType
+  of "float", "float32": source in {cnkIntLit, cnkUintLit, cnkFloatLit, cnkBoolLit}
+  of "int32", "uint32": source in {cnkIntLit, cnkUintLit, cnkBoolLit}
+  of "bool": source in {cnkIntLit, cnkUintLit, cnkFloatLit, cnkBoolLit}
+  else: false
 
 proc literalAsFloat(node: CIRNode): float64 =
   case node.kind
@@ -158,24 +161,12 @@ proc rewriteConversionLiteral(node: CIRNode): CIRNode =
   case targetType
   of "float", "float32":
     result = newCIRFloatLit(info, float(source.literalAsFloat))
-  of "int":
-    result = newCIRIntLit(info, int(source.literalAsSigned))
-  of "int8":
-    result = newCIRIntLit(info, int(cast[int8](source.literalAsSigned)))
-  of "int16":
-    result = newCIRIntLit(info, int(cast[int16](source.literalAsSigned)))
   of "int32":
     result = newCIRIntLit(info, int(cast[int32](source.literalAsSigned)))
-  of "uint", "uint8":
-    result = newCIRUintLit(info, uint(cast[uint8](source.literalAsUnsigned)))
-  of "uint16":
-    result = newCIRUintLit(info, uint(cast[uint16](source.literalAsUnsigned)))
   of "uint32":
     result = newCIRUintLit(info, uint(cast[uint32](source.literalAsUnsigned)))
   of "bool":
     result = newCIRBoolLit(info, source.literalAsFloat != 0.0)
-  of "char":
-    result = newCIRCharLit(info, cast[char](uint8(source.literalAsUnsigned)))
   else:
     result = node
 
@@ -212,7 +203,8 @@ proc newRewriterEngine(): RewriterEngine =
   let any = anyTerm()
   let product = operationTerm(cnkInfix, "*", @[any, any])
 
-  # Constant conversions are compile-time work; keep vocConv for runtime values.
+  # Constant conversions are compile-time work; runtime conversions are lowered
+  # to destination-specialized VM instructions by the code generator.
   result.addPattern(cnkConv, Pattern(
     term: operationTerm(cnkConv, "", @[any]),
     rewriter: rewriteConversionLiteral,
@@ -340,7 +332,7 @@ proc matchPattern*(node: CIRNode, pattern: Pattern,
   of pgConvLiteral:
     if not node.args[1].isLit or
        node.args[0].kind notin {cnkSym, cnkRSym} or
-       not supportsLiteralConversion(node.args[0].name):
+       not supportsLiteralConversion(node.args[0].name, node.args[1].kind):
       return false
   of pgHomogeneousFma:
     if node.args.len != 3:

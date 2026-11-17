@@ -179,11 +179,17 @@ proc light() =
   var timer = 0.0'f32
   var fragmentUniforms = newSeq[uint32](16)
   vm.configure(objectConfig)
+  vm.prepareGlslVmObject(objectConfig)
+  vm.prepareGlslVmObject(lightConfig)
   var indexBuffer: GLuint
   glGenBuffers(1, addr indexBuffer)
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer)
-  glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+  glBindBuffer(GL_ARRAY_BUFFER, indexBuffer)
+  glBufferData(GL_ARRAY_BUFFER,
     (indices.len * sizeof(uint32)).GLsizeiptr, unsafeAddr indices[0], GL_STATIC_DRAW)
+  objectConfig.bindGlslVmObject()
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer)
+  lightConfig.bindGlslVmObject()
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer)
 
   # Randomized 3D distribution for 36 cubes
   type
@@ -327,10 +333,12 @@ proc light() =
         vm.setShader(objectConfig)
         objectConfig.setUniforms(vertexUniforms, vusVertex)
         vm.runVm(objectConfig)
+        objectConfig.bindGlslVmObject()
       else:
         vm.setShader(lightConfig)
         lightConfig.setUniforms(vertexUniforms, vusVertex)
         vm.runVm(lightConfig)
+        lightConfig.bindGlslVmObject()
       glDrawElements(GL_TRIANGLES, indices.len.GLsizei, GL_UNSIGNED_INT, nil)
       inc i
 
@@ -339,6 +347,8 @@ proc light() =
     discard SDL_GL_SwapWindow(win.handle)
 
   glDeleteBuffers(1, addr indexBuffer)
+  objectConfig.destroyGlslVmObject()
+  lightConfig.destroyGlslVmObject()
   win.quitWindow()
   app.quitSDL3App()
   SDL_Quit_proc()

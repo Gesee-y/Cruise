@@ -140,9 +140,12 @@ proc triangle() =
   vm.configure(objectConfig)
   var indexBuffer: GLuint
   glGenBuffers(1, addr indexBuffer)
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer)
-  glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+  glBindBuffer(GL_ARRAY_BUFFER, indexBuffer)
+  glBufferData(GL_ARRAY_BUFFER,
     (indices.len * sizeof(uint32)).GLsizeiptr, unsafeAddr indices[0], GL_STATIC_DRAW)
+  vm.prepareGlslVmObject(objectConfig)
+  objectConfig.bindGlslVmObject()
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer)
 
   # Randomized 3D distribution for 36 cubes
   type
@@ -271,11 +274,13 @@ proc triangle() =
 
       objectConfig.setUniforms(vertexUniforms, vusVertex)
       vm.runVm(objectConfig)
+      objectConfig.bindGlslVmObject()
       glDrawElements(GL_TRIANGLES, indices.len.GLsizei, GL_UNSIGNED_INT, nil)
 
     discard SDL_GL_SwapWindow(win.handle)
 
   glDeleteBuffers(1, addr indexBuffer)
+  objectConfig.destroyGlslVmObject()
   win.quitWindow()
   app.quitSDL3App()
   SDL_Quit_proc()

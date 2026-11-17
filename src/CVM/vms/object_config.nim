@@ -29,6 +29,9 @@ type
     buffers*: seq[VmBufferConfig]
     attributes*: seq[VmAttributeConfig]
     textures*: seq[VmTextureConfig]
+    ## OpenGL backend mesh handles. Other VM backends ignore these fields.
+    glVao*, glInputVbo*: uint32
+    glVertexCount*: int
 
 proc newConfig(): VmObjectConfig =
   result = VmObjectConfig()

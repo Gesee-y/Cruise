@@ -24,8 +24,6 @@ type
     program*: GLuint
     textures: array[GlslVmMaxTextures, GLuint]
     textureActive: array[GlslVmMaxTextures, bool]
-    vao: GLuint
-    inputVbo: GLuint
     inputWordCount: int
     vertexBytecodeLocation: GLint
     fragmentBytecodeLocation: GLint
@@ -97,9 +95,6 @@ proc initGlslVm*(): GlslVm =
   let specializedVertexSource = GlslVertexVmSource.replace(inputDeclaration,
     "uint inputs[" & $result.inputWordCount & "];")
   result.program = linkProgram(specializedVertexSource, GlslFragmentVmSource)
-  glGenVertexArrays(1, addr result.vao)
-  glBindVertexArray(result.vao)
-  glGenBuffers(1, addr result.inputVbo)
   for i in 0 ..< GlslVmMaxTextures:
     result.textures[i] = 0
 
@@ -118,12 +113,10 @@ proc initGlslVm*(): GlslVm =
   for i in 0 ..< GlslVmMaxTextures:
     let location = glGetUniformLocation(result.program, ("uSamplers[" & $i & "]").cstring)
     if location >= 0: glUniform1i(location, i.GLint)
-  glBindVertexArray(0)
 
 proc setShader*(vm: var GlslVm, config: VmObjectConfig) =
-  ## Select bytecode without replacing the configured vertex inputs or texture
-  ## bindings. The new shader must be compatible with those configured inputs.
-  ## No draw command is issued.
+  ## Select the bytecode pair for the next VM run. The VM owns no mesh or draw
+  ## state, and no draw command is issued.
   assert config.vertexBytecode.len > 0 and
     config.vertexBytecode.len <= GlslVmMaxBytecodeWords,
     "Object config needs 1..512 vertex bytecode words"
@@ -131,75 +124,15 @@ proc setShader*(vm: var GlslVm, config: VmObjectConfig) =
     config.fragmentBytecode.len <= GlslVmMaxBytecodeWords,
     "Object config needs 1..512 fragment bytecode words"
   glUseProgram(vm.program)
-  glBindVertexArray(vm.vao)
   glUniform1uiv(vm.vertexBytecodeLocation, config.vertexBytecode.len.GLsizei,
     unsafeAddr config.vertexBytecode[0])
   glUniform1uiv(vm.fragmentBytecodeLocation, config.fragmentBytecode.len.GLsizei,
     unsafeAddr config.fragmentBytecode[0])
 
 proc configure*(vm: var GlslVm, config: VmObjectConfig) =
-  ## Upload immutable bytecode inputs and textures for an object. Call again
-  ## only when switching or changing those resources; runVM handles uniforms.
+  ## Select bytecode and upload the object's textures. Vertex input buffers
+  ## are created separately and stored on the config, not owned by the VM.
   vm.setShader(config)
-  let layout = bytecodeInputLayout(config.vertexBytecode)
-  for field in layout:
-    let neededWords = (field.offset + field.size + sizeof(uint32) - 1) div sizeof(uint32)
-    assert neededWords <= vm.inputWordCount,
-      "Object vertex inputs exceed the VM's GL attribute capacity"
-  assert layout.len == config.attributes.len, "Vertex bytecode expects " &
-    $layout.len & " attributes, got " & $config.attributes.len
-  var vertexCountFromAttributes = 0
-  var packed = newSeq[byte]()
-  if layout.len > 0:
-    let first = config.attributes[0]
-    var firstBuffer: VmBufferConfig
-    var firstBufferFound = false
-    for buffer in config.buffers:
-      if buffer.id == first.bufferId:
-        firstBuffer = buffer
-        firstBufferFound = true
-        break
-    assert firstBufferFound, "Object attribute references a missing buffer"
-    let firstStride = if first.strideBytes == 0: first.elementBytes else: first.strideBytes
-    assert first.byteOffset <= firstBuffer.bytes.len and
-      firstBuffer.bytes.len - first.byteOffset >= first.elementBytes,
-      "First vertex attribute exceeds its source buffer"
-    vertexCountFromAttributes = 1 +
-      (firstBuffer.bytes.len - first.byteOffset - first.elementBytes) div firstStride
-    packed = newSeq[byte](vertexCountFromAttributes * GlslVmInputBlockBytes)
-
-  for attributeIndex, source in config.attributes:
-    let field = layout[attributeIndex]
-    var bufferFound = false
-    for buffer in config.buffers:
-      if buffer.id != source.bufferId: continue
-      bufferFound = true
-      let stride = if source.strideBytes == 0: source.elementBytes else: source.strideBytes
-      assert source.byteOffset <= buffer.bytes.len and stride >= source.elementBytes and
-         buffer.bytes.len - source.byteOffset >= source.elementBytes,
-        "Object attribute layout exceeds its source buffer"
-      let count = 1 + (buffer.bytes.len - source.byteOffset - source.elementBytes) div stride
-      assert count == vertexCountFromAttributes,
-        "All vertex attribute arrays must have equal lengths"
-      assert source.elementBytes == field.size,
-        "Attribute size does not match its bytecode input"
-      for vertex in 0 ..< count:
-        let src = source.byteOffset + vertex * stride
-        let dst = vertex * GlslVmInputBlockBytes + field.offset
-        for byteIndex in 0 ..< field.size:
-          packed[dst + byteIndex] = buffer.bytes[src + byteIndex]
-      break
-    assert bufferFound, "Object attribute references a missing buffer"
-
-  glBindVertexArray(vm.vao)
-  glBindBuffer(GL_ARRAY_BUFFER, vm.inputVbo)
-  if packed.len > 0:
-    glBufferData(GL_ARRAY_BUFFER, packed.len.GLsizeiptr, addr packed[0], GL_STATIC_DRAW)
-  for index in 0 ..< vm.inputWordCount:
-    glEnableVertexAttribArray(index.GLuint)
-    glVertexAttribIPointer(index.GLuint, 1, GL_UNSIGNED_INT,
-      GlslVmInputBlockBytes.GLsizei, cast[pointer](index * sizeof(uint32)))
-
   for i in 0 ..< GlslVmMaxTextures:
     vm.textureActive[i] = false
   for texture in config.textures:
@@ -229,9 +162,86 @@ proc configure*(vm: var GlslVm, config: VmObjectConfig) =
     let textureId = if vm.textureActive[slot]: vm.textures[slot] else: 0'u32
     glBindTexture(GL_TEXTURE_2D, textureId)
 
+proc prepareGlslVmObject*(vm: GlslVm, config: var VmObjectConfig) =
+  ## Pack this object's attribute arrays into the GLSL VM's 128-byte input
+  ## blocks once, then retain the resulting VBO and VAO in its config.
+  assert config.glVao == 0 and config.glInputVbo == 0,
+    "GLSL mesh resources are already prepared for this config"
+  let layout = bytecodeInputLayout(config.vertexBytecode)
+  for field in layout:
+    let neededWords = (field.offset + field.size + sizeof(uint32) - 1) div sizeof(uint32)
+    assert neededWords <= vm.inputWordCount,
+      "Object vertex inputs exceed the VM's GL attribute capacity"
+  assert layout.len == config.attributes.len, "Vertex bytecode expects " &
+    $layout.len & " attributes, got " & $config.attributes.len
+  assert layout.len > 0, "A GLSL VM mesh needs vertex input fields"
+
+  let first = config.attributes[0]
+  var firstBuffer: VmBufferConfig
+  var firstBufferFound = false
+  for buffer in config.buffers:
+    if buffer.id == first.bufferId:
+      firstBuffer = buffer
+      firstBufferFound = true
+      break
+  assert firstBufferFound, "First vertex attribute references a missing buffer"
+  let firstStride = if first.strideBytes == 0: first.elementBytes else: first.strideBytes
+  assert first.byteOffset <= firstBuffer.bytes.len and
+    firstBuffer.bytes.len - first.byteOffset >= first.elementBytes,
+    "First vertex attribute exceeds its source buffer"
+  config.glVertexCount = 1 +
+    (firstBuffer.bytes.len - first.byteOffset - first.elementBytes) div firstStride
+  var packed = newSeq[byte](config.glVertexCount * GlslVmInputBlockBytes)
+
+  for attributeIndex, source in config.attributes:
+    let field = layout[attributeIndex]
+    var bufferFound = false
+    for buffer in config.buffers:
+      if buffer.id != source.bufferId: continue
+      bufferFound = true
+      let stride = if source.strideBytes == 0: source.elementBytes else: source.strideBytes
+      assert source.byteOffset <= buffer.bytes.len and stride >= source.elementBytes and
+        buffer.bytes.len - source.byteOffset >= source.elementBytes,
+        "Object attribute layout exceeds its source buffer"
+      let count = 1 + (buffer.bytes.len - source.byteOffset - source.elementBytes) div stride
+      assert count == config.glVertexCount,
+        "All vertex attribute arrays must have equal lengths"
+      assert source.elementBytes == field.size,
+        "Attribute size does not match its bytecode input"
+      for vertex in 0 ..< count:
+        let src = source.byteOffset + vertex * stride
+        let dst = vertex * GlslVmInputBlockBytes + field.offset
+        for byteIndex in 0 ..< field.size:
+          packed[dst + byteIndex] = buffer.bytes[src + byteIndex]
+      break
+    assert bufferFound, "Object attribute references a missing buffer"
+
+  glGenVertexArrays(1, addr config.glVao)
+  glBindVertexArray(config.glVao)
+  glGenBuffers(1, addr config.glInputVbo)
+  glBindBuffer(GL_ARRAY_BUFFER, config.glInputVbo)
+  glBufferData(GL_ARRAY_BUFFER, packed.len.GLsizeiptr, addr packed[0], GL_STATIC_DRAW)
+  for index in 0 ..< vm.inputWordCount:
+    glEnableVertexAttribArray(index.GLuint)
+    glVertexAttribIPointer(index.GLuint, 1, GL_UNSIGNED_INT,
+      GlslVmInputBlockBytes.GLsizei, cast[pointer](index * sizeof(uint32)))
+  glBindVertexArray(0)
+
+proc bindGlslVmObject*(config: VmObjectConfig) =
+  glBindVertexArray(config.glVao)
+
+proc destroyGlslVmObject*(config: var VmObjectConfig) =
+  if config.glInputVbo != 0:
+    glDeleteBuffers(1, addr config.glInputVbo)
+    config.glInputVbo = 0
+  if config.glVao != 0:
+    glDeleteVertexArrays(1, addr config.glVao)
+    config.glVao = 0
+  config.glVertexCount = 0
+
 proc runVm*(vm: var GlslVm, config: VmObjectConfig) =
-  ## Upload per-draw uniforms and leave the VM shader/VAO ready for a caller
-  ## issued draw command. Configure static resources separately.
+  ## Upload per-draw uniforms and leave the VM program ready. The caller binds
+  ## the object's config VAO and index buffer before issuing a draw command.
   var vertexUniforms: array[GlslVmUniformWords, uint32]
   var fragmentUniforms: array[GlslVmUniformWords, uint32]
   for i, value in config.uniforms:
@@ -241,22 +251,15 @@ proc runVm*(vm: var GlslVm, config: VmObjectConfig) =
   for i, value in config.fragmentUniforms: fragmentUniforms[i] = value
 
   glUseProgram(vm.program)
-  glBindVertexArray(vm.vao)
   glUniform1uiv(vm.vertexUniformLocation, GlslVmUniformWords.GLsizei, addr vertexUniforms[0])
   glUniform1uiv(vm.fragmentUniformLocation, GlslVmUniformWords.GLsizei, addr fragmentUniforms[0])
-  # Program, VAO, buffers and texture bindings remain active for the caller's draw.
+  # The caller binds the object's mesh and index buffer before issuing a draw.
 
 proc destroy*(vm: var GlslVm) =
   ## Release VM-owned GL objects. Call while the OpenGL context is current.
   if vm.program != 0:
     glDeleteProgram(vm.program)
     vm.program = 0
-  if vm.inputVbo != 0:
-    glDeleteBuffers(1, addr vm.inputVbo)
-    vm.inputVbo = 0
   glDeleteTextures(GlslVmMaxTextures.GLsizei, addr vm.textures[0])
   vm.textures = default(typeof(vm.textures))
-  if vm.vao != 0:
-    glDeleteVertexArrays(1, addr vm.vao)
-    vm.vao = 0
 

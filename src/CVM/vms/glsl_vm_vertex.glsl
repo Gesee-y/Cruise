@@ -8,8 +8,10 @@ uniform uint uVertexBytecode[512];
 uniform uint uVertexUniforms[256];
 
 const int CVM_MEM_WORDS = 64; // 256-byte VM register file
+const int CVM_STACK_WORDS = 16;
 
 uint cvmMem[CVM_MEM_WORDS];
+uint cvmStack[CVM_STACK_WORDS];
 
 float readFloatWord(uint wordIndex) {
     return uintBitsToFloat(cvmMem[int(wordIndex)]);
@@ -41,8 +43,17 @@ uint readVertexInputByte(uint byteAddress) {
 void writeMemoryByte(uint byteAddress, uint value) {
     int wordIndex = int(byteAddress >> 2);
     uint shift = (byteAddress & 3u) * 8u;
+    cvmMem[wordIndex] = (cvmMem[wordIndex] & ~(255u << shift)) | ((value & 255u) << shift);
+}
+
+void writeStackByte(uint byteAddress, uint value) {
+    uint shift = (byteAddress & 3u) * 8u;
     uint mask = 255u << shift;
-    cvmMem[wordIndex] = (cvmMem[wordIndex] & ~mask) | ((value & 255u) << shift);
+    cvmStack[byteAddress >> 2u] = (cvmStack[byteAddress >> 2u] & ~mask) | ((value & 255u) << shift);
+}
+
+uint readStackByte(uint byteAddress) {
+    return (cvmStack[byteAddress >> 2u] >> ((byteAddress & 3u) * 8u)) & 255u;
 }
 
 uint readMemoryByte(uint byteAddress) {
@@ -83,34 +94,52 @@ void writeVaryingByte(uint byteAddress, uint value) {
     varyingBlock[vectorIndex][componentIndex] = uintBitsToFloat(word);
 }
 
+vec2 readVec2(uint a) { return vec2(readFloat(a), readFloat(a + 4u)); }
+vec3 readVec3(uint a) { return vec3(readFloat(a), readFloat(a + 4u), readFloat(a + 8u)); }
+vec4 readVec4(uint a) { return vec4(readFloat(a), readFloat(a + 4u), readFloat(a + 8u), readFloat(a + 12u)); }
+void writeVec2(uint a, vec2 v) { writeFloat(a, v.x); writeFloat(a + 4u, v.y); }
+void writeVec3(uint a, vec3 v) { writeFloat(a, v.x); writeFloat(a + 4u, v.y); writeFloat(a + 8u, v.z); }
+void writeVec4(uint a, vec4 v) { writeFloat(a, v.x); writeFloat(a + 4u, v.y); writeFloat(a + 8u, v.z); writeFloat(a + 12u, v.w); }
+mat2 readMat2(uint a) { return mat2(readVec2(a), readVec2(a + 8u)); }
+mat3 readMat3(uint a) { return mat3(readVec3(a), readVec3(a + 12u), readVec3(a + 24u)); }
+mat4 readMat4(uint a) { return mat4(readVec4(a), readVec4(a + 16u), readVec4(a + 32u), readVec4(a + 48u)); }
+void writeMat2(uint a, mat2 m) { for (int i = 0; i < 4; ++i) writeFloat(a + uint(i * 4), m[i / 2][i % 2]); }
+void writeMat3(uint a, mat3 m) { for (int i = 0; i < 9; ++i) writeFloat(a + uint(i * 4), m[i / 3][i % 3]); }
+void writeMat4(uint a, mat4 m) { for (int i = 0; i < 16; ++i) writeFloat(a + uint(i * 4), m[i / 4][i % 4]); }
+
+vec2 safeNormalize(vec2 v) { if (dot(v, v) == 0.0) return vec2(0.0); return normalize(v); }
+vec3 safeNormalize(vec3 v) { if (dot(v, v) == 0.0) return vec3(0.0); return normalize(v); }
+vec4 safeNormalize(vec4 v) { if (dot(v, v) == 0.0) return vec4(0.0); return normalize(v); }
+void refractVec2(uint d, uint n, float eta) { writeVec2(d, refract(readVec2(d), readVec2(n), eta)); }
+void refractVec3(uint d, uint n, float eta) { writeVec3(d, refract(readVec3(d), readVec3(n), eta)); }
+void refractVec4(uint d, uint n, float eta) { writeVec4(d, refract(readVec4(d), readVec4(n), eta)); }
+void faceforwardVec2(uint d, uint i, uint n) { writeVec2(d, faceforward(readVec2(d), readVec2(i), readVec2(n))); }
+void faceforwardVec3(uint d, uint i, uint n) { writeVec3(d, faceforward(readVec3(d), readVec3(i), readVec3(n))); }
+void faceforwardVec4(uint d, uint i, uint n) { writeVec4(d, faceforward(readVec4(d), readVec4(i), readVec4(n))); }
+
 void main() {
     gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
     for (int i = 0; i < 8; ++i) {
         varyingBlock[i] = vec4(0.0);
     }
 
-    int pc = int(uVertexBytecode[1]);
-    bool halted = false;
-    int callFrameBase = -1;
+    uint pc = uVertexBytecode[1];
     uint registerBase = 0u;
-    int stackBase = 0;
-    uint cvmStack[8];
-    int stackLen = 0;
+    uint stackBase = 0u;
+    uint stackPointer = 0u;
 
-    while (!halted) {
+    while (true) {
         uint word = uVertexBytecode[pc++];
         uint op = (word >> 16) & 255u;
         uint size = (word >> 24) & 255u;
         if (size == 0u && op != 20u) size = 1u;
         uint dst = (word >> 8) & 255u;
         uint src = word & 255u;
-        int d = 0;
-        int s = 0;
+        int d;
+        int s;
 
         switch (op) {
-        case 0u: // halt
-            halted = true;
-            break;
+        case 0u: return;
         case 1u: {
             dst += registerBase; d = int(dst >> 2);
             src += registerBase; s = int(src >> 2);
@@ -167,111 +196,65 @@ void main() {
             for (uint i = 0u; i < count; ++i) writeFloatWord(uint(d) + i, readFloatWord(uint(d) + i) / readFloatWord(uint(s) + i));
             break;
         }
-        case 10u: { // packed source and target VMConvType follow
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            {
-                uint descriptor = uVertexBytecode[pc++];
-                uint sourceType = descriptor & 255u;
-                uint targetType = (descriptor >> 8) & 255u;
-                uint sourceSize = sourceType >= 1u && sourceType <= 4u ? (1u << (sourceType - 1u)) :
-                    (sourceType >= 5u && sourceType <= 8u ? (1u << (sourceType - 5u)) :
-                    (sourceType == 9u ? 4u : (sourceType == 11u ? 1u : 0u)));
-                uint targetSize = targetType >= 1u && targetType <= 4u ? (1u << (targetType - 1u)) :
-                    (targetType >= 5u && targetType <= 8u ? (1u << (targetType - 5u)) :
-                    (targetType == 9u ? 4u : (targetType == 11u ? 1u : 0u)));
-                bool sourceFloat = sourceType == 9u;
-                bool targetFloat = targetType == 9u;
-                bool sourceUnsigned = (sourceType >= 5u && sourceType <= 8u) || sourceType == 11u;
-                bool targetUnsigned = (targetType >= 5u && targetType <= 8u) || targetType == 11u;
-                if (sourceSize > 0u && sourceSize <= 4u &&
-                    targetSize > 0u && targetSize <= 4u) {
-                    if (sourceFloat) {
-                        float value = readFloat(src);
-                        if (targetFloat) writeFloat(dst, value);
-                        else if (targetType == 11u) writeScalar(dst, uint(value != 0.0), 1u);
-                        else if (targetUnsigned) writeScalar(dst, uint(value), targetSize);
-                        else writeScalar(dst, uint(int(value)), targetSize);
-                    } else if (sourceUnsigned) {
-                        uint value = readScalarUnsigned(src, sourceSize);
-                        if (targetFloat) writeFloat(dst, float(value));
-                        else if (targetType == 11u) writeScalar(dst, uint(value != 0u), 1u);
-                        else writeScalar(dst, value, targetSize);
-                    } else {
-                        int value = readScalarSigned(src, sourceSize);
-                        if (targetFloat) writeFloat(dst, float(value));
-                        else if (targetType == 11u) writeScalar(dst, uint(value != 0), 1u);
-                        else writeScalar(dst, uint(value), targetSize);
-                    }
-                }
-            }
-            break;
-        }
+        case 143u: { dst += registerBase; src += registerBase; writeScalar(dst, readScalarUnsigned(src, 4u), 4u); break; } // i32 -> u32
+        case 144u: { dst += registerBase; src += registerBase; writeFloat(dst, float(readScalarSigned(src, 4u))); break; } // i32 -> f32
+        case 145u: { dst += registerBase; src += registerBase; writeScalar(dst, uint(readScalarSigned(src, 4u) != 0), 1u); break; } // i32 -> bool
+        case 146u: { dst += registerBase; src += registerBase; writeScalar(dst, readScalarUnsigned(src, 4u), 4u); break; } // u32 -> i32
+        case 147u: { dst += registerBase; src += registerBase; writeFloat(dst, float(readScalarUnsigned(src, 4u))); break; } // u32 -> f32
+        case 148u: { dst += registerBase; src += registerBase; writeScalar(dst, uint(readScalarUnsigned(src, 4u) != 0u), 1u); break; } // u32 -> bool
+        case 149u: { dst += registerBase; src += registerBase; writeScalar(dst, uint(readFloat(src) != 0.0), 1u); break; } // f32 -> bool
+        case 150u: { dst += registerBase; src += registerBase; writeScalar(dst, readScalarUnsigned(src, 1u), 4u); break; } // bool -> i32
+        case 151u: { dst += registerBase; src += registerBase; writeScalar(dst, readScalarUnsigned(src, 1u), 4u); break; } // bool -> u32
+        case 152u: { dst += registerBase; src += registerBase; writeFloat(dst, float(readScalarUnsigned(src, 1u))); break; } // bool -> f32
+
         case 17u: { dst += registerBase; d = int(dst >> 2); src += registerBase; s = int(src >> 2); copyWords(dst, src, size); break; }
         case 15u: // push argument bytes
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            for (uint i = 0u; i < size && stackLen < 256; ++i) cvmStack[stackLen++] = readMemoryByte(dst + i);
+            dst += registerBase;
+            for (uint i = 0u; i < size; ++i) writeStackByte(stackPointer + i, readMemoryByte(dst + i));
+            stackPointer += size;
             break;
         case 16u: { // pop bytes
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            int count = min(int(size), stackLen);
-            for (int i = 0; i < count; ++i) writeMemoryByte(dst + uint(i), cvmStack[stackLen - count + i]);
-            stackLen -= count;
+            dst += registerBase;
+            stackPointer -= size;
+            for (uint i = 0u; i < size; ++i) writeMemoryByte(dst + i, readStackByte(stackPointer + i));
             break;
         }
         case 20u: { // call
-            src += registerBase;
-            int target = int(uVertexBytecode[pc++]);
-            uint frameInfo = uVertexBytecode[pc++];
-            int argsBytes = int(frameInfo & 65535u);
-            int frameBytes = int(frameInfo >> 16u);
-            int argsBase = stackLen - argsBytes;
-            uint calleeBase = registerBase + dst;
-            int frameAt = stackLen;
-            uint previousFrame = 65535u;
-            if (callFrameBase >= 0) previousFrame = uint(callFrameBase);
-            cvmStack[frameAt] = uint(pc);
-            cvmStack[frameAt + 1] = registerBase | (uint(stackBase) << 16u);
-            cvmStack[frameAt + 2] = previousFrame | (uint(argsBase) << 16u);
-            cvmStack[frameAt + 3] = src | (size << 8u) | (calleeBase << 16u);
-            stackLen += 16;
-            callFrameBase = frameAt;
-            registerBase = calleeBase;
-            stackBase = argsBase;
-            pc = target;
+            // Frame words: return PC, parent bases, args base + return dst/size.
+            uint frameWord = (stackPointer + 3u) >> 2u;
+            cvmStack[frameWord] = pc + 2u;
+            cvmStack[frameWord + 1u] = registerBase | (stackBase << 16u);
+            stackBase = stackPointer - (uVertexBytecode[pc + 1u] & 65535u);
+            cvmStack[frameWord + 2u] = (stackBase << 16u) | (size << 8u) | src;
+            stackPointer = (frameWord << 2u) + 12u;
+            registerBase += dst;
+            pc = uVertexBytecode[pc];
             break;
         }
         case 21u: { // ret
-            if (callFrameBase >= 0) {
-                uint returnPc = cvmStack[callFrameBase];
-                uint parentBases = cvmStack[callFrameBase + 1];
-                uint previousAndArgs = cvmStack[callFrameBase + 2];
-                uint resultInfo = cvmStack[callFrameBase + 3];
-                uint returnDst = resultInfo & 255u;
-                uint returnSize = (resultInfo >> 8u) & 255u;
-                uint calleeBase = resultInfo >> 16u;
-                for (uint i = 0u; i < returnSize; ++i)
-                    writeMemoryByte(returnDst + i, readMemoryByte(calleeBase + i));
-                stackLen = int(previousAndArgs >> 16u);
-                uint previousFrame = previousAndArgs & 65535u;
-                callFrameBase = int(previousFrame);
-                if (previousFrame == 65535u) callFrameBase = -1;
+            // R0 is the return value; popping the frame restores both bases.
+            if (stackPointer != 0u) {
+                uint frameWord = (stackPointer - 12u) >> 2u;
+                uint parentBases = cvmStack[frameWord + 1u];
+                uint resultInfo = cvmStack[frameWord + 2u];
+                for (uint i = 0u; i < ((resultInfo >> 8u) & 255u); ++i)
+                    writeMemoryByte((parentBases & 65535u) + (resultInfo & 255u) + i,
+                                    readMemoryByte(registerBase + i));
+                stackPointer = resultInfo >> 16u;
                 registerBase = parentBases & 65535u;
-                stackBase = int(parentBases >> 16u);
-                pc = int(returnPc);
-            } else halted = true;
+                stackBase = parentBases >> 16u;
+                pc = cvmStack[frameWord];
+            } else return;
             break;
         }
         case 22u: // jump
-            pc = int(uVertexBytecode[pc]);
+            pc = uVertexBytecode[pc];
             break;
         case 23u: // jump if false
             {
             dst += registerBase; d = int(dst >> 2);
                 uint target = uVertexBytecode[pc++];
-                if (cvmMem[d] == 0u) pc = int(target);
+                if (cvmMem[d] == 0u) pc = target;
             }
             break;
         case 24u: { dst += registerBase; d = int(dst >> 2); src += registerBase; s = int(src >> 2); cvmMem[d] = uint(-int(cvmMem[s])); break; }
@@ -294,7 +277,7 @@ void main() {
         case 36u: // copy stack argument bytes to a local register
             dst += registerBase; d = int(dst >> 2);
             for (uint offset = 0u; offset < size; ++offset)
-                writeMemoryByte(dst + offset, cvmStack[stackBase + int(src) + int(offset)]);
+                writeMemoryByte(dst + offset, readStackByte(stackBase + src + offset));
             break;
         case 37u: // load bytes from the uint32 uniform table at src word offset
             if (src + (size + 3u) / 4u <= 256u) {
@@ -332,25 +315,10 @@ void main() {
         }
         case 42u: { dst += registerBase; d = int(dst >> 2); cvmMem[d] = uint(gl_VertexID); break; }
         case 43u: { break; }
-        case 44u: { // fused multiply-add
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            {
-                uint packedSources = uVertexBytecode[pc++];
-                uint rhs = (packedSources & 255u) + registerBase;
-                uint addend = ((packedSources >> 8) & 255u) + registerBase;
-                bool isVector = size > 4u;
-                uint dstWord = uint(d);
-                uint srcWord = uint(s);
-                uint rhsWord = rhs >> 2u;
-                uint addendWord = addend >> 2u;
-                if (isVector) {
-                    for (uint lane = 0u; lane < (size >> 2u); ++lane)
-                        writeFloatWord(dstWord + lane, (readFloatWord(srcWord + lane) * readFloatWord(rhsWord + lane) + readFloatWord(addendWord + lane)));
-                } else {
-                    writeFloatWord(dstWord, (readFloatWord(srcWord) * readFloatWord(rhsWord) + readFloatWord(addendWord)));
-                }
-            }
+        case 44u: {
+            dst += registerBase; src += registerBase;
+            uint packedSources = uVertexBytecode[pc++];
+            for (uint i = 0u; i < (size >> 2u); ++i) writeFloat(dst + (i << 2u), readFloat(src + (i << 2u)) * readFloat(((packedSources & 255u) + registerBase) + (i << 2u)) + readFloat((((packedSources >> 8u) & 255u) + registerBase) + (i << 2u)));
             break;
         }
         case 45u: { // integer fused multiply-add
@@ -419,156 +387,12 @@ void main() {
                 writeVaryingByte(src + offset, readMemoryByte(dst + offset));
             }
             break;
-        case 71u: { // vocMmatvec2f dstAndVec, mat
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            mat2 M = mat2(vec2(readFloat(src), readFloat(src + 4u)),
-                          vec2(readFloat(src + 8u), readFloat(src + 12u)));
-            vec2 v = vec2(readFloat(dst), readFloat(dst + 4u));
-            vec2 res = M * v;
-            writeFloat(dst, res.x);
-            writeFloat(dst + 4u, res.y);
-            break;
-        }
-        case 72u: { // vocMmatvec2i dstAndVec, mat
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            int vx = int(cvmMem[d]); int vy = int(cvmMem[d + 1]);
-            cvmMem[d]     = uint(int(cvmMem[s]) * vx + int(cvmMem[s + 2]) * vy);
-            cvmMem[d + 1] = uint(int(cvmMem[s + 1]) * vx + int(cvmMem[s + 3]) * vy);
-            break;
-        }
-        case 73u: { // vocMmatvec3f dstAndVec, mat
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            mat3 M = mat3(vec3(readFloat(src), readFloat(src + 4u), readFloat(src + 8u)),
-                          vec3(readFloat(src + 12u), readFloat(src + 16u), readFloat(src + 20u)),
-                          vec3(readFloat(src + 24u), readFloat(src + 28u), readFloat(src + 32u)));
-            vec3 v = vec3(readFloat(dst), readFloat(dst + 4u), readFloat(dst + 8u));
-            vec3 res = M * v;
-            writeFloat(dst, res.x);
-            writeFloat(dst + 4u, res.y);
-            writeFloat(dst + 8u, res.z);
-            break;
-        }
-        case 74u: { // vocMmatvec3i dstAndVec, mat
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            int vx = int(cvmMem[d]); int vy = int(cvmMem[d + 1]); int vz = int(cvmMem[d + 2]);
-            cvmMem[d]     = uint(int(cvmMem[s]) * vx + int(cvmMem[s + 3]) * vy + int(cvmMem[s + 6]) * vz);
-            cvmMem[d + 1] = uint(int(cvmMem[s + 1]) * vx + int(cvmMem[s + 4]) * vy + int(cvmMem[s + 7]) * vz);
-            cvmMem[d + 2] = uint(int(cvmMem[s + 2]) * vx + int(cvmMem[s + 5]) * vy + int(cvmMem[s + 8]) * vz);
-            break;
-        }
-        case 75u: { // vocMmatvec4f dstAndVec, mat
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            mat4 M = mat4(vec4(readFloat(src), readFloat(src + 4u), readFloat(src + 8u), readFloat(src + 12u)),
-                          vec4(readFloat(src + 16u), readFloat(src + 20u), readFloat(src + 24u), readFloat(src + 28u)),
-                          vec4(readFloat(src + 32u), readFloat(src + 36u), readFloat(src + 40u), readFloat(src + 44u)),
-                          vec4(readFloat(src + 48u), readFloat(src + 52u), readFloat(src + 56u), readFloat(src + 60u)));
-            vec4 v = vec4(readFloat(dst), readFloat(dst + 4u), readFloat(dst + 8u), readFloat(dst + 12u));
-            vec4 res = M * v;
-            writeFloat(dst, res.x);
-            writeFloat(dst + 4u, res.y);
-            writeFloat(dst + 8u, res.z);
-            writeFloat(dst + 12u, res.w);
-            break;
-        }
-        case 76u: { // vocMmatvec4i dstAndVec, mat
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            int vx = int(cvmMem[d]); int vy = int(cvmMem[d + 1]); int vz = int(cvmMem[d + 2]); int vw = int(cvmMem[d + 3]);
-            cvmMem[d]     = uint(int(cvmMem[s]) * vx + int(cvmMem[s + 4]) * vy + int(cvmMem[s + 8]) * vz + int(cvmMem[s + 12]) * vw);
-            cvmMem[d + 1] = uint(int(cvmMem[s + 1]) * vx + int(cvmMem[s + 5]) * vy + int(cvmMem[s + 9]) * vz + int(cvmMem[s + 13]) * vw);
-            cvmMem[d + 2] = uint(int(cvmMem[s + 2]) * vx + int(cvmMem[s + 6]) * vy + int(cvmMem[s + 10]) * vz + int(cvmMem[s + 14]) * vw);
-            cvmMem[d + 3] = uint(int(cvmMem[s + 3]) * vx + int(cvmMem[s + 7]) * vy + int(cvmMem[s + 11]) * vz + int(cvmMem[s + 15]) * vw);
-            break;
-        }
-        case 77u: { // vocMmat2f
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            mat2 A = mat2(vec2(readFloat(dst), readFloat(dst + 4u)),
-                          vec2(readFloat(dst + 8u), readFloat(dst + 12u)));
-            mat2 B = mat2(vec2(readFloat(src), readFloat(src + 4u)),
-                          vec2(readFloat(src + 8u), readFloat(src + 12u)));
-            mat2 R = A * B;
-            for (int col = 0; col < 2; ++col) {
-                for (int row = 0; row < 2; ++row) writeFloat(dst + uint((col * 2 + row) * 4), R[col][row]);
-            }
-            break;
-        }
-        case 78u: { // vocMmat2i
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            int a[4], b[4], r[4];
-            for (int i = 0; i < 4; ++i) { a[i] = int(cvmMem[d + i]); b[i] = int(cvmMem[s + i]); }
-            for (int c = 0; c < 2; ++c) for (int row = 0; row < 2; ++row) {
-                int sum = 0;
-                for (int k = 0; k < 2; ++k) sum += a[k * 2 + row] * b[c * 2 + k];
-                r[c * 2 + row] = sum;
-            }
-            for (int i = 0; i < 4; ++i) cvmMem[d + i] = uint(r[i]);
-            break;
-        }
-        case 79u: { // vocMmat3f
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            mat3 A = mat3(vec3(readFloat(dst), readFloat(dst + 4u), readFloat(dst + 8u)),
-                          vec3(readFloat(dst + 12u), readFloat(dst + 16u), readFloat(dst + 20u)),
-                          vec3(readFloat(dst + 24u), readFloat(dst + 28u), readFloat(dst + 32u)));
-            mat3 B = mat3(vec3(readFloat(src), readFloat(src + 4u), readFloat(src + 8u)),
-                          vec3(readFloat(src + 12u), readFloat(src + 16u), readFloat(src + 20u)),
-                          vec3(readFloat(src + 24u), readFloat(src + 28u), readFloat(src + 32u)));
-            mat3 R = A * B;
-            for (int col = 0; col < 3; ++col) {
-                for (int row = 0; row < 3; ++row) writeFloat(dst + uint((col * 3 + row) * 4), R[col][row]);
-            }
-            break;
-        }
-        case 80u: { // vocMmat3i
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            int a[9], b[9], r[9];
-            for (int i = 0; i < 9; ++i) { a[i] = int(cvmMem[d + i]); b[i] = int(cvmMem[s + i]); }
-            for (int c = 0; c < 3; ++c) for (int row = 0; row < 3; ++row) {
-                int sum = 0;
-                for (int k = 0; k < 3; ++k) sum += a[k * 3 + row] * b[c * 3 + k];
-                r[c * 3 + row] = sum;
-            }
-            for (int i = 0; i < 9; ++i) cvmMem[d + i] = uint(r[i]);
-            break;
-        }
-        case 81u: { // vocMmat4f
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            mat4 A = mat4(vec4(readFloat(dst), readFloat(dst + 4u), readFloat(dst + 8u), readFloat(dst + 12u)),
-                          vec4(readFloat(dst + 16u), readFloat(dst + 20u), readFloat(dst + 24u), readFloat(dst + 28u)),
-                          vec4(readFloat(dst + 32u), readFloat(dst + 36u), readFloat(dst + 40u), readFloat(dst + 44u)),
-                          vec4(readFloat(dst + 48u), readFloat(dst + 52u), readFloat(dst + 56u), readFloat(dst + 60u)));
-            mat4 B = mat4(vec4(readFloat(src), readFloat(src + 4u), readFloat(src + 8u), readFloat(src + 12u)),
-                          vec4(readFloat(src + 16u), readFloat(src + 20u), readFloat(src + 24u), readFloat(src + 28u)),
-                          vec4(readFloat(src + 32u), readFloat(src + 36u), readFloat(src + 40u), readFloat(src + 44u)),
-                          vec4(readFloat(src + 48u), readFloat(src + 52u), readFloat(src + 56u), readFloat(src + 60u)));
-            mat4 R = A * B;
-            for (int col = 0; col < 4; ++col) {
-                for (int row = 0; row < 4; ++row) writeFloat(dst + uint((col * 4 + row) * 4), R[col][row]);
-            }
-            break;
-        }
-        case 82u: { // vocMmat4i
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            int a[16], b[16], r[16];
-            for (int i = 0; i < 16; ++i) { a[i] = int(cvmMem[d + i]); b[i] = int(cvmMem[s + i]); }
-            for (int c = 0; c < 4; ++c) for (int row = 0; row < 4; ++row) {
-                int sum = 0;
-                for (int k = 0; k < 4; ++k) sum += a[k * 4 + row] * b[c * 4 + k];
-                r[c * 4 + row] = sum;
-            }
-            for (int i = 0; i < 16; ++i) cvmMem[d + i] = uint(r[i]);
-            break;
-        }
+        case 71u: { dst += registerBase; src += registerBase; writeVec2(dst, readMat2(src) * readVec2(dst)); break; }
+        case 73u: { dst += registerBase; src += registerBase; writeVec3(dst, readMat3(src) * readVec3(dst)); break; }
+        case 75u: { dst += registerBase; src += registerBase; writeVec4(dst, readMat4(src) * readVec4(dst)); break; }
+        case 77u: { dst += registerBase; src += registerBase; writeMat2(dst, readMat2(dst) * readMat2(src)); break; }
+        case 79u: { dst += registerBase; src += registerBase; writeMat3(dst, readMat3(dst) * readMat3(src)); break; }
+        case 81u: { dst += registerBase; src += registerBase; writeMat4(dst, readMat4(dst) * readMat4(src)); break; }
         case 83u: { // vocVecAddi.N
             dst += registerBase; d = int(dst >> 2);
             src += registerBase; s = int(src >> 2);
@@ -617,23 +441,10 @@ void main() {
             for (uint i = 0u; i < count; ++i) writeFloat(dst + (i << 2), readFloat(dst + (i << 2)) * sVal);
             break;
         }
-        case 89u: { // vocNormalize.N dst, src
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            uint dim = max(2u, size);
-            if (dim == 2u) {
-                vec2 v = vec2(readFloat(src), readFloat(src + 4u));
-                vec2 r = length(v) > 0.0 ? normalize(v) : vec2(0.0);
-                writeFloat(dst, r.x); writeFloat(dst + 4u, r.y);
-            } else if (dim == 3u) {
-                vec3 v = vec3(readFloat(src), readFloat(src + 4u), readFloat(src + 8u));
-                vec3 r = length(v) > 0.0 ? normalize(v) : vec3(0.0);
-                writeFloat(dst, r.x); writeFloat(dst + 4u, r.y); writeFloat(dst + 8u, r.z);
-            } else {
-                vec4 v = vec4(readFloat(src), readFloat(src + 4u), readFloat(src + 8u), readFloat(src + 12u));
-                vec4 r = length(v) > 0.0 ? normalize(v) : vec4(0.0);
-                writeFloat(dst, r.x); writeFloat(dst + 4u, r.y); writeFloat(dst + 8u, r.z); writeFloat(dst + 12u, r.w);
-            }
+        case 89u: { dst += registerBase; src += registerBase;
+            if (size == 2u) writeVec2(dst, safeNormalize(readVec2(src)));
+            else if (size == 3u) writeVec3(dst, safeNormalize(readVec3(src)));
+            else writeVec4(dst, safeNormalize(readVec4(src)));
             break;
         }
         case 90u: { // vocDot2 dst, src, size (regB)
@@ -660,110 +471,14 @@ void main() {
             writeFloat(dst, dot(a, b));
             break;
         }
-        case 92u: { // vocTranspose2
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            mat2 M = mat2(vec2(readFloat(src), readFloat(src + 4u)), vec2(readFloat(src + 8u), readFloat(src + 12u)));
-            mat2 R = transpose(M);
-            for (int c = 0; c < 2; ++c) {
-                for (int r = 0; r < 2; ++r) writeFloat(dst + uint((c * 2 + r) * 4), R[c][r]);
-            }
-            break;
-        }
-        case 93u: { // vocTranspose3
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            mat3 M = mat3(vec3(readFloat(src), readFloat(src + 4u), readFloat(src + 8u)),
-                          vec3(readFloat(src + 12u), readFloat(src + 16u), readFloat(src + 20u)),
-                          vec3(readFloat(src + 24u), readFloat(src + 28u), readFloat(src + 32u)));
-            mat3 R = transpose(M);
-            for (int c = 0; c < 3; ++c) {
-                for (int r = 0; r < 3; ++r) writeFloat(dst + uint((c * 3 + r) * 4), R[c][r]);
-            }
-            break;
-        }
-        case 94u: { // vocTranspose4
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            mat4 M = mat4(vec4(readFloat(src), readFloat(src + 4u), readFloat(src + 8u), readFloat(src + 12u)),
-                          vec4(readFloat(src + 16u), readFloat(src + 20u), readFloat(src + 24u), readFloat(src + 28u)),
-                          vec4(readFloat(src + 32u), readFloat(src + 36u), readFloat(src + 40u), readFloat(src + 44u)),
-                          vec4(readFloat(src + 48u), readFloat(src + 52u), readFloat(src + 56u), readFloat(src + 60u)));
-            mat4 R = transpose(M);
-            for (int c = 0; c < 4; ++c) {
-                for (int r = 0; r < 4; ++r) writeFloat(dst + uint((c * 4 + r) * 4), R[c][r]);
-            }
-            break;
-        }
-        case 95u: { // vocInvert2
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            mat2 M = mat2(vec2(readFloat(src), readFloat(src + 4u)), vec2(readFloat(src + 8u), readFloat(src + 12u)));
-            mat2 R = inverse(M);
-            for (int c = 0; c < 2; ++c) {
-                for (int r = 0; r < 2; ++r) writeFloat(dst + uint((c * 2 + r) * 4), R[c][r]);
-            }
-            break;
-        }
-        case 96u: { // vocInvert3
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            mat3 M = mat3(vec3(readFloat(src), readFloat(src + 4u), readFloat(src + 8u)),
-                          vec3(readFloat(src + 12u), readFloat(src + 16u), readFloat(src + 20u)),
-                          vec3(readFloat(src + 24u), readFloat(src + 28u), readFloat(src + 32u)));
-            mat3 R = inverse(M);
-            for (int c = 0; c < 3; ++c) {
-                for (int r = 0; r < 3; ++r) writeFloat(dst + uint((c * 3 + r) * 4), R[c][r]);
-            }
-            break;
-        }
-        case 97u: { // vocInvert4
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            mat4 M = mat4(vec4(readFloat(src), readFloat(src + 4u), readFloat(src + 8u), readFloat(src + 12u)),
-                          vec4(readFloat(src + 16u), readFloat(src + 20u), readFloat(src + 24u), readFloat(src + 28u)),
-                          vec4(readFloat(src + 32u), readFloat(src + 36u), readFloat(src + 40u), readFloat(src + 44u)),
-                          vec4(readFloat(src + 48u), readFloat(src + 52u), readFloat(src + 56u), readFloat(src + 60u)));
-            mat4 R = inverse(M);
-            for (int c = 0; c < 4; ++c) {
-                for (int r = 0; r < 4; ++r) writeFloat(dst + uint((c * 4 + r) * 4), R[c][r]);
-            }
-            break;
-        }
-        case 98u: { // vocReflect2 dst, src (I), size (N)
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            vec2 I = vec2(readFloat(dst), readFloat(dst + 4u));
-            vec2 N = vec2(readFloat(src), readFloat(src + 4u));
-            vec2 R = reflect(I, N);
-            writeFloat(dst, R.x);
-            writeFloat(dst + 4u, R.y);
-            break;
-        }
-        case 99u: { // vocReflect3 dst, src (I), size (N)
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            vec3 I = vec3(readFloat(dst), readFloat(dst + 4u), readFloat(dst + 8u));
-            vec3 N = vec3(readFloat(src), readFloat(src + 4u), readFloat(src + 8u));
-            vec3 R = reflect(I, N);
-            writeFloat(dst, R.x);
-            writeFloat(dst + 4u, R.y);
-            writeFloat(dst + 8u, R.z);
-            break;
-        }
-        case 100u: { // vocPowi.N dst, val
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            uint count = max(1u, size);
-            int expVal = int(cvmMem[s]);
-            for (uint i = 0u; i < count; ++i) {
-                int baseVal = int(cvmMem[d + int(i)]);
-                int r = 1;
-                for (int p = 0; p < expVal; ++p) r *= baseVal;
-                cvmMem[d + int(i)] = uint(r);
-            }
-            break;
-        }
+        case 92u: { dst += registerBase; src += registerBase; writeMat2(dst, transpose(readMat2(src))); break; }
+        case 93u: { dst += registerBase; src += registerBase; writeMat3(dst, transpose(readMat3(src))); break; }
+        case 94u: { dst += registerBase; src += registerBase; writeMat4(dst, transpose(readMat4(src))); break; }
+        case 95u: { dst += registerBase; src += registerBase; writeMat2(dst, inverse(readMat2(src))); break; }
+        case 96u: { dst += registerBase; src += registerBase; writeMat3(dst, inverse(readMat3(src))); break; }
+        case 97u: { dst += registerBase; src += registerBase; writeMat4(dst, inverse(readMat4(src))); break; }
+        case 98u: { dst += registerBase; src += registerBase; writeVec2(dst, reflect(readVec2(dst), readVec2(src))); break; }
+        case 99u: { dst += registerBase; src += registerBase; writeVec3(dst, reflect(readVec3(dst), readVec3(src))); break; }
         case 101u: { // vocPowf.N dst, val
             dst += registerBase; d = int(dst >> 2);
             src += registerBase; s = int(src >> 2);
@@ -806,127 +521,21 @@ void main() {
             }
             break;
         }
-        case 107u: { // step: precompute lane bases and broadcast stride once
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            uint descriptor = uVertexBytecode[pc++];
-            bool edgeBroadcast = (descriptor & 0x100u) != 0u;
-            uint edgeStep = 1u;
-            if (edgeBroadcast) edgeStep = 0u;
-            uint dstWord = uint(d), edgeWord = uint(s);
-            uint count = max(1u, size);
-            for (uint i = 0u; i < count; ++i) {
-                uint outWord = dstWord + i;
-                float x = readFloatWord(outWord);
-                float edge = readFloatWord(edgeWord + i * edgeStep);
-                float value = 1.0;
-                if (x < edge) value = 0.0;
-                writeFloatWord(outWord, value);
-            }
+        case 107u: { dst += registerBase; src += registerBase; writeFloat(dst, step(readFloat(dst), readFloat(src))); break; }
+        case 108u: { dst += registerBase; src += registerBase; uint edge1 = (uVertexBytecode[pc++] & 0xFFu) + registerBase; writeFloat(dst, smoothstep(readFloat(src), readFloat(edge1), readFloat(dst))); break; }
+        case 109u: { dst += registerBase; src += registerBase; uint factor = (uVertexBytecode[pc++] & 0xFFu) + registerBase; writeFloat(dst, mix(readFloat(dst), readFloat(src), readFloat(factor))); break; }
+        case 110u: { dst += registerBase; src += registerBase; uint upper = (uVertexBytecode[pc++] & 0xFFu) + registerBase; writeFloat(dst, clamp(readFloat(dst), readFloat(src), readFloat(upper))); break; }
+        case 113u: { dst += registerBase; src += registerBase; writeVec3(dst, cross(readVec3(dst), readVec3(src))); break; }
+        case 114u: { dst += registerBase; src += registerBase;
+            if (size == 2u) writeFloat(dst, length(readVec2(src)));
+            else if (size == 3u) writeFloat(dst, length(readVec3(src)));
+            else writeFloat(dst, length(readVec4(src)));
             break;
         }
-        case 108u: { // smoothstep
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            uint descriptor = uVertexBytecode[pc++];
-            uint edge1Word = ((descriptor & 0xFFu) + registerBase) >> 2u;
-            bool edge0Broadcast = (descriptor & 0x100u) != 0u;
-            bool edge1Broadcast = (descriptor & 0x200u) != 0u;
-            uint edge0Step = 1u, edge1Step = 1u;
-            if (edge0Broadcast) edge0Step = 0u;
-            if (edge1Broadcast) edge1Step = 0u;
-            uint dstWord = uint(d), edge0Word = uint(s);
-            uint count = max(1u, size);
-            for (uint i = 0u; i < count; ++i) {
-                uint outWord = dstWord + i;
-                float x = readFloatWord(outWord);
-                float e0 = readFloatWord(edge0Word + i * edge0Step);
-                float e1 = readFloatWord(edge1Word + i * edge1Step);
-                float t = clamp((x - e0) / (e1 - e0), 0.0, 1.0);
-                writeFloatWord(outWord, t * t * (3.0 - 2.0 * t));
-            }
-            break;
-        }
-        case 109u: { // mix
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            uint descriptor = uVertexBytecode[pc++];
-            uint factorWord = ((descriptor & 0xFFu) + registerBase) >> 2u;
-            bool factorBroadcast = (descriptor & 0x100u) != 0u;
-            uint factorStep = 1u;
-            if (factorBroadcast) factorStep = 0u;
-            uint dstWord = uint(d), srcWord = uint(s);
-            uint count = max(1u, size);
-            for (uint i = 0u; i < count; ++i) {
-                uint outWord = dstWord + i;
-                float x = readFloatWord(outWord);
-                float y = readFloatWord(srcWord + i);
-                float a = readFloatWord(factorWord + i * factorStep);
-                writeFloatWord(outWord, mix(x, y, a));
-            }
-            break;
-        }
-        case 110u: { // clamp
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            uint descriptor = uVertexBytecode[pc++];
-            uint upperWord = ((descriptor & 0xFFu) + registerBase) >> 2u;
-            bool lowerBroadcast = (descriptor & 0x100u) != 0u;
-            bool upperBroadcast = (descriptor & 0x200u) != 0u;
-            uint lowerStep = 1u, upperStep = 1u;
-            if (lowerBroadcast) lowerStep = 0u;
-            if (upperBroadcast) upperStep = 0u;
-            uint dstWord = uint(d), lowerWord = uint(s);
-            uint count = max(1u, size);
-            for (uint i = 0u; i < count; ++i) {
-                uint outWord = dstWord + i;
-                float x = readFloatWord(outWord);
-                float lo = readFloatWord(lowerWord + i * lowerStep);
-                float hi = readFloatWord(upperWord + i * upperStep);
-                writeFloatWord(outWord, clamp(x, lo, hi));
-            }
-            break;
-        }
-        case 113u: { // cross3
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            uint dstWord = uint(d), srcWord = uint(s);
-            float ax = readFloatWord(dstWord), ay = readFloatWord(dstWord + 1u), az = readFloatWord(dstWord + 2u);
-            float bx = readFloatWord(srcWord), by = readFloatWord(srcWord + 1u), bz = readFloatWord(srcWord + 2u);
-            writeFloatWord(dstWord, ay * bz - az * by);
-            writeFloatWord(dstWord + 1u, az * bx - ax * bz);
-            writeFloatWord(dstWord + 2u, ax * by - ay * bx);
-            break;
-        }
-        case 114u: { // length
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            uint srcWord = uint(s);
-            float sum = 0.0;
-            for (uint i = 0u; i < max(2u, size); ++i) {
-                float value = readFloatWord(srcWord + i);
-                sum += value * value;
-            }
-            writeFloatWord(uint(d), sqrt(sum));
-            break;
-        }
-        case 115u: { // refract
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            uint etaWord = ((uVertexBytecode[pc++] & 0xFFu) + registerBase) >> 2u;
-            uint dstWord = uint(d), srcWord = uint(s);
-            float dotNI = 0.0;
-            for (uint i = 0u; i < max(2u, size); ++i)
-                dotNI += readFloatWord(dstWord + i) * readFloatWord(srcWord + i);
-            float eta = readFloatWord(etaWord);
-            float k = 1.0 - eta * eta * (1.0 - dotNI * dotNI);
-            for (uint lane = 0u; lane < max(2u, size); ++lane) {
-                float incident = readFloatWord(dstWord + lane);
-                float normal = readFloatWord(srcWord + lane);
-                float value = 0.0;
-                if (k >= 0.0) value = eta * incident - (eta * dotNI + sqrt(k)) * normal;
-                writeFloatWord(dstWord + lane, value);
-            }
+        case 115u: { uint eta = (uVertexBytecode[pc++] & 0xFFu) + registerBase; dst += registerBase; src += registerBase;
+            if (size == 2u) refractVec2(dst, src, readFloat(eta));
+            else if (size == 3u) refractVec3(dst, src, readFloat(eta));
+            else refractVec4(dst, src, readFloat(eta));
             break;
         }
         case 116u: { // vocSampleLod: explicit-mip texture sample
@@ -953,77 +562,32 @@ void main() {
             writeFloat(dst + 8u, texColor.b); writeFloat(dst + 12u, texColor.a);
             break;
         }
-        case 117u: { // vocUnaryMathf; next word selects the operation
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            uint selector = uVertexBytecode[pc++];
-            uint srcWord = uint(s), dstWord = uint(d);
-            for (uint i = 0u; i < max(1u, size); ++i) {
-                float x = readFloatWord(srcWord + i);
-                float y = x;
-                switch (selector) {
-                case 0u: y = tan(x); break;
-                case 1u: y = asin(x); break;
-                case 2u: y = acos(x); break;
-                case 3u: y = atan(x); break;
-                case 4u: y = exp(x); break;
-                case 5u: y = log(x); break;
-                case 6u: y = exp2(x); break;
-                case 7u: y = log2(x); break;
-                case 8u: y = ceil(x); break;
-                case 9u: y = trunc(x); break;
-                case 10u: y = round(x); break;
-                case 11u: y = sign(x); break;
-                case 12u: y = radians(x); break;
-                case 13u: y = degrees(x); break;
-                case 14u: y = (exp(x) - exp(-x)) * 0.5; break;
-                case 15u: y = (exp(x) + exp(-x)) * 0.5; break;
-                case 16u: y = (exp(2.0 * x) - 1.0) / (exp(2.0 * x) + 1.0); break;
-                case 17u: y = log(x + sqrt(x * x + 1.0)); break;
-                case 18u: y = log(x + sqrt(x * x - 1.0)); break;
-                case 19u: y = 0.5 * log((1.0 + x) / (1.0 - x)); break;
-                case 20u: y = abs(x); break;
-                case 21u: y = inversesqrt(x); break;
-                default: break;
-                }
-                writeFloatWord(dstWord + i, y);
-            }
-            break;
-        }
-        case 118u: { // vocBinaryMathf; selector 0=atan(y,x), 1=mod(x,y)
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            uint descriptor = uVertexBytecode[pc++];
-            uint selector = descriptor & 0xFFu;
-            bool broadcast = (descriptor & 0x100u) != 0u;
-            uint srcStep = 1u;
-            if (broadcast) srcStep = 0u;
-            uint srcWord = uint(s), dstWord = uint(d);
-            for (uint i = 0u; i < max(1u, size); ++i) {
-                uint outWord = dstWord + i;
-                float a = readFloatWord(outWord);
-                float b = readFloatWord(srcWord + i * srcStep);
-                float value = a;
-                if (selector == 0u) value = atan(a, b);
-                else if (selector == 1u) value = mod(a, b);
-                else if (selector == 2u) value = min(a, b);
-                else if (selector == 3u) value = max(a, b);
-                writeFloatWord(outWord, value);
-            }
-            break;
-        }
-        case 119u: { // vocFaceforward
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            uint normalReg = (uVertexBytecode[pc++] & 0xFFu) + registerBase;
-            float d = 0.0;
-            for (uint i = 0u; i < max(2u, size); ++i)
-                d += readFloat(normalReg + (i << 2)) * readFloat(src + (i << 2));
-            float factor = d < 0.0 ? 1.0 : -1.0;
-            for (uint i = 0u; i < max(2u, size); ++i) {
-                uint lane = i << 2;
-                writeFloat(dst + lane, readFloat(dst + lane) * factor);
-            }
+        case 117u: { dst += registerBase; src += registerBase; writeFloat(dst, tan(readFloat(src))); break; }
+        case 122u: { dst += registerBase; src += registerBase; writeFloat(dst, asin(readFloat(src))); break; }
+        case 123u: { dst += registerBase; src += registerBase; writeFloat(dst, acos(readFloat(src))); break; }
+        case 124u: { dst += registerBase; src += registerBase; writeFloat(dst, atan(readFloat(src))); break; }
+        case 125u: { dst += registerBase; src += registerBase; writeFloat(dst, exp(readFloat(src))); break; }
+        case 126u: { dst += registerBase; src += registerBase; writeFloat(dst, log(readFloat(src))); break; }
+        case 127u: { dst += registerBase; src += registerBase; writeFloat(dst, exp2(readFloat(src))); break; }
+        case 128u: { dst += registerBase; src += registerBase; writeFloat(dst, log2(readFloat(src))); break; }
+        case 129u: { dst += registerBase; src += registerBase; writeFloat(dst, ceil(readFloat(src))); break; }
+        case 130u: { dst += registerBase; src += registerBase; writeFloat(dst, trunc(readFloat(src))); break; }
+        case 131u: { dst += registerBase; src += registerBase; writeFloat(dst, round(readFloat(src))); break; }
+        case 132u: { dst += registerBase; src += registerBase; writeFloat(dst, sign(readFloat(src))); break; }
+        case 133u: { dst += registerBase; src += registerBase; writeFloat(dst, radians(readFloat(src))); break; }
+        case 134u: { dst += registerBase; src += registerBase; writeFloat(dst, degrees(readFloat(src))); break; }
+        case 135u: { dst += registerBase; src += registerBase; writeFloat(dst, (exp(readFloat(src)) - exp(-readFloat(src))) * 0.5); break; }
+        case 136u: { dst += registerBase; src += registerBase; writeFloat(dst, (exp(readFloat(src)) + exp(-readFloat(src))) * 0.5); break; }
+        case 137u: { dst += registerBase; src += registerBase; writeFloat(dst, (exp(2.0 * readFloat(src)) - 1.0) / (exp(2.0 * readFloat(src)) + 1.0)); break; }
+        case 138u: { dst += registerBase; src += registerBase; float x = readFloat(src); writeFloat(dst, log(x + sqrt(x * x + 1.0))); break; }
+        case 139u: { dst += registerBase; src += registerBase; float x = readFloat(src); writeFloat(dst, log(x + sqrt(x * x - 1.0))); break; }
+        case 140u: { dst += registerBase; src += registerBase; float x = readFloat(src); writeFloat(dst, 0.5 * log((1.0 + x) / (1.0 - x))); break; }
+        case 118u: { dst += registerBase; src += registerBase; writeFloat(dst, atan(readFloat(dst), readFloat(src))); break; }
+        case 142u: { dst += registerBase; src += registerBase; writeFloat(dst, mod(readFloat(dst), readFloat(src))); break; }
+        case 119u: { uint nref = (uVertexBytecode[pc++] & 0xFFu) + registerBase; dst += registerBase; src += registerBase;
+            if (size == 2u) faceforwardVec2(dst, src, nref);
+            else if (size == 3u) faceforwardVec3(dst, src, nref);
+            else faceforwardVec4(dst, src, nref);
             break;
         }
         case 120u: { // vocMatrixCompMult
@@ -1035,35 +599,19 @@ void main() {
             }
             break;
         }
-        case 121u: { // vocDeterminantf
-            dst += registerBase; d = int(dst >> 2);
-            src += registerBase; s = int(src >> 2);
-            int dim = int(max(2u, size));
-            float values[16];
-            for (int i = 0; i < dim * dim; ++i) values[i] = readFloat(src + uint(i * 4));
-            float det = 1.0;
-            for (int col = 0; col < dim; ++col) {
-                int pivot = col;
-                for (int row = col + 1; row < dim; ++row)
-                    if (abs(values[row * dim + col]) > abs(values[pivot * dim + col])) pivot = row;
-                if (abs(values[pivot * dim + col]) <= 1e-20) { det = 0.0; break; }
-                if (pivot != col) {
-                    for (int j = 0; j < dim; ++j) {
-                        float tmp = values[col * dim + j];
-                        values[col * dim + j] = values[pivot * dim + j];
-                        values[pivot * dim + j] = tmp;
-                    }
-                    det = -det;
-                }
-                float diagonal = values[col * dim + col];
-                det *= diagonal;
-                for (int row = col + 1; row < dim; ++row) {
-                    float factor = values[row * dim + col] / diagonal;
-                    for (int j = col + 1; j < dim; ++j)
-                        values[row * dim + j] -= factor * values[col * dim + j];
-                }
-            }
-            writeFloat(dst, det);
+        case 153u: {
+            dst += registerBase; src += registerBase;
+            writeFloat(dst, determinant(readMat2(src)));
+            break;
+        }
+        case 154u: {
+            dst += registerBase; src += registerBase;
+            writeFloat(dst, determinant(readMat3(src)));
+            break;
+        }
+        case 155u: {
+            dst += registerBase; src += registerBase;
+            writeFloat(dst, determinant(readMat4(src)));
             break;
         }
         default: break;

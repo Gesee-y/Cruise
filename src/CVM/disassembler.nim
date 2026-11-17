@@ -92,17 +92,6 @@ proc disassemble*(code: openArray[uint32]) =
         echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED SOURCES>"
         pc += 1
 
-    of vocConv:
-      if pc + 1 < code.len:
-        let descriptor = code[pc + 1]
-        let sourceType = VMConvType(descriptor and 0xFF'u32)
-        let targetType = VMConvType((descriptor shr 8) and 0xFF'u32)
-        echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src} ({sourceType} -> {targetType})"
-        pc += 2
-      else:
-        echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src}, <TRUNCATED TYPE>"
-        pc += 1
-
     of vocSample2D:
       if pc + 1 < code.len:
         let texId = code[pc + 1]
@@ -112,7 +101,7 @@ proc disassemble*(code: openArray[uint32]) =
         echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, <TRUNCATED TEXID>"
         pc += 1
 
-    of vocRefractf, vocSampleLod, vocUnaryMathf, vocBinaryMathf, vocFaceforward:
+    of vocRefractf, vocSampleLod, vocFaceforward:
       if pc + 1 < code.len:
         let descriptor = code[pc + 1]
         if op == vocRefractf:
@@ -121,16 +110,14 @@ proc disassemble*(code: openArray[uint32]) =
           echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, Tex{descriptor and 0xFF'u32}, UV=R{src}, LOD=R{(descriptor shr 8) and 0xFF'u32}"
         elif op == vocFaceforward:
           echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src}, Nref=R{descriptor and 0xFF'u32}"
-        elif op == vocBinaryMathf:
-          echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src}, descriptor=0x{descriptor.toHex(8)}"
         else:
-          echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, selector={descriptor}"
+          echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src}, Nref=R{descriptor and 0xFF'u32}"
         pc += 2
       else:
         echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src}, <TRUNCATED DESCRIPTOR>"
         pc += 1
 
-    of vocStepf, vocSmoothstepf, vocMixf, vocClampf:
+    of vocSmoothstepf, vocMixf, vocClampf:
       if pc + 1 < code.len:
         let descriptor = code[pc + 1]
         echo &"{addrStr} | {hexStr}   | {opStr:<12} R{dst}, R{src}, descriptor=0x{descriptor.toHex(8)}"

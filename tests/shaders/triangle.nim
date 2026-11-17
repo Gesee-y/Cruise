@@ -70,6 +70,7 @@ proc triangle() =
   glViewport(0, 0, 800.GLsizei, 600.GLsizei)
   glClearColor(0.07'f32, 0.08'f32, 0.12'f32, 1.0'f32)
   vm.configure(objectConfig)
+  vm.prepareGlslVmObject(objectConfig)
 
   while running:
     app.eventLoop(SDLEventRouter)
@@ -84,10 +85,12 @@ proc triangle() =
 
     glClear(GL_COLOR_BUFFER_BIT)
     vm.runVm(objectConfig)
+    objectConfig.bindGlslVmObject()
     glDrawArrays(GL_TRIANGLES, 0, positions.len.GLsizei)
     discard SDL_GL_SwapWindow(win.handle)
 
   win.quitWindow()
+  objectConfig.destroyGlslVmObject()
   app.quitSDL3App()
   SDL_Quit_proc()
 

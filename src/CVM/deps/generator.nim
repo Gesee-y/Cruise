@@ -125,18 +125,35 @@ proc prefixOpcodeFor(op: string, isFloat: bool): VMOpCode =
 proc conversionType(cache: TypeCache, typeName: string): VMConvType =
   let name = cache.equivalences.getOrDefault(typeName, typeName).split(".")[0]
   case name
-  of "int", "int32": vctInt32
-  of "int8": vctInt8
-  of "int16": vctInt16
-  of "int64": vctInt64
-  of "uint", "uint8", "char": vctUInt8
-  of "uint16": vctUInt16
+  of "int32": vctInt32
   of "uint32": vctUInt32
-  of "uint64": vctUInt64
   of "float", "float32": vctFloat32
-  of "float64": vctFloat64
   of "bool": vctBool
-  else: assert false, "Unsupported conversion type: " & typeName
+  else: assert false, "Only i32, u32, f32 and bool conversions are supported: " & typeName
+
+proc conversionOpcode(sourceType, targetType: VMConvType): VMOpCode =
+  case sourceType
+  of vctInt32:
+    case targetType
+    of vctUInt32: vocConvInt32ToUInt32
+    of vctFloat32: vocConvInt32ToFloat32
+    of vctBool: vocConvInt32ToBool
+    else: assert false, "Unsupported i32 conversion"
+  of vctUInt32:
+    case targetType
+    of vctInt32: vocConvUInt32ToInt32
+    of vctFloat32: vocConvUInt32ToFloat32
+    of vctBool: vocConvUInt32ToBool
+    else: assert false, "Unsupported u32 conversion"
+  of vctFloat32:
+    if targetType == vctBool: vocConvFloat32ToBool
+    else: assert false, "Float-to-integer conversion is unsupported"
+  of vctBool:
+    case targetType
+    of vctInt32: vocConvBoolToInt32
+    of vctUInt32: vocConvBoolToUInt32
+    of vctFloat32: vocConvBoolToFloat32
+    else: assert false, "Unsupported bool conversion"
 
 # Generate one intruction of any kind
 # The layout is [size - 1 byte] [op - 1 byte] [reg1 - one byte] [reg2 - one byte] 
@@ -218,30 +235,30 @@ proc builtinOpcode(name, typeName: string): VMOpCode =
   of "sample": vocSample2D
   else: assert false, "Unsupported builtin opcode: " & name
 
-proc unaryMathSelector(name: string): VMMathSelector =
+proc unaryMathOpcode(name: string): VMOpCode =
   case name
-  of "tan": vmsTan
-  of "asin": vmsAsin
-  of "acos": vmsAcos
-  of "atan": vmsAtan
-  of "exp": vmsExp
-  of "log": vmsLog
-  of "exp2": vmsExp2
-  of "log2": vmsLog2
-  of "ceil": vmsCeil
-  of "trunc": vmsTrunc
-  of "round": vmsRound
-  of "sign": vmsSign
-  of "radians": vmsRadians
-  of "degrees": vmsDegrees
-  of "sinh": vmsSinh
-  of "cosh": vmsCosh
-  of "tanh": vmsTanh
-  of "asinh": vmsAsinh
-  of "acosh": vmsAcosh
-  of "atanh": vmsAtanh
-  of "abs": vmsAbs
-  of "inversesqrt": vmsInversesqrt
+  of "tan": vocTan
+  of "asin": vocAsin
+  of "acos": vocAcos
+  of "atan": vocAtan
+  of "exp": vocExp
+  of "log": vocLog
+  of "exp2": vocExp2
+  of "log2": vocLog2
+  of "ceil": vocCeil
+  of "trunc": vocTrunc
+  of "round": vocRound
+  of "sign": vocSign
+  of "radians": vocRadians
+  of "degrees": vocDegrees
+  of "sinh": vocSinh
+  of "cosh": vocCosh
+  of "tanh": vocTanh
+  of "asinh": vocAsinh
+  of "acosh": vocAcosh
+  of "atanh": vocAtanh
+  of "abs": vocAbsf
+  of "inversesqrt": vocRsqrtf
   else: assert false, "Unsupported unary shading function: " & name
 
 # ################################################################################################################################ #
@@ -548,8 +565,9 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       let argSize = max(4, ctx.cache.getType(tyName).size)
       let lanes = argSize div 4
       result = if target.size >= argSize: target else: ctx.code.allocator.alloc(argSize)
-      ctx.emitInst(vocUnaryMathf, result.pos, arg.pos, lanes)
-      ctx.emitWord(uint32(unaryMathSelector(procName)))
+      let op = unaryMathOpcode(procName)
+      for lane in 0 ..< lanes:
+        ctx.emitInst(op, result.pos + lane * FLOAT_SIZE, arg.pos + lane * FLOAT_SIZE, FLOAT_SIZE)
       ctx.freeIfTemp(arg)
       return
 
@@ -560,8 +578,8 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       let tyName = ctx.cache.inferType(c.args[1])
       let argSize = max(4, ctx.cache.getType(tyName).size)
       result = if target.size >= argSize: target else: ctx.code.allocator.alloc(argSize)
-      ctx.emitInst(vocUnaryMathf, result.pos, arg.pos, argSize div 4)
-      ctx.emitWord(uint32(unaryMathSelector("abs")))
+      for lane in 0 ..< argSize div FLOAT_SIZE:
+        ctx.emitInst(vocAbsf, result.pos + lane * FLOAT_SIZE, arg.pos + lane * FLOAT_SIZE, FLOAT_SIZE)
       ctx.freeIfTemp(arg)
       return
 
@@ -576,14 +594,18 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       result = if target.size >= resultSize: target else: ctx.code.allocator.alloc(resultSize)
       if result.pos != lhs.pos:
         ctx.emitInst(vocMov, result.pos, lhs.pos, resultSize)
-      let selector = case procName
-        of "atan": 0'u32
-        of "mod": 1'u32
-        of "min": 2'u32
-        else: 3'u32
       let broadcast = lanes > 1 and rhs.size == 4
-      ctx.emitInst(vocBinaryMathf, result.pos, rhs.pos, lanes)
-      ctx.emitWord(selector or (if broadcast: 0x100'u32 else: 0'u32))
+      var op: VMOpCode
+      case procName
+      of "atan": op = vocAtan2f
+      of "mod": op = vocModf
+      of "min":
+        op = if tyName.startsWith("vec"): vocMinf else: builtinOpcode(procName, tyName)
+      else:
+        op = if tyName.startsWith("vec"): vocMaxf else: builtinOpcode(procName, tyName)
+      for lane in 0 ..< lanes:
+        let rhsOffset = if broadcast: 0 else: lane * FLOAT_SIZE
+        ctx.emitInst(op, result.pos + lane * FLOAT_SIZE, rhs.pos + rhsOffset, FLOAT_SIZE)
       ctx.freeIfTemp(lhs)
       ctx.freeIfTemp(rhs)
       return
@@ -631,47 +653,38 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       let lanes = max(1, resultSize div 4)
       let value = ctx.genExpr(resultNode, target = target)
       result = value
-      var descriptor = 0'u32
-      var secondOperand = CAllocation(pos: -1)
+      var secondOperand: CAllocation
       var thirdOperand = CAllocation(pos: -1)
-      var op = vocNoOp
+      var op: VMOpCode
 
       case procName
       of "step":
         op = vocStepf
-        secondOperand = ctx.genExpr(c.args[1]) # edge
-        if ctx.cache.getType(ctx.cache.inferType(c.args[1])).size == 4 and lanes > 1:
-          descriptor = descriptor or 0x100'u32
+        secondOperand = ctx.genExpr(c.args[1])
       of "smoothstep":
         op = vocSmoothstepf
-        secondOperand = ctx.genExpr(c.args[1]) # edge0
-        thirdOperand = ctx.genExpr(c.args[2]) # edge1
-        descriptor = uint32(thirdOperand.pos and REG_MASK)
-        if ctx.cache.getType(ctx.cache.inferType(c.args[1])).size == 4 and lanes > 1:
-          descriptor = descriptor or 0x100'u32
-        if ctx.cache.getType(ctx.cache.inferType(c.args[2])).size == 4 and lanes > 1:
-          descriptor = descriptor or 0x200'u32
+        secondOperand = ctx.genExpr(c.args[1])
+        thirdOperand = ctx.genExpr(c.args[2])
       of "mix", "lerp":
         op = vocMixf
-        secondOperand = ctx.genExpr(c.args[2]) # y
-        thirdOperand = ctx.genExpr(c.args[3]) # factor
-        descriptor = uint32(thirdOperand.pos and REG_MASK)
-        if ctx.cache.getType(ctx.cache.inferType(c.args[3])).size == 4 and lanes > 1:
-          descriptor = descriptor or 0x100'u32
+        secondOperand = ctx.genExpr(c.args[2])
+        thirdOperand = ctx.genExpr(c.args[3])
       of "clamp":
         op = vocClampf
-        secondOperand = ctx.genExpr(c.args[2]) # lower bound
-        thirdOperand = ctx.genExpr(c.args[3]) # upper bound
-        descriptor = uint32(thirdOperand.pos and REG_MASK)
-        if ctx.cache.getType(ctx.cache.inferType(c.args[2])).size == 4 and lanes > 1:
-          descriptor = descriptor or 0x100'u32
-        if ctx.cache.getType(ctx.cache.inferType(c.args[3])).size == 4 and lanes > 1:
-          descriptor = descriptor or 0x200'u32
+        secondOperand = ctx.genExpr(c.args[2])
+        thirdOperand = ctx.genExpr(c.args[3])
       else:
-        discard
+        assert false, "Unsupported scalarized shading operation: " & procName
 
-      ctx.emitInst(op, result.pos, secondOperand.pos, lanes)
-      ctx.emitWord(descriptor)
+      let secondBroadcast = secondOperand.size == FLOAT_SIZE and lanes > 1
+      let thirdBroadcast = thirdOperand.pos >= 0 and thirdOperand.size == FLOAT_SIZE and lanes > 1
+      for lane in 0 ..< lanes:
+        let secondOffset = if secondBroadcast: 0 else: lane * FLOAT_SIZE
+        ctx.emitInst(op, result.pos + lane * FLOAT_SIZE,
+                     secondOperand.pos + secondOffset, FLOAT_SIZE)
+        if thirdOperand.pos >= 0:
+          let thirdOffset = if thirdBroadcast: 0 else: lane * FLOAT_SIZE
+          ctx.emitWord(uint32((thirdOperand.pos + thirdOffset) and REG_MASK))
       ctx.freeIfTemp(secondOperand)
       ctx.freeIfTemp(thirdOperand)
       return
@@ -870,7 +883,8 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
       let dim = if tyName.contains("2"): 2 elif tyName.contains("3"): 3 else: 4
       let matrix = ctx.genExpr(c.args[1])
       result = if target.size >= 4: target else: ctx.code.allocator.alloc(4)
-      ctx.emitInst(vocDeterminantf, result.pos, matrix.pos, dim)
+      let op = if dim == 2: vocDet2 elif dim == 3: vocDet3 else: vocDet4
+      ctx.emitInst(op, result.pos, matrix.pos)
       ctx.freeIfTemp(matrix)
       return
 
@@ -940,7 +954,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
     let sourceTypeName = ctx.cache.inferType(c.args[1])
     let targetType = conversionType(ctx.cache, targetTypeName)
     let sourceType = conversionType(ctx.cache, sourceTypeName)
-    let targetSize = max(1, ctx.cache.getType(targetTypeName).size)
+    let targetSize = if targetType == vctBool: 1 else: 4
 
     if sourceType == targetType:
       return ctx.genExpr(c.args[1], target = target)
@@ -948,10 +962,7 @@ proc genExpr(ctx: var CodeGenCtx, c: CIRNode, target: CAllocation = CAllocation(
     let source = ctx.genExpr(c.args[1])
     result = if target.size >= targetSize: target
              else: ctx.code.allocator.alloc(targetSize)
-    ctx.emitInst(vocConv, result.pos, source.pos, targetSize)
-    let descriptor = uint32(ord(sourceType)) or
-      (uint32(ord(targetType)) shl 8)
-    ctx.emitWord(descriptor)
+    ctx.emitInst(conversionOpcode(sourceType, targetType), result.pos, source.pos)
     if source.isTemp and source.pos != result.pos:
       ctx.freeIfTemp(source)
     return

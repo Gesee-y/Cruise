@@ -296,51 +296,16 @@ __kernel void runVM(
                 break;
             }
 
-            case 10: { // vocConv: packed source and destination VMConvType follow
-                dst += registerBase;
-                src += registerBase;
-                uint descriptor = program[pc++];
-                int sourceType = (int)(descriptor & 0xFFu);
-                int targetType = (int)((descriptor >> 8) & 0xFFu);
-                int sourceSize = sourceType >= 1 && sourceType <= 4 ? (1 << (sourceType - 1)) :
-                    (sourceType >= 5 && sourceType <= 8 ? (1 << (sourceType - 5)) :
-                    (sourceType == 9 ? 4 : (sourceType == 10 ? 8 :
-                    (sourceType == 11 ? 1 : 0))));
-                int targetSize = targetType >= 1 && targetType <= 4 ? (1 << (targetType - 1)) :
-                    (targetType >= 5 && targetType <= 8 ? (1 << (targetType - 5)) :
-                    (targetType == 9 ? 4 : (targetType == 10 ? 8 :
-                    (targetType == 11 ? 1 : 0))));
-                int sourceFloat = sourceType == 9 || sourceType == 10;
-                int targetFloat = targetType == 9 || targetType == 10;
-                int sourceUnsigned = (sourceType >= 5 && sourceType <= 8) || sourceType == 11;
-                int targetUnsigned = (targetType >= 5 && targetType <= 8) || targetType == 11;
-
-                if (sourceSize > 0 && targetSize > 0) {
-                    if (targetType == 11) {
-                        int nonZero = sourceFloat ?
-                            readMemFloat(mem, src, sourceSize) != (vm_float_t)0 :
-                            (sourceUnsigned ? readMemUInt(mem, src, sourceSize) != 0 :
-                             readMemInt(mem, src, sourceSize) != 0);
-                        writeMemUInt(mem, dst, 1, (ulong)(nonZero != 0));
-                    } else if (sourceFloat) {
-                        vm_float_t value = readMemFloat(mem, src, sourceSize);
-                        if (targetFloat) writeMemFloat(mem, dst, targetSize, value);
-                        else if (targetUnsigned) writeMemUInt(mem, dst, targetSize, (ulong)value);
-                        else writeMemInt(mem, dst, targetSize, (long)value);
-                    } else if (sourceUnsigned) {
-                        ulong value = readMemUInt(mem, src, sourceSize);
-                        if (targetFloat) writeMemFloat(mem, dst, targetSize, (vm_float_t)value);
-                        else if (targetUnsigned) writeMemUInt(mem, dst, targetSize, value);
-                        else writeMemInt(mem, dst, targetSize, (long)value);
-                    } else {
-                        long value = readMemInt(mem, src, sourceSize);
-                        if (targetFloat) writeMemFloat(mem, dst, targetSize, (vm_float_t)value);
-                        else if (targetUnsigned) writeMemUInt(mem, dst, targetSize, (ulong)value);
-                        else writeMemInt(mem, dst, targetSize, value);
-                    }
-                }
-                break;
-            }
+            case 143: { dst += registerBase; src += registerBase; writeMemUInt(mem, dst, 4, (ulong)readMemInt(mem, src, 4)); break; } // i32 -> u32
+            case 144: { dst += registerBase; src += registerBase; writeMemFloat(mem, dst, 4, (vm_float_t)readMemInt(mem, src, 4)); break; } // i32 -> f32
+            case 145: { dst += registerBase; src += registerBase; writeMemUInt(mem, dst, 1, (ulong)(readMemInt(mem, src, 4) != 0)); break; } // i32 -> bool
+            case 146: { dst += registerBase; src += registerBase; writeMemInt(mem, dst, 4, (long)readMemUInt(mem, src, 4)); break; } // u32 -> i32
+            case 147: { dst += registerBase; src += registerBase; writeMemFloat(mem, dst, 4, (vm_float_t)readMemUInt(mem, src, 4)); break; } // u32 -> f32
+            case 148: { dst += registerBase; src += registerBase; writeMemUInt(mem, dst, 1, (ulong)(readMemUInt(mem, src, 4) != 0)); break; } // u32 -> bool
+            case 149: { dst += registerBase; src += registerBase; writeMemUInt(mem, dst, 1, (ulong)(readMemFloat(mem, src, 4) != (vm_float_t)0)); break; } // f32 -> bool
+            case 150: { dst += registerBase; src += registerBase; writeMemInt(mem, dst, 4, (long)mem[src]); break; } // bool -> i32
+            case 151: { dst += registerBase; src += registerBase; writeMemUInt(mem, dst, 4, (ulong)mem[src]); break; } // bool -> u32
+            case 152: { dst += registerBase; src += registerBase; writeMemFloat(mem, dst, 4, (vm_float_t)mem[src]); break; } // bool -> f32
 
             case 11: { // vocAnd
                 dst += registerBase;
@@ -770,38 +735,12 @@ __kernel void runVM(
                 break;
             }
 
-            case 44: { // vocMaddf: dst = mem[src] * mem[rhs] + mem[add]
-                dst += registerBase;
-                src += registerBase;
-                uint packedSources = program[pc++];
-                int rhsReg = (int)(packedSources & 0xFF) + registerBase;
-                int addReg = (int)((packedSources >> 8) & 0xFF) + registerBase;
-                int isVector = size > 4;
-                if (isVector) {
-                    int srcWord = src >> 2;
-                    int rhsWord = rhsReg >> 2;
-                    int addWord = addReg >> 2;
-                    int dstWord = dst >> 2;
-                    for (int lane = 0; lane < (size >> 2); lane++) {
-                        float lhs = readFloatWord(mem, srcWord + lane);
-                        float rhs = readFloatWord(mem, rhsWord + lane);
-                        float addend = readFloatWord(mem, addWord + lane);
-                        writeFloatWord(mem, dstWord + lane, fma(lhs, rhs, addend));
-                    }
-                } else if (size == 4) {
-                    float lhs = readFloatWord(mem, src >> 2);
-                    float rhs = readFloatWord(mem, rhsReg >> 2);
-                    float addend = readFloatWord(mem, addReg >> 2);
-                    writeFloatWord(mem, dst >> 2, fma(lhs, rhs, addend));
-                } else {
-                    vm_float_t lhs = readMemFloat(mem, src, size);
-                    vm_float_t rhs = readMemFloat(mem, rhsReg, size);
-                    vm_float_t addend = readMemFloat(mem, addReg, size);
-                    writeMemFloat(mem, dst, size, fma(lhs, rhs, addend));
-                }
+            case 44: {
+                dst += registerBase; src += registerBase;
+                uint packed = program[pc++];
+                for (int i = 0; i < size / 4; ++i) writeMemFloat(mem, dst + i * 4, 4, readMemFloat(mem, src + i * 4, 4) * readMemFloat(mem, (int)(packed & 255u) + registerBase + i * 4, 4) + readMemFloat(mem, (int)((packed >> 8u) & 255u) + registerBase + i * 4, 4));
                 break;
             }
-
             case 45: { // vocMaddi: dst = src * rhs + add
                 dst += registerBase;
                 src += registerBase;
@@ -1183,89 +1122,10 @@ __kernel void runVM(
                 break;
             }
 
-            case 107: {
-                dst += registerBase;
-                src += registerBase;
-                uint descriptor = program[pc++];
-                int count = size;
-                if (count < 1) count = 1;
-                int edgeStep = 1;
-                if ((descriptor & 0x100u) != 0u) edgeStep = 0;
-                int dstWord = dst >> 2;
-                int edgeWord = src >> 2;
-                for (int lane = 0; lane < count; ++lane) {
-                    int outWord = dstWord + lane;
-                    float x = readFloatWord(mem, outWord);
-                    float edge = readFloatWord(mem, edgeWord + lane * edgeStep);
-                    float value = 1.0f;
-                    if (x < edge) value = 0.0f;
-                    writeFloatWord(mem, outWord, value);
-                }
-                break;
-            }
-
-            case 108: {
-                dst += registerBase;
-                src += registerBase;
-                uint descriptor = program[pc++];
-                int edge1Word = ((int)(descriptor & 0xFFu) + registerBase) >> 2;
-                int edge0Step = 1, edge1Step = 1;
-                if ((descriptor & 0x100u) != 0u) edge0Step = 0;
-                if ((descriptor & 0x200u) != 0u) edge1Step = 0;
-                int count = size;
-                if (count < 1) count = 1;
-                int dstWord = dst >> 2, edge0Word = src >> 2;
-                for (int lane = 0; lane < count; ++lane) {
-                    int outWord = dstWord + lane;
-                    float x = readFloatWord(mem, outWord);
-                    float edge0 = readFloatWord(mem, edge0Word + lane * edge0Step);
-                    float edge1 = readFloatWord(mem, edge1Word + lane * edge1Step);
-                    float t = clamp((x - edge0) / (edge1 - edge0), 0.0f, 1.0f);
-                    writeFloatWord(mem, outWord, t * t * (3.0f - 2.0f * t));
-                }
-                break;
-            }
-
-            case 109: {
-                dst += registerBase;
-                src += registerBase;
-                uint descriptor = program[pc++];
-                int factorWord = ((int)(descriptor & 0xFFu) + registerBase) >> 2;
-                int factorStep = 1;
-                if ((descriptor & 0x100u) != 0u) factorStep = 0;
-                int count = size;
-                if (count < 1) count = 1;
-                int dstWord = dst >> 2, srcWord = src >> 2;
-                for (int lane = 0; lane < count; ++lane) {
-                    int outWord = dstWord + lane;
-                    float x = readFloatWord(mem, outWord);
-                    float y = readFloatWord(mem, srcWord + lane);
-                    float factor = readFloatWord(mem, factorWord + lane * factorStep);
-                    writeFloatWord(mem, outWord, mix(x, y, factor));
-                }
-                break;
-            }
-
-            case 110: {
-                dst += registerBase;
-                src += registerBase;
-                uint descriptor = program[pc++];
-                int upperWord = ((int)(descriptor & 0xFFu) + registerBase) >> 2;
-                int lowerStep = 1, upperStep = 1;
-                if ((descriptor & 0x100u) != 0u) lowerStep = 0;
-                if ((descriptor & 0x200u) != 0u) upperStep = 0;
-                int count = size;
-                if (count < 1) count = 1;
-                int dstWord = dst >> 2, lowerWord = src >> 2;
-                for (int lane = 0; lane < count; ++lane) {
-                    int outWord = dstWord + lane;
-                    float x = readFloatWord(mem, outWord);
-                    float lower = readFloatWord(mem, lowerWord + lane * lowerStep);
-                    float upper = readFloatWord(mem, upperWord + lane * upperStep);
-                    writeFloatWord(mem, outWord, clamp(x, lower, upper));
-                }
-                break;
-            }
+            case 107: { dst += registerBase; src += registerBase; writeMemFloat(mem, dst, 4, readMemFloat(mem, dst, 4) < readMemFloat(mem, src, 4) ? 0.0f : 1.0f); break; }
+            case 108: { dst += registerBase; src += registerBase; int edge1 = (int)(program[pc++] & 0xFFu) + registerBase; float x = readMemFloat(mem, dst, 4); writeMemFloat(mem, dst, 4, smoothstep(readMemFloat(mem, src, 4), readMemFloat(mem, edge1, 4), x)); break; }
+            case 109: { dst += registerBase; src += registerBase; int factor = (int)(program[pc++] & 0xFFu) + registerBase; float x = readMemFloat(mem, dst, 4); float y = readMemFloat(mem, src, 4); float a = readMemFloat(mem, factor, 4); writeMemFloat(mem, dst, 4, x * (1.0f - a) + y * a); break; }
+            case 110: { dst += registerBase; src += registerBase; int upper = (int)(program[pc++] & 0xFFu) + registerBase; float x = readMemFloat(mem, dst, 4); writeMemFloat(mem, dst, 4, clamp(x, readMemFloat(mem, src, 4), readMemFloat(mem, upper, 4))); break; }
 
             case 113: { // vocCross3
                 dst += registerBase;
@@ -1325,68 +1185,136 @@ __kernel void runVM(
                 break;
             }
 
-            case 117: { // vocUnaryMathf; selector is the next word
-                dst += registerBase;
-                src += registerBase;
-                uint selector = program[pc++];
-                for (int i = 0; i < (size > 1 ? size : 1); ++i) {
-                    int lane = (int)i * 4;
-                    vm_float_t x = readMemFloat(mem, src + lane, 4);
-                    vm_float_t y = x;
-                    switch (selector) {
-                    case 0: y = tan(x); break;
-                    case 1: y = asin(x); break;
-                    case 2: y = acos(x); break;
-                    case 3: y = atan(x); break;
-                    case 4: y = exp(x); break;
-                    case 5: y = log(x); break;
-                    case 6: y = exp2(x); break;
-                    case 7: y = log2(x); break;
-                    case 8: y = ceil(x); break;
-                    case 9: y = trunc(x); break;
-                    case 10: y = round(x); break;
-                    case 11: y = x > 0 ? 1.0 : (x < 0 ? -1.0 : 0.0); break;
-                    case 12: y = x * 0.017453292519943295; break;
-                    case 13: y = x * 57.29577951308232; break;
-                    case 14: y = sinh(x); break;
-                    case 15: y = cosh(x); break;
-                    case 16: y = tanh(x); break;
-                    case 17: y = log(x + sqrt(x * x + 1.0)); break;
-                    case 18: y = log(x + sqrt(x * x - 1.0)); break;
-                    case 19: y = 0.5 * log((1.0 + x) / (1.0 - x)); break;
-                    case 20: y = fabs(x); break;
-                    case 21: y = rsqrt(x); break;
-                    }
-                    writeMemFloat(mem, dst + lane, 4, y);
-                }
+            case 117: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, tan(x));
                 break;
             }
-
-            case 118: { // vocBinaryMathf; selector and optional broadcast flag
-                dst += registerBase;
-                src += registerBase;
-                uint descriptor = program[pc++];
-                uint selector = descriptor & 0xFFu;
-                bool broadcast = (descriptor & 0x100u) != 0u;
-                int srcStep = 1;
-                if (broadcast) srcStep = 0;
-                int count = size;
-                if (count < 1) count = 1;
-                int dstWord = dst >> 2, srcWord = src >> 2;
-                for (int lane = 0; lane < count; ++lane) {
-                    int outWord = dstWord + lane;
-                    vm_float_t a = readFloatWord(mem, outWord);
-                    vm_float_t b = readFloatWord(mem, srcWord + lane * srcStep);
-                    vm_float_t y = a;
-                    if (selector == 0) y = atan2(a, b);
-                    else if (selector == 1) y = a - b * floor(a / b);
-                    else if (selector == 2) y = fmin(a, b);
-                    else if (selector == 3) y = fmax(a, b);
-                    writeFloatWord(mem, outWord, y);
-                }
+            case 122: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, asin(x));
                 break;
             }
-
+            case 123: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, acos(x));
+                break;
+            }
+            case 124: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, atan(x));
+                break;
+            }
+            case 125: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, exp(x));
+                break;
+            }
+            case 126: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, log(x));
+                break;
+            }
+            case 127: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, exp2(x));
+                break;
+            }
+            case 128: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, log2(x));
+                break;
+            }
+            case 129: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, ceil(x));
+                break;
+            }
+            case 130: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, trunc(x));
+                break;
+            }
+            case 131: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, round(x));
+                break;
+            }
+            case 132: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, sign(x));
+                break;
+            }
+            case 133: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, x * 0.017453292519943295);
+                break;
+            }
+            case 134: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, x * 57.29577951308232);
+                break;
+            }
+            case 135: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, (exp(x) - exp(-x)) * 0.5);
+                break;
+            }
+            case 136: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, (exp(x) + exp(-x)) * 0.5);
+                break;
+            }
+            case 137: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, (exp(2.0 * x) - 1.0) / (exp(2.0 * x) + 1.0));
+                break;
+            }
+            case 138: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, log(x + sqrt(x * x + 1.0)));
+                break;
+            }
+            case 139: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, log(x + sqrt(x * x - 1.0)));
+                break;
+            }
+            case 140: {
+                dst += registerBase; src += registerBase;
+                vm_float_t x = readMemFloat(mem, src, 4);
+                writeMemFloat(mem, dst, 4, 0.5 * log((1.0 + x) / (1.0 - x)));
+                break;
+            }
+            case 118: {
+                dst += registerBase; src += registerBase;
+                writeMemFloat(mem, dst, 4, atan2(readMemFloat(mem, dst, 4), readMemFloat(mem, src, 4)));
+                break;
+            }
+            case 142: {
+                dst += registerBase; src += registerBase;
+                writeMemFloat(mem, dst, 4, (readMemFloat(mem, dst, 4) - readMemFloat(mem, src, 4) * floor(readMemFloat(mem, dst, 4) / readMemFloat(mem, src, 4))));
+                break;
+            }
             case 119: { // vocFaceforward
                 dst += registerBase;
                 src += registerBase;
@@ -1414,10 +1342,12 @@ __kernel void runVM(
                 break;
             }
 
-            case 121: { // vocDeterminantf
+            case 153: // vocDet2
+            case 154: // vocDet3
+            case 155: { // vocDet4
                 dst += registerBase;
                 src += registerBase;
-                int dim = max(2, size);
+                int dim = op == 153 ? 2 : (op == 154 ? 3 : 4);
                 vm_float_t values[16];
                 for (int i = 0; i < dim * dim; ++i) values[i] = readMemFloat(mem, src + i * 4, 4);
                 vm_float_t det = 1.0;

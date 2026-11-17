@@ -4,42 +4,10 @@
 
 type
   VMConvType* = enum
-    vctInvalid = 0
-    vctInt8 = 1
-    vctInt16 = 2
-    vctInt32 = 3
-    vctInt64 = 4
-    vctUInt8 = 5
-    vctUInt16 = 6
-    vctUInt32 = 7
-    vctUInt64 = 8
-    vctFloat32 = 9
-    vctFloat64 = 10
-    vctBool = 11
-
-  VMMathSelector = enum
-    vmsTan = 0'u32
-    vmsAsin = 1'u32
-    vmsAcos = 2'u32
-    vmsAtan = 3'u32
-    vmsExp = 4'u32
-    vmsLog = 5'u32
-    vmsExp2 = 6'u32
-    vmsLog2 = 7'u32
-    vmsCeil = 8'u32
-    vmsTrunc = 9'u32
-    vmsRound = 10'u32
-    vmsSign = 11'u32
-    vmsRadians = 12'u32
-    vmsDegrees = 13'u32
-    vmsSinh = 14'u32
-    vmsCosh = 15'u32
-    vmsTanh = 16'u32
-    vmsAsinh = 17'u32
-    vmsAcosh = 18'u32
-    vmsAtanh = 19'u32
-    vmsAbs = 20'u32
-    vmsInversesqrt = 21'u32
+    vctInt32
+    vctUInt32
+    vctFloat32
+    vctBool
 
   # All operations the virtual machine can execute.
   # Integer and float variants are kept separate so the back-end can select the
@@ -60,7 +28,6 @@ type
     vocMulf    = 8   ## dst *= src  (float)
     vocDivf    = 9   ## dst /= src  (float)
 
-    vocConv    = 10  ## dst = convert(src); a packed source/destination VMConvType word follows
     # Boolean / bitwise
     vocAnd     = 11  ## dst &= src
     vocOr      = 12  ## dst |= src
@@ -175,10 +142,10 @@ type
     vocVecNegi = 104 ## Negate each int32 lane in a vector in place
     vocFloorf = 105 ## dst[i] = floor(src[i]), size is scalar/vector lane count
     vocFractf = 106 ## dst[i] = fract(src[i]), size is scalar/vector lane count
-    vocStepf = 107 ## dst=x; src=edge; descriptor carries edge broadcast flag
-    vocSmoothstepf = 108 ## dst=x; src=edge0; descriptor carries edge1 and broadcast flags
-    vocMixf = 109 ## dst=x; src=y; descriptor carries factor and broadcast flag
-    vocClampf = 110 ## dst=x; src=lower; descriptor carries upper and broadcast flags
+    vocStepf = 107 ## dst=step(src,dst), scalar float
+    vocSmoothstepf = 108 ## dst=smoothstep(src, nextWord, dst), scalar float
+    vocMixf = 109 ## dst=mix(dst, src, nextWord), scalar float
+    vocClampf = 110 ## dst=clamp(dst, src, nextWord), scalar float
 
     vocMovCi = 111 ## dst = next bytecode word interpreted as an integer immediate
     vocMovCf = 112 ## dst = next bytecode word interpreted as a float32 immediate
@@ -186,8 +153,40 @@ type
     vocLengthf = 114 ## dst = length(src), size is source vector lane count
     vocRefractf = 115 ## dst=incident, src=normal; size is lane count; eta register follows
     vocSampleLod = 116 ## dst=vec4, src=uv; packed texture ID and LOD register follows
-    vocUnaryMathf = 117 ## dst[i] = unaryMath(op, src[i]); operation selector follows
-    vocBinaryMathf = 118 ## dst[i] = binaryMath(dst[i], src[i]); selector/broadcast flags follow
+    vocTan = 117 ## dst = tan(src), scalar float
+    vocAtan2f = 118 ## dst = atan(dst, src), scalar float
     vocFaceforward = 119 ## dst=N, src=I; Nref register follows
     vocMatrixCompMult = 120 ## dst[i] *= src[i]; size is matrix float lane count
-    vocDeterminantf = 121 ## dst=determinant(src); size is matrix dimension
+    vocAsin = 122 ## dst = asin(src), scalar float
+    vocAcos = 123 ## dst = acos(src), scalar float
+    vocAtan = 124 ## dst = atan(src), scalar float
+    vocExp = 125 ## dst = exp(src), scalar float
+    vocLog = 126 ## dst = log(src), scalar float
+    vocExp2 = 127 ## dst = exp2(src), scalar float
+    vocLog2 = 128 ## dst = log2(src), scalar float
+    vocCeil = 129 ## dst = ceil(src), scalar float
+    vocTrunc = 130 ## dst = trunc(src), scalar float
+    vocRound = 131 ## dst = round(src), scalar float
+    vocSign = 132 ## dst = sign(src), scalar float
+    vocRadians = 133 ## dst = radians(src), scalar float
+    vocDegrees = 134 ## dst = degrees(src), scalar float
+    vocSinh = 135 ## dst = sinh(src), scalar float
+    vocCosh = 136 ## dst = cosh(src), scalar float
+    vocTanh = 137 ## dst = tanh(src), scalar float
+    vocAsinh = 138 ## dst = asinh(src), scalar float
+    vocAcosh = 139 ## dst = acosh(src), scalar float
+    vocAtanh = 140 ## dst = atanh(src), scalar float
+    vocModf = 142 ## dst = mod(dst, src), scalar float
+    vocConvInt32ToUInt32 = 143 ## i32 -> u32
+    vocConvInt32ToFloat32 = 144 ## i32 -> f32
+    vocConvInt32ToBool = 145 ## i32 -> bool
+    vocConvUInt32ToInt32 = 146 ## u32 -> i32
+    vocConvUInt32ToFloat32 = 147 ## u32 -> f32
+    vocConvUInt32ToBool = 148 ## u32 -> bool
+    vocConvFloat32ToBool = 149 ## f32 -> bool
+    vocConvBoolToInt32 = 150 ## bool -> i32
+    vocConvBoolToUInt32 = 151 ## bool -> u32
+    vocConvBoolToFloat32 = 152 ## bool -> f32
+    vocDet2 = 153 ## dst = determinant(mat2(src))
+    vocDet3 = 154 ## dst = determinant(mat3(src))
+    vocDet4 = 155 ## dst = determinant(mat4(src))
