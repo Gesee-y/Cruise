@@ -137,6 +137,7 @@ proc triangle() =
   var vertexUniforms: array[16, uint32]
   var timer = 0.0'f32
   var fragmentUniforms = [cast[uint32](timer)]
+  vm.prepareVariants([objectConfig])
   vm.configure(objectConfig)
   var indexBuffer: GLuint
   glGenBuffers(1, addr indexBuffer)

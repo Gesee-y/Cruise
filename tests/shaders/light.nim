@@ -178,6 +178,7 @@ proc light() =
   var vertexUniforms: array[32, uint32]
   var timer = 0.0'f32
   var fragmentUniforms = newSeq[uint32](16)
+  vm.prepareVariants([objectConfig, lightConfig])
   vm.configure(objectConfig)
   vm.prepareGlslVmObject(objectConfig)
   vm.prepareGlslVmObject(lightConfig)

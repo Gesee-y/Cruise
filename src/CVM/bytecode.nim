@@ -24,7 +24,7 @@ type
 
 template translateToBytecode*() = {.plugin: "deps/bytecode_plugin.nim".}
 func setShaderName*(str: static[string]) = discard
-func setShaderType*[T](base: typedesc[T], ty: static[string]) {.untyped.} = discard
+func setShaderType*[T](base: typedesc[T], ty: static[string]) = discard
 
   # ###################################################################################################### #
  # ############################################# DEFAULT TYPES ########################################## #
@@ -63,7 +63,7 @@ proc getRegisterTier(regSize: int): BytecodeFeature =
   if regSize <= 128: return bfReg128
   return bfReg256
 
-proc getRegisterWord(feats: set[BytecodeFeature]): int =
+proc getRegisterWord*(feats: set[BytecodeFeature]): int =
   if bfReg256 in feats: return 64
   if bfReg128 in feats: return 32
   if bfReg64 in feats: return 16
@@ -72,7 +72,7 @@ proc getRegisterWord(feats: set[BytecodeFeature]): int =
 proc analyzeBytecode*(code: openArray[uint32]): BytecodeProfile =
   var pc = 0
   var maxRegisterEnd = 0
-  var nestedFrameBytes = 0
+  var calledFrames: seq[tuple[target: uint32, sizeBytes: int]]
 
   while pc < code.len:
     let word = code[pc]
@@ -89,10 +89,22 @@ proc analyzeBytecode*(code: openArray[uint32]): BytecodeProfile =
     of vocCall:
       result.features.incl(bfCalls)
       let frameInfo = code[pc + 2]
-      nestedFrameBytes += int(frameInfo shr 16)
+      let target = code[pc + 1]
+      let frameBytes = int(frameInfo shr 16)
+      var found = false
+      for i in 0 ..< calledFrames.len:
+        if calledFrames[i].target == target:
+          calledFrames[i].sizeBytes = max(calledFrames[i].sizeBytes, frameBytes)
+          found = true
+          break
+      if not found:
+        calledFrames.add((target, frameBytes))
       maxRegisterEnd = max(maxRegisterEnd, int(dst))
       srcWidth = if size == 0: 0 else: size
-    of vocRet, vocPush, vocPop, vocSMov:
+    of vocRet:
+      dstWidth = max(4, size)
+      srcWidth = max(4, size)
+    of vocPush, vocPop, vocSMov:
       result.features.incl(bfCalls)
       dstWidth = max(4, size)
       srcWidth = max(4, size)
@@ -181,6 +193,8 @@ proc analyzeBytecode*(code: openArray[uint32]): BytecodeProfile =
         srcWidth = dstWidth
     of vocPowi, vocPowf, vocVecNegi, vocVecNegf, vocFloorf, vocFractf,
        vocVecAddi, vocVecAddf, vocVecSubi, vocVecSubf, vocVecMuli, vocVecMulf:
+      if opcode == vocPowf:
+        result.features.incl(bfTranscendentals)
       dstWidth = max(1, size) * 4
       srcWidth = max(4, dstWidth)
     of vocTan, vocAtan2f, vocAsin, vocAcos, vocAtan, vocExp, vocLog,
@@ -248,8 +262,12 @@ proc analyzeBytecode*(code: openArray[uint32]): BytecodeProfile =
       discard
     inc pc
 
+  var nestedFrameBytes = 0
+  for frame in calledFrames:
+    nestedFrameBytes += frame.sizeBytes
   let requiredBytes = maxRegisterEnd + nestedFrameBytes
-  result.registerWords = min(64, max(1, (requiredBytes + 3) div 4))
+  result.features.incl(getRegisterTier(min(256, max(1, requiredBytes))))
+  result.registerWords = getRegisterWord(result.features)
 
 proc featureMask*(profile: BytecodeProfile): uint16 =
   for feature in profile.features:

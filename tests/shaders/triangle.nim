@@ -69,6 +69,7 @@ proc triangle() =
   var fragmentUniforms = [cast[uint32](timer)]
   glViewport(0, 0, 800.GLsizei, 600.GLsizei)
   glClearColor(0.07'f32, 0.08'f32, 0.12'f32, 1.0'f32)
+  vm.prepareVariants([objectConfig])
   vm.configure(objectConfig)
   vm.prepareGlslVmObject(objectConfig)
 
