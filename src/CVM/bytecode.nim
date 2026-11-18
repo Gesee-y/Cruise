@@ -14,11 +14,9 @@ type
     bfVectorMath
     bfTranscendentals
     bfReg32
-    bfReg48
     bfReg64
     bfReg128
     bfReg256
-    bfNoStack
 
   BytecodeProfile* = object
     features*: set[BytecodeFeature]
@@ -61,10 +59,15 @@ proc addRegister(endByte: var int, address: uint32, width: int) {.inline.} =
 
 proc getRegisterTier(regSize: int): BytecodeFeature =
   if regSize <= 32: return bfReg32
-  if regSize <= 48: return bfReg48
   if regSize <= 64: return bfReg64
   if regSize <= 128: return bfReg128
   return bfReg256
+
+proc getRegisterWord(feats: set[BytecodeFeature]): int =
+  if bfReg256 in feats: return 64
+  if bfReg128 in feats: return 32
+  if bfReg64 in feats: return 16
+  return 8
 
 proc analyzeBytecode*(code: openArray[uint32]): BytecodeProfile =
   var pc = 0
