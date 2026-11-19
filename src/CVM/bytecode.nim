@@ -72,7 +72,8 @@ proc getRegisterWord*(feats: set[BytecodeFeature]): int =
 proc analyzeBytecode*(code: openArray[uint32]): BytecodeProfile =
   var pc = 0
   var maxRegisterEnd = 0
-  var calledFrames: seq[tuple[target: uint32, sizeBytes: int]]
+  var calledFrames: seq[tuple[target: uint32, sizeBytes: int]] = @[]
+  result = BytecodeProfile()
 
   while pc < code.len:
     let word = code[pc]
@@ -270,6 +271,7 @@ proc analyzeBytecode*(code: openArray[uint32]): BytecodeProfile =
   result.registerWords = getRegisterWord(result.features)
 
 proc featureMask*(features: set[BytecodeFeature]): uint16 =
+  result = 0'u16
   for feature in features:
     result = result or (1'u16 shl ord(feature))
 

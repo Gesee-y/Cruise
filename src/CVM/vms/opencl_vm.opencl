@@ -10,8 +10,33 @@ typedef double vm_float_t;
 typedef float vm_float_t;
 #endif
 
+#ifndef MAX_MEM
 #define MAX_MEM 256
-#define MAX_STACK 256
+#endif
+
+#ifndef MAX_STACK
+#define MAX_STACK 64
+#endif
+
+#ifndef ENABLE_CALLS
+#define ENABLE_CALLS 1
+#endif
+
+#ifndef ENABLE_MATRICES
+#define ENABLE_MATRICES 1
+#endif
+
+#ifndef ENABLE_VECTORMATH
+#define ENABLE_VECTORMATH 1
+#endif
+
+#ifndef ENABLE_TRANSCENDENTALS
+#define ENABLE_TRANSCENDENTALS 1
+#endif
+
+#ifndef ENABLE_MIXING
+#define ENABLE_MIXING 1
+#endif
 
 #define SIZE_POS   24
 #define OPCODE_POS 16
@@ -57,6 +82,7 @@ inline void writeMemInt(uchar *mem, int address, int size, long val) {
     }
 }
 
+#if ENABLE_CALLS
 inline uint readStackWord(const uchar *stack, int address) {
     return (uint)stack[address] | ((uint)stack[address + 1] << 8) |
         ((uint)stack[address + 2] << 16) | ((uint)stack[address + 3] << 24);
@@ -68,6 +94,7 @@ inline void writeStackWord(uchar *stack, int address, uint value) {
     stack[address + 2] = (uchar)(value >> 16);
     stack[address + 3] = (uchar)(value >> 24);
 }
+#endif
 
 inline vm_float_t readMemFloat(const uchar *mem, int address, int size) {
     #if defined(cl_khr_fp64) || defined(cl_amd_fp64)
@@ -153,12 +180,16 @@ __kernel void runVM(
     __attribute__((aligned(8))) uchar mem[MAX_MEM];
     for (int i = 0; i < MAX_MEM; i++) mem[i] = 0;
     
+#if ENABLE_CALLS
     int registerBase = 0;
     int stackBase = 0;
     int callFrameBase = -1;
 
     uchar stack[MAX_STACK];
     int stackLen = 0;
+#else
+    #define registerBase 0
+#endif
 
     int pc = startPc;
     int halted = 0;
@@ -366,6 +397,7 @@ __kernel void runVM(
                 break;
             }
 
+#if ENABLE_CALLS
             case 15: { // vocPush
                 dst += registerBase;
                 src += registerBase;
@@ -389,6 +421,7 @@ __kernel void runVM(
                 }
                 break;
             }
+#endif
 
             case 17: { // vocMov
                 dst += registerBase;
@@ -427,6 +460,7 @@ __kernel void runVM(
                 break;
             }
 
+#if ENABLE_CALLS
             case 20: { // vocCall
                 src += registerBase;
                 int target = (int)program[pc++];
@@ -480,6 +514,7 @@ __kernel void runVM(
                 }
                 break;
             }
+#endif
 
             case 22: { // vocJmp
                 uint target = program[pc];
@@ -620,6 +655,7 @@ __kernel void runVM(
                 break;
             }
 
+#if ENABLE_CALLS
             case 36: { // vocSMov
                 dst += registerBase;
                 int offset = stackBase + src;
@@ -630,6 +666,7 @@ __kernel void runVM(
                 }
                 break;
             }
+#endif
 
             case 37: { // vocLoadUni
                 dst += registerBase;
@@ -866,6 +903,7 @@ __kernel void runVM(
                 break;
             }
 
+#if ENABLE_TRANSCENDENTALS
             case 68: { // vocSinf
                 dst += registerBase;
                 src += registerBase;
@@ -887,6 +925,7 @@ __kernel void runVM(
                 }
                 break;
             }
+#endif
 
             case 57: case 58: case 59: { // integer arithmetic with immediate
                 dst += registerBase;
@@ -913,6 +952,7 @@ __kernel void runVM(
                 break;
             }
 
+#if ENABLE_VECTORMATH
             case 71: case 72: case 73: case 74: case 75: case 76: {
                 dst += registerBase; src += registerBase;
                 int dim = (op <= 72) ? 2 : ((op <= 74) ? 3 : 4);
@@ -940,7 +980,9 @@ __kernel void runVM(
                 }
                 break;
             }
+#endif
 
+#if ENABLE_MATRICES
             case 77: case 78: case 79: case 80: case 81: case 82: {
                 dst += registerBase; src += registerBase;
                 int dim = (op <= 78) ? 2 : ((op <= 80) ? 3 : 4);
@@ -970,6 +1012,7 @@ __kernel void runVM(
                 }
                 break;
             }
+#endif
 
             case 83: case 84: case 85: case 86: case 87: case 88: {
                 dst += registerBase; src += registerBase;
@@ -995,6 +1038,7 @@ __kernel void runVM(
                 break;
             }
 
+#if ENABLE_VECTORMATH
             case 89: {
                 dst += registerBase; src += registerBase;
                 int count = size > 2 ? size : 2;
@@ -1020,7 +1064,9 @@ __kernel void runVM(
                 writeFloatWord(mem, dst >> 2, sum);
                 break;
             }
+#endif
 
+#if ENABLE_MATRICES
             case 92: case 93: case 94: {
                 dst += registerBase; src += registerBase;
                 int dim = op == 92 ? 2 : (op == 93 ? 3 : 4);
@@ -1064,7 +1110,9 @@ __kernel void runVM(
                         writeMemFloat(mem, dst + (col * dim + row) * 4, 4, matrix[row][dim + col]);
                 break;
             }
+#endif
 
+#if ENABLE_VECTORMATH
             case 98: case 99: {
                 dst += registerBase; src += registerBase;
                 int count = op == 98 ? 2 : 3;
@@ -1078,7 +1126,9 @@ __kernel void runVM(
                     writeFloatWord(mem, (dst >> 2) + i, incident[i] - 2.0f * dot * normal[i]);
                 break;
             }
+#endif
 
+#if ENABLE_TRANSCENDENTALS
             case 100: case 101: {
                 dst += registerBase; src += registerBase;
                 int count = size > 0 ? size : 1;
@@ -1096,6 +1146,7 @@ __kernel void runVM(
                 }
                 break;
             }
+#endif
 
             case 103: case 104: {
                 dst += registerBase;
@@ -1122,11 +1173,14 @@ __kernel void runVM(
                 break;
             }
 
-            case 107: { dst += registerBase; src += registerBase; writeMemFloat(mem, dst, 4, readMemFloat(mem, dst, 4) < readMemFloat(mem, src, 4) ? 0.0f : 1.0f); break; }
-            case 108: { dst += registerBase; src += registerBase; int edge1 = (int)(program[pc++] & 0xFFu) + registerBase; float x = readMemFloat(mem, dst, 4); writeMemFloat(mem, dst, 4, smoothstep(readMemFloat(mem, src, 4), readMemFloat(mem, edge1, 4), x)); break; }
-            case 109: { dst += registerBase; src += registerBase; int factor = (int)(program[pc++] & 0xFFu) + registerBase; float x = readMemFloat(mem, dst, 4); float y = readMemFloat(mem, src, 4); float a = readMemFloat(mem, factor, 4); writeMemFloat(mem, dst, 4, x * (1.0f - a) + y * a); break; }
-            case 110: { dst += registerBase; src += registerBase; int upper = (int)(program[pc++] & 0xFFu) + registerBase; float x = readMemFloat(mem, dst, 4); writeMemFloat(mem, dst, 4, clamp(x, readMemFloat(mem, src, 4), readMemFloat(mem, upper, 4))); break; }
+#if ENABLE_MIXING
+            case 107: { dst += registerBase; src += registerBase; writeMemFloat(mem, dst, 4, (float)readMemFloat(mem, dst, 4) < (float)readMemFloat(mem, src, 4) ? 0.0f : 1.0f); break; }
+            case 108: { dst += registerBase; src += registerBase; int edge1 = (int)(program[pc++] & 0xFFu) + registerBase; float x = (float)readMemFloat(mem, dst, 4); float e0 = (float)readMemFloat(mem, src, 4); float e1 = (float)readMemFloat(mem, edge1, 4); writeMemFloat(mem, dst, 4, smoothstep(e0, e1, x)); break; }
+            case 109: { dst += registerBase; src += registerBase; int factor = (int)(program[pc++] & 0xFFu) + registerBase; float x = (float)readMemFloat(mem, dst, 4); float y = (float)readMemFloat(mem, src, 4); float a = (float)readMemFloat(mem, factor, 4); writeMemFloat(mem, dst, 4, x * (1.0f - a) + y * a); break; }
+            case 110: { dst += registerBase; src += registerBase; int upper = (int)(program[pc++] & 0xFFu) + registerBase; float x = (float)readMemFloat(mem, dst, 4); float minV = (float)readMemFloat(mem, src, 4); float maxV = (float)readMemFloat(mem, upper, 4); writeMemFloat(mem, dst, 4, clamp(x, minV, maxV)); break; }
+#endif
 
+#if ENABLE_VECTORMATH
             case 113: { // vocCross3
                 dst += registerBase;
                 src += registerBase;
@@ -1176,6 +1230,7 @@ __kernel void runVM(
                 }
                 break;
             }
+#endif
 
             case 116: { // vocSampleLod: keep bytecode aligned; images are not bound by this VM API
                 dst += registerBase;
@@ -1185,6 +1240,7 @@ __kernel void runVM(
                 break;
             }
 
+#if ENABLE_TRANSCENDENTALS
             case 117: {
                 dst += registerBase; src += registerBase;
                 vm_float_t x = readMemFloat(mem, src, 4);
@@ -1315,6 +1371,8 @@ __kernel void runVM(
                 writeMemFloat(mem, dst, 4, (readMemFloat(mem, dst, 4) - readMemFloat(mem, src, 4) * floor(readMemFloat(mem, dst, 4) / readMemFloat(mem, src, 4))));
                 break;
             }
+#endif
+#if ENABLE_VECTORMATH
             case 119: { // vocFaceforward
                 dst += registerBase;
                 src += registerBase;
@@ -1330,7 +1388,9 @@ __kernel void runVM(
                 }
                 break;
             }
+#endif
 
+#if ENABLE_MATRICES
             case 120: { // vocMatrixCompMult
                 dst += registerBase;
                 src += registerBase;
@@ -1375,6 +1435,7 @@ __kernel void runVM(
                 writeMemFloat(mem, dst, 4, det);
                 break;
             }
+#endif
 
             default:
                 break;
