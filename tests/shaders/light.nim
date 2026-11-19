@@ -171,15 +171,24 @@ proc light() =
   let textureHeight = int(convertedSurface.h)
   var rgbaPixels = newSeq[byte](textureWidth * textureHeight * 4)
   copyMem(addr rgbaPixels[0], convertedSurface.pixels, rgbaPixels.len)
-  objectConfig.setTexture(0, rgbaPixels, textureWidth, textureHeight)
   SDL_DestroySurface(convertedSurface)
+
+  var textureId: GLuint
+  glGenTextures(1, addr textureId)
+  glActiveTexture(GL_TEXTURE0)
+  glBindTexture(GL_TEXTURE_2D, textureId)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8.GLint, textureWidth.GLsizei, textureHeight.GLsizei,
+               0, GL_RGBA, GL_UNSIGNED_BYTE, addr rgbaPixels[0])
 
   # Uniforms are packed by declaration: mvp[0..15], model[16..31].
   var vertexUniforms: array[32, uint32]
   var timer = 0.0'f32
   var fragmentUniforms = newSeq[uint32](16)
   vm.prepareVariants([objectConfig, lightConfig])
-  vm.configure(objectConfig)
   vm.prepareGlslVmObject(objectConfig)
   vm.prepareGlslVmObject(lightConfig)
   var indexBuffer: GLuint
@@ -348,6 +357,7 @@ proc light() =
     discard SDL_GL_SwapWindow(win.handle)
 
   glDeleteBuffers(1, addr indexBuffer)
+  glDeleteTextures(1, addr textureId)
   objectConfig.destroyGlslVmObject()
   lightConfig.destroyGlslVmObject()
   win.quitWindow()

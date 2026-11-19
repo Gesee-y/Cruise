@@ -2,6 +2,7 @@
 # ###################################################################### GLSL33 BACKEND ############################################################################ #
 # ################################################################################################################################################################## #
 
+import std/tables
 import ../../../externalModule/opengl/src/opengl
 import object_config
 import ../bytecode
@@ -25,12 +26,10 @@ type
 
   GlslVm* = object
     program*: GLuint
-    variants: Table[uint16, GlslVmVariant]
-    activeVariant: int
-    textures: array[GLSL_VM_MAX_TEXTURES, GLuint]
-    textureActive: array[GLSL_VM_MAX_TEXTURES, bool]
-    inputWordCount: int
-    
+    variants*: Table[uint32, GlslVmVariant]
+    activeVariant*: uint32
+    inputWordCount*: int
+
   VmShaderStage* = enum
     vssVertex
     vssFragment
@@ -98,7 +97,7 @@ proc linkProgram(vertexSource, fragmentSource: string): GLuint =
  # ########################################### GLSL VM INTERNALS ######################################## #
 # ###################################################################################################### #
 
-proc bytecodeInputLayout(code: openArray[uint32]): seq[tuple[offset, size: int]] =
+proc bytecodeInputLayout*(code: openArray[uint32]): seq[tuple[offset, size: int]] =
   assert code.len >= 2, "Vertex VM bytecode has no entry point"
   var pc = int(code[1])
   while pc >= 0 and pc < code.len:
@@ -113,16 +112,17 @@ proc bytecodeInputLayout(code: openArray[uint32]): seq[tuple[offset, size: int]]
     result.add (offset, size)
     inc pc
 
-proc variantKey(vertex, fragment: BytecodeProfile): GlslVmVariantKey =
-  result.vertexFeatures = featureMask(vertex)
-  result.fragmentFeatures = featureMask(fragment)
+proc variantKey*(vertexProfile, fragmentProfile: BytecodeProfile): uint32 =
+  (featureMask(vertexProfile).uint32 shl 16) or featureMask(fragmentProfile).uint32
 
-proc buildVariant(vm: GlslVm, key: GlslVmVariantKey,
-                  vertexFeatures, fragmentFeatures: set[BytecodeFeature]): GlslVmVariant =
-  let vertexSource = assembleVMSource(vssVertex, vertexFeatures,
-    vm.inputWordCount)
-  let fragmentSource = assembleVMSource(vssFragment, fragmentFeatures,
-    vm.inputWordCount)
+proc variantKey*(vertexCode, fragmentCode: openArray[uint32]): uint32 =
+  let vp = analyzeBytecode(vertexCode)
+  let fp = analyzeBytecode(fragmentCode)
+  variantKey(vp, fp)
+
+proc buildVariant(vm: GlslVm, vertexFeatures, fragmentFeatures: set[BytecodeFeature]): GlslVmVariant =
+  let vertexSource = assembleVMSource(vssVertex, vertexFeatures, vm.inputWordCount)
+  let fragmentSource = assembleVMSource(vssFragment, fragmentFeatures, vm.inputWordCount)
   result.program = linkProgram(vertexSource, fragmentSource)
   glUseProgram(result.program)
   for stageName in ["uVertexBytecode", "uFragmentBytecode"]:
@@ -132,125 +132,105 @@ proc buildVariant(vm: GlslVm, key: GlslVmVariantKey,
     else: result.fragmentBytecodeLocation = location
   for uniformName in ["uVertexUniforms", "uFragmentUniforms"]:
     let location = glGetUniformLocation(result.program, (uniformName & "[0]").cstring)
-    assert location >= 0,
-      "GLSL VM is missing " & uniformName
+    assert location >= 0, "GLSL VM is missing " & uniformName
     if uniformName == "uVertexUniforms": result.vertexUniformLocation = location
     else: result.fragmentUniformLocation = location
   for i in 0 ..< GLSL_VM_MAX_TEXTURES:
     let location = glGetUniformLocation(result.program, ("uSamplers[" & $i & "]").cstring)
     if location >= 0: glUniform1i(location, i.GLint)
 
-proc prepareVariant(vm: var GlslVm, config: VmObjectConfig) =
-  ## Internal step used only by the batch pre-generation API below.
-  assert config.vertexBytecode.len > 0 and config.vertexBytecode.len <= GLSL_MAX_BYTECODE_WORDS,
-    "Object config needs 1..512 vertex bytecode words"
-  assert config.fragmentBytecode.len > 0 and config.fragmentBytecode.len <= GLSL_MAX_BYTECODE_WORDS,
-    "Object config needs 1..512 fragment bytecode words"
-  assert vm.variants.len < GLSL_VM_MAX_VARIANTS,
-    "GLSL VM variant limit exceeded; at most 16 profiles can be prepared"
-
-  let vertexProfile = analyzeBytecode(config.vertexBytecode)
-  let fragmentProfile = analyzeBytecode(config.fragmentBytecode)
-  let key = (vertexProfile.features.featureMask.uint32 shl 16) or fragmentProfile.features.featureMask.uint32
-  vm.variants[key] = vm.buildVariant(key, vertexProfile.features, fragmentProfile.features)
-
-proc prepareVariants*(vm: var GlslVm, configs: openArray[VmObjectConfig]) =
-  ## Pre-generate the unique profiles in one setup pass, before rendering.
-  ## The fixed 32-word vertex input is shared by every generated variant.
-  for config in configs:
-    vm.prepareVariant(config)
-
-proc bindGlslVmObject*(config: VmObjectConfig) =
-  glBindVertexArray(config.glVao)
-
-proc destroyGlslVmObject*(config: var VmObjectConfig) =
-  if config.glInputVbo != 0:
-    glDeleteBuffers(1, addr config.glInputVbo)
-    config.glInputVbo = 0
-  if config.glVao != 0:
-    glDeleteVertexArrays(1, addr config.glVao)
-    config.glVao = 0
-  config.glVertexCount = 0
-
   # ###################################################################################################### #
  # ############################################# GLSL VM API ############################################ #
 # ###################################################################################################### #
 
 proc initGlslVm*(): GlslVm =
-  ## Initialize shared VM state. Variant programs are prepared explicitly from
-  ## the application's shader configs before rendering begins.
+  ## Initialize shared VM state. Variant programs are prepared explicitly or
+  ## on first use.
   var maxVertexAttributes: GLint
   glGetIntegerv(GL_MAX_VERTEX_ATTRIBS, addr maxVertexAttributes)
   result.inputWordCount = min(maxVertexAttributes, GLSL_VM_MAX_INPUT_VERTEX)
   assert result.inputWordCount >= 1, "OpenGL device exposes no vertex attributes"
-  result.activeVariant = -1
-  for i in 0 ..< GLSL_VM_MAX_TEXTURES:
-    result.textures[i] = 0
+  result.variants = initTable[uint32, GlslVmVariant]()
+  result.program = 0
+  result.activeVariant = 0
+
+proc prepareVariant*(vm: var GlslVm, vertexCode, fragmentCode: openArray[uint32]): uint32 =
+  ## Pre-compile and cache the specialized VM shader program for the given bytecode pair.
+  assert vertexCode.len > 0 and vertexCode.len <= GLSL_MAX_BYTECODE_WORDS,
+    "Vertex bytecode needs 1..512 words"
+  assert fragmentCode.len > 0 and fragmentCode.len <= GLSL_MAX_BYTECODE_WORDS,
+    "Fragment bytecode needs 1..512 words"
+  let vp = analyzeBytecode(vertexCode)
+  let fp = analyzeBytecode(fragmentCode)
+  let key = variantKey(vp, fp)
+  if key notin vm.variants:
+    assert vm.variants.len < GLSL_VM_MAX_VARIANTS, "GLSL VM variant limit exceeded"
+    vm.variants[key] = vm.buildVariant(vp.features, fp.features)
+  return key
+
+proc prepareVariant*(vm: var GlslVm, config: VmObjectConfig): uint32 {.discardable.} =
+  vm.prepareVariant(config.vertexBytecode, config.fragmentBytecode)
+
+proc prepareVariants*(vm: var GlslVm, configs: openArray[VmObjectConfig]) =
+  ## Pre-generate unique profiles for multiple configs in one setup pass.
+  for config in configs:
+    discard vm.prepareVariant(config)
+
+proc use*(vm: var GlslVm, vertexCode, fragmentCode: openArray[uint32]) =
+  ## Activate the specialized VM shader and upload its bytecode to uniforms.
+  let key = vm.prepareVariant(vertexCode, fragmentCode)
+  let variant = vm.variants[key]
+  vm.program = variant.program
+  vm.activeVariant = key
+  glUseProgram(variant.program)
+  glUniform1uiv(variant.vertexBytecodeLocation, vertexCode.len.GLsizei,
+    unsafeAddr vertexCode[0])
+  glUniform1uiv(variant.fragmentBytecodeLocation, fragmentCode.len.GLsizei,
+    unsafeAddr fragmentCode[0])
+
+proc use*(vm: var GlslVm, config: VmObjectConfig) =
+  vm.use(config.vertexBytecode, config.fragmentBytecode)
 
 proc setShader*(vm: var GlslVm, config: VmObjectConfig) =
-  ## Select a previously prepared shader profile and upload its bytecode.
-  assert config.vertexBytecode.len > 0 and
-    config.vertexBytecode.len <= GLSL_MAX_BYTECODE_WORDS,
-    "Object config needs 1..512 vertex bytecode words"
-  assert config.fragmentBytecode.len > 0 and
-    config.fragmentBytecode.len <= GLSL_MAX_BYTECODE_WORDS,
-    "Object config needs 1..512 fragment bytecode words"
-  let vertexProfile = analyzeBytecode(config.vertexBytecode)
-  let fragmentProfile = analyzeBytecode(config.fragmentBytecode)
-  let key = (vertexProfile.features.featureMask.uint32 shl 16) or fragmentProfile.features.featureMask.uint32
-  let variant = vm.variants.getOrDefault(key)
-  let selected = vm.findVariant(key)
-  assert selected >= 0,
-    "Shader profile was not prepared; include its config in prepareVariants during setup"
-  let variant = vm.variants[selected]
-  vm.program = variant.program
-  glUseProgram(variant.program)
-  glUniform1uiv(variant.vertexBytecodeLocation, config.vertexBytecode.len.GLsizei,
-    unsafeAddr config.vertexBytecode[0])
-  glUniform1uiv(variant.fragmentBytecodeLocation, config.fragmentBytecode.len.GLsizei,
-    unsafeAddr config.fragmentBytecode[0])
+  ## Alias for use(config).
+  vm.use(config)
 
-proc configure*(vm: var GlslVm, config: VmObjectConfig) =
-  ## Select bytecode and upload the object's textures. Vertex input buffers
-  ## are created separately and stored on the config, not owned by the VM.
-  vm.setShader(config)
-  for i in 0 ..< GLSL_VM_MAX_TEXTURES:
-    vm.textureActive[i] = false
-  for texture in config.textures:
-    assert texture.slot >= 0 and texture.slot < GLSL_VM_MAX_TEXTURES,
-      "Texture slot must be in the VM's texture range"
-    assert texture.data.len == texture.width * texture.height * 4,
-      "VM textures must contain tightly packed RGBA8 pixels"
-    let slot = texture.slot
-    if vm.textures[slot] == 0:
-      glGenTextures(1, addr vm.textures[slot])
-    vm.textureActive[slot] = true
-    glActiveTexture((GL_TEXTURE0.int + slot).GLenum)
-    glBindTexture(GL_TEXTURE_2D, vm.textures[slot])
-    let wrapMode = if texture.repeat: GL_REPEAT else: GL_CLAMP_TO_EDGE
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrapMode.GLint)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapMode.GLint)
-    let minFilter = if texture.mipmaps: GL_LINEAR_MIPMAP_LINEAR else: GL_LINEAR
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter.GLint)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR.GLint)
-    let internalFormat = if texture.srgb: GLint(GL_SRGB8_ALPHA8) else: GLint(GL_RGBA8)
-    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, texture.width.GLsizei,
-      texture.height.GLsizei, 0, GL_RGBA, GL_UNSIGNED_BYTE,
-      unsafeAddr texture.data[0])
-    if texture.mipmaps: glGenerateMipmap(GL_TEXTURE_2D)
-  for slot in 0 ..< GLSL_VM_MAX_TEXTURES:
-    glActiveTexture((GL_TEXTURE0.int + slot).GLenum)
-    let textureId = if vm.textureActive[slot]: vm.textures[slot] else: 0'u32
-    glBindTexture(GL_TEXTURE_2D, textureId)
+proc uploadUniforms*(vm: GlslVm, vertexUniforms, fragmentUniforms: openArray[uint32]) =
+  ## Upload per-draw uniforms to the active variant.
+  assert vm.program != 0 and vm.activeVariant in vm.variants, "No active VM shader program"
+  let variant = vm.variants[vm.activeVariant]
+  var vBuf: array[GLSL_VM_UNIFORM_WORDS, uint32]
+  var fBuf: array[GLSL_VM_UNIFORM_WORDS, uint32]
+  let vLen = min(vertexUniforms.len, GLSL_VM_UNIFORM_WORDS)
+  let fLen = min(fragmentUniforms.len, GLSL_VM_UNIFORM_WORDS)
+  if vLen > 0: copyMem(addr vBuf[0], unsafeAddr vertexUniforms[0], vLen * sizeof(uint32))
+  if fLen > 0: copyMem(addr fBuf[0], unsafeAddr fragmentUniforms[0], fLen * sizeof(uint32))
+  glUniform1uiv(variant.vertexUniformLocation, GLSL_VM_UNIFORM_WORDS.GLsizei, addr vBuf[0])
+  glUniform1uiv(variant.fragmentUniformLocation, GLSL_VM_UNIFORM_WORDS.GLsizei, addr fBuf[0])
 
-proc bindTextures*(vm: GlslVm) =
-  ## Rebind the currently configured texture set after another renderer has
-  ## changed OpenGL's texture-unit state.
-  for slot in 0 ..< GLSL_VM_MAX_TEXTURES:
-    glActiveTexture((GL_TEXTURE0.int + slot).GLenum)
-    let textureId = if vm.textureActive[slot]: vm.textures[slot] else: 0'u32
-    glBindTexture(GL_TEXTURE_2D, textureId)
-  glActiveTexture(GL_TEXTURE0)
+proc uploadUniforms*(vm: GlslVm, config: VmObjectConfig) =
+  ## Upload uniforms extracted from VmObjectConfig.
+  assert vm.program != 0 and vm.activeVariant in vm.variants, "No active VM shader program"
+  let variant = vm.variants[vm.activeVariant]
+  var vBuf: array[GLSL_VM_UNIFORM_WORDS, uint32]
+  var fBuf: array[GLSL_VM_UNIFORM_WORDS, uint32]
+  for i, value in config.uniforms:
+    if i < GLSL_VM_UNIFORM_WORDS:
+      vBuf[i] = value
+      fBuf[i] = value
+  for i, value in config.vertexUniforms:
+    if i < GLSL_VM_UNIFORM_WORDS: vBuf[i] = value
+  for i, value in config.fragmentUniforms:
+    if i < GLSL_VM_UNIFORM_WORDS: fBuf[i] = value
+  glUniform1uiv(variant.vertexUniformLocation, GLSL_VM_UNIFORM_WORDS.GLsizei, addr vBuf[0])
+  glUniform1uiv(variant.fragmentUniformLocation, GLSL_VM_UNIFORM_WORDS.GLsizei, addr fBuf[0])
+
+proc runVm*(vm: var GlslVm, config: VmObjectConfig) =
+  ## Activate shader and upload uniforms. The caller binds VAO and textures before drawing.
+  let key = variantKey(config.vertexBytecode, config.fragmentBytecode)
+  if vm.activeVariant != key or vm.program == 0:
+    vm.use(config)
+  vm.uploadUniforms(config)
 
 proc prepareGlslVmObject*(vm: GlslVm, config: var VmObjectConfig) =
   ## Pack this object's attribute arrays into the GLSL VM's 128-byte input
@@ -317,32 +297,23 @@ proc prepareGlslVmObject*(vm: GlslVm, config: var VmObjectConfig) =
       GLSL_VM_INPUT_BLOCK_BYTES.GLsizei, cast[pointer](index * sizeof(uint32)))
   glBindVertexArray(0)
 
-proc runVm*(vm: var GlslVm, config: VmObjectConfig) =
-  ## Upload per-draw uniforms and leave the VM program ready. The caller binds
-  ## the object's config VAO and index buffer before issuing a draw command.
-  var vertexUniforms: array[GLSL_VM_UNIFORM_WORDS, uint32]
-  var fragmentUniforms: array[GLSL_VM_UNIFORM_WORDS, uint32]
-  for i, value in config.uniforms:
-    vertexUniforms[i] = value
-    fragmentUniforms[i] = value
-  for i, value in config.vertexUniforms: vertexUniforms[i] = value
-  for i, value in config.fragmentUniforms: fragmentUniforms[i] = value
+proc bindGlslVmObject*(config: VmObjectConfig) =
+  glBindVertexArray(config.glVao)
 
-  assert vm.activeVariant >= 0
-  let variant = vm.variants[vm.activeVariant]
-  glUseProgram(variant.program)
-  glUniform1uiv(variant.vertexUniformLocation, GLSL_VM_UNIFORM_WORDS.GLsizei, addr vertexUniforms[0])
-  glUniform1uiv(variant.fragmentUniformLocation, GLSL_VM_UNIFORM_WORDS.GLsizei, addr fragmentUniforms[0])
-  # The caller binds the object's mesh and index buffer before issuing a draw.
+proc destroyGlslVmObject*(config: var VmObjectConfig) =
+  if config.glInputVbo != 0:
+    glDeleteBuffers(1, addr config.glInputVbo)
+    config.glInputVbo = 0
+  if config.glVao != 0:
+    glDeleteVertexArrays(1, addr config.glVao)
+    config.glVao = 0
+  config.glVertexCount = 0
 
 proc destroy*(vm: var GlslVm) =
-  ## Release VM-owned GL objects. Call while the OpenGL context is current.
-  for i in 0 ..< vm.variants.len:
-    if vm.variants[i].program != 0:
-      glDeleteProgram(vm.variants[i].program)
-  vm.variants.setLen(0)
+  ## Release VM-owned GL program objects. Call while the OpenGL context is current.
+  for variant in vm.variants.values:
+    if variant.program != 0:
+      glDeleteProgram(variant.program)
+  vm.variants.clear()
   vm.program = 0
-  vm.activeVariant = -1
-  glDeleteTextures(GLSL_VM_MAX_TEXTURES.GLsizei, addr vm.textures[0])
-  vm.textures = default(typeof(vm.textures))
-
+  vm.activeVariant = 0

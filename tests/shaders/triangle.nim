@@ -61,8 +61,18 @@ proc triangle() =
   let textureHeight = int(convertedSurface.h)
   var rgbaPixels = newSeq[byte](textureWidth * textureHeight * 4)
   copyMem(addr rgbaPixels[0], convertedSurface.pixels, rgbaPixels.len)
-  objectConfig.setTexture(0, rgbaPixels, textureWidth, textureHeight)
   SDL_DestroySurface(convertedSurface)
+
+  var textureId: GLuint
+  glGenTextures(1, addr textureId)
+  glActiveTexture(GL_TEXTURE0)
+  glBindTexture(GL_TEXTURE_2D, textureId)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8.GLint, textureWidth.GLsizei, textureHeight.GLsizei,
+               0, GL_RGBA, GL_UNSIGNED_BYTE, addr rgbaPixels[0])
 
   objectConfig.setUniforms([cast[uint32](1.0'f32), cast[uint32](0.0'f32)], vusVertex)
   var timer = 0.0'f32
@@ -70,7 +80,6 @@ proc triangle() =
   glViewport(0, 0, 800.GLsizei, 600.GLsizei)
   glClearColor(0.07'f32, 0.08'f32, 0.12'f32, 1.0'f32)
   vm.prepareVariants([objectConfig])
-  vm.configure(objectConfig)
   vm.prepareGlslVmObject(objectConfig)
 
   while running:
@@ -91,6 +100,7 @@ proc triangle() =
     discard SDL_GL_SwapWindow(win.handle)
 
   win.quitWindow()
+  glDeleteTextures(1, addr textureId)
   objectConfig.destroyGlslVmObject()
   app.quitSDL3App()
   SDL_Quit_proc()

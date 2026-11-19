@@ -269,6 +269,9 @@ proc analyzeBytecode*(code: openArray[uint32]): BytecodeProfile =
   result.features.incl(getRegisterTier(min(256, max(1, requiredBytes))))
   result.registerWords = getRegisterWord(result.features)
 
-proc featureMask*(profile: BytecodeProfile): uint16 =
-  for feature in profile.features:
+proc featureMask*(features: set[BytecodeFeature]): uint16 =
+  for feature in features:
     result = result or (1'u16 shl ord(feature))
+
+proc featureMask*(profile: BytecodeProfile): uint16 =
+  featureMask(profile.features)
