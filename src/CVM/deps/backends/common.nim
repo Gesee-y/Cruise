@@ -2,10 +2,22 @@
 
 proc backendShortName(name: string): string =
   let parts = name.split('.')
-  if parts.len == 0: name else: parts[^1]
+  if parts.len == 0: name else: parts[0]
+
+proc backendIsNativeType(name: string, opencl: bool): bool =
+  if opencl:
+    return name in ["void", "bool", "char", "uchar", "short", "ushort",
+      "int", "uint", "long", "ulong", "float", "double", "float2", "float3",
+      "float4", "float8", "float16", "int2", "int3", "int4", "uint2",
+      "uint3", "uint4", "image2d_t", "sampler_t"]
+  return name in ["void", "bool", "int", "uint", "float", "vec2", "vec3", "vec4",
+    "ivec2", "ivec3", "ivec4", "uvec2", "uvec3", "uvec4", "mat2", "mat3",
+    "mat4", "sampler2D"]
 
 proc backendType(cache: TypeCache, sourceType: string, opencl: bool): string =
   let ty = cache.equivalences.getOrDefault(sourceType, sourceType)
+  if cache.getType(ty).kind == EnumType:
+    return "int"
   case ty
   of "void": result = "void"
   of "bool": result = "bool"
@@ -43,7 +55,108 @@ proc backendType(cache: TypeCache, sourceType: string, opencl: bool): string =
     if opencl: result = "float4x4" else: result = "mat4"
   of "sampler2D":
     if opencl: result = "image2d_t" else: result = "sampler2D"
-  else: result = ty
+  else: result = backendShortName(ty)
+
+proc backendTypeId(cache: TypeCache, sourceType: string): int =
+  let resolved = cache.equivalences.getOrDefault(sourceType, sourceType)
+  result = cache.nameToId.getOrDefault(resolved, -1)
+  if result < 0:
+    result = cache.nameToId.getOrDefault(backendShortName(resolved), -1)
+
+proc backendSupportsType(cache: TypeCache, sourceType: string, opencl: bool,
+                         visiting: var seq[int]): bool =
+  let resolved = cache.equivalences.getOrDefault(sourceType, sourceType)
+  let targetType = backendType(cache, resolved, opencl)
+  if backendIsNativeType(targetType, opencl): return true
+
+  let typeId = cache.backendTypeId(resolved)
+  if typeId < 0: return false
+  let inst = cache.instances[typeId]
+  case inst.kind
+  of EnumType:
+    return true
+  of ObjectType:
+    if inst.fields.len == 0: return false
+    if typeId in visiting: return true
+    visiting.add(typeId)
+    for field in inst.fields:
+      if not cache.backendSupportsType(field.ty, opencl, visiting): return false
+    visiting.setLen(visiting.len - 1)
+    return true
+  else:
+    return false
+
+proc collectBackendStruct(cache: TypeCache, typeId: int, opencl: bool,
+                          visiting: var seq[int], ordered: var seq[int]) =
+  if typeId in ordered or typeId in visiting: return
+  let inst = cache.instances[typeId]
+  if inst.kind != ObjectType: return
+  if backendIsNativeType(backendType(cache, inst.name, opencl), opencl): return
+  var checkPath: seq[int] = @[]
+  if not cache.backendSupportsType(inst.name, opencl, checkPath): return
+
+  visiting.add(typeId)
+  for field in inst.fields:
+    let depId = cache.backendTypeId(field.ty)
+    if depId >= 0:
+      cache.collectBackendStruct(depId, opencl, visiting, ordered)
+  visiting.setLen(visiting.len - 1)
+  ordered.add(typeId)
+
+proc emitBackendTypeDecls*(root: CIRNode, cache: TypeCache,
+                           opencl: bool): string =
+  result = ""
+  var ordered: seq[int] = @[]
+  var visiting: seq[int] = @[]
+  for i, inst in cache.instances:
+    if inst.kind == ObjectType:
+      cache.collectBackendStruct(i, opencl, visiting, ordered)
+
+  for typeId in ordered:
+    let inst = cache.instances[typeId]
+    let name = backendShortName(inst.name)
+    if opencl:
+      result.add("typedef struct " & name & " {\n")
+    else:
+      result.add("struct " & name & " {\n")
+    for field in inst.fields:
+      result.add("  " & backendType(cache, field.ty, opencl) & " " &
+        backendShortName(field.name) & ";\n")
+    if opencl:
+      result.add("} " & name & ";\n\n")
+    else:
+      result.add("};\n\n")
+
+  let items = if root.kind in {cnkStmtList, cnkSection}: root.args else: @[root]
+  var sourceFunctions: seq[string] = @[]
+  for item in items:
+    if item.kind == cnkFuncDef and backendShortName(item.args[0].name) != "main":
+      sourceFunctions.add(backendShortName(item.args[0].name))
+
+  var emittedSignatures: seq[string] = @[]
+  for inst in cache.instances:
+    if inst.kind != ProcType or backendShortName(inst.name) notin sourceFunctions:
+      continue
+    let returnType = if inst.returnType.len == 0: "void" else: inst.returnType
+    var checkPath: seq[int] = @[]
+    var supported = cache.backendSupportsType(returnType, opencl, checkPath)
+    var params: seq[string] = @[]
+    for i, field in inst.fields:
+      checkPath.setLen(0)
+      if not cache.backendSupportsType(field.ty, opencl, checkPath):
+        supported = false
+      let paramName = if field.name.len == 0: "p" & $i else: backendShortName(field.name)
+      params.add(backendType(cache, field.ty, opencl) & " " & paramName)
+    if not supported: continue
+
+    let protoName = backendShortName(inst.name)
+    let signature = backendType(cache, returnType, opencl) & " " & protoName &
+      "(" & (if params.len == 0: "void" else: params.join(", ")) & ");"
+    if signature notin emittedSignatures:
+      emittedSignatures.add(signature)
+      result.add(signature & "\n")
+
+  if result.len > 0: result.add("\n")
 
 proc backendExpr(cache: TypeCache, node: CIRNode, opencl: bool): string
 

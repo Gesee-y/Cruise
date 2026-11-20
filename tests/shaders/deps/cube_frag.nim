@@ -5,6 +5,7 @@ import ../../../src/CVM/bytecode
 import ../../../src/CVM/default_type
 
 translateToBytecode()
+translateToGLSL33()
 setShaderName("cube_frag")
 setShaderType(Vec2, "vec2f")
 setShaderType(Vec4, "vec4f")

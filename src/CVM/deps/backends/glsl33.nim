@@ -1,5 +1,6 @@
 proc emitGLSL33*(root: CIRNode, cache: TypeCache): string =
   result = "#version 330 core\n\n"
+  result.add(emitBackendTypeDecls(root, cache, false))
   let items = if root.kind in {cnkStmtList, cnkSection}: root.args else: @[root]
   var entry = newCIRNode(default(LineInfo), cnkEmpty)
   for item in items:

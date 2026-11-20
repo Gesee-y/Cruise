@@ -1,5 +1,6 @@
 proc emitOpenCL*(root: CIRNode, cache: TypeCache): string =
   result = "// OpenCL C 1.2 source generated from rewritten CVM IR.\n\n"
+  result.add(emitBackendTypeDecls(root, cache, true))
   let items = if root.kind in {cnkStmtList, cnkSection}: root.args else: @[root]
   var entry = newCIRNode(default(LineInfo), cnkEmpty)
   var uniforms: seq[CIRNode] = @[]
