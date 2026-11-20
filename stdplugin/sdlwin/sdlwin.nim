@@ -14,7 +14,7 @@
 import strutils
 import ../../externalLib/sdl3/src/sdl3_nim
 import ../../src/windows/windows
-export SDL_Delay
+export sdl3_nim
 
 # ---------------------------------------------------------------------------
 # SDL3-specific subtypes
@@ -160,7 +160,7 @@ method setFullscreen*(win: SDL3Window, active: bool,
 
 method initWindow*(app: CApp, sw: var SDL3Window, title: string = "untitled", 
                    posX: int = SDL_WINDOWPOS_CENTERED.int, posY: int = SDL_WINDOWPOS_CENTERED.int,
-                   width: int = 200, height: int= 300, args: varargs[string]) =
+                   width: int = 200, height: int= 300, args: varargs[string], gl= false) =
   ## Create a new SDL3 window and register it in *app*.
   ##
   ## args (positional, all optional):
@@ -171,9 +171,12 @@ method initWindow*(app: CApp, sw: var SDL3Window, title: string = "untitled",
   ##   [4] y       default SDL_WINDOWPOS_CENTERED
   ##
   ## Emits NOTIF_WINDOW_CREATED on success, NOTIF_ERROR on failure.
+  var flags = SDL_WINDOW_RESIZABLE
+  if gl:
+    flags = flags or SDL_WINDOW_OPENGL
   let handle = SDL_CreateWindow(title.cstring,
                                 width.cint, height.cint,
-                                SDL_WINDOW_RESIZABLE)
+                                flags)
   if handle == nil:
     NOTIF_ERROR.emit(("SDL_CreateWindow failed", sdlError()))
 

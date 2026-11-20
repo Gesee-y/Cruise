@@ -51,17 +51,17 @@ proc acquireRead*(l: var TRWLock) =
   ## The owning writer thread may reenter as a reader.
   let tid = getThreadId()
   acquire(l.m)
-  
+
   block outer:
     # Writer reentrancy: writer can acquire read lock
     if l.writer == tid:
       l.writerCount.inc()
       break outer
-    
+
     # Wait while a writer exists or writers are queued
     while l.writer != 0 or l.waitingWriters > 0:
       wait(l.c, l.m)
-    
+
     l.readers.inc()
 
   release(l.m)
@@ -78,7 +78,7 @@ proc acquireWrite*(l: var TRWLock) =
     l.writerCount.inc()
   else:
     l.waitingWriters.inc()
-    
+
     # Wait until no readers or writer remain
     while l.readers > 0 or l.writer != 0:
       wait(l.c, l.m)
@@ -165,7 +165,7 @@ proc makeNode*[T: tuple | object](obj: T): LockNode =
   ## Creates a lock node by recursively inspecting object or tuple fields.
   result = new LockNode
   init(result.lck)
-  
+
   var hasFields = false
   for name, value in fieldPairs(obj):
     hasFields = true
@@ -196,7 +196,7 @@ proc lockImpl*(ln: var LockNode, mode: LockMode) =
     acquireWrite(ln.lck)
   else:
     acquireRead(ln.lck)
-  
+
   if not ln.isLeaf:
     for key in ln.children.keys():
       var child = ln.children[key]
@@ -208,7 +208,7 @@ proc unlockImpl*(ln: var LockNode, mode: LockMode) =
     for key in ln.children.keys():
       var child = ln.children[key]
       unlockImpl(child, mode)
-  
+
   release(ln.lck, mode)
 
 proc readLock*(tree: var LockTree, path: varargs[string]) =

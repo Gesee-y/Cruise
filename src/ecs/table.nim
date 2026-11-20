@@ -2,7 +2,9 @@
 # ####################################################################### ECS TABLE ################################################################ #
 # ################################################################################################################################################## #
 
-import tables, bitops, typetraits, hashes, sequtils, math
+import std/[tables, bitops, typetraits, hashes, sequtils, math, macros]
+
+{.feature:"v2".}
 
 const
   MAX_COMPONENT_LAYER = 4
@@ -239,7 +241,7 @@ template infoFromID*(i:untyped): untyped =
   let idx = i.uint32 mod DEFAULT_BLK_SIZE.uint32
 
   (bid, idx)
-  
+
 
 proc isAlive*(w:ECSWorld, d:DenseHandle):bool =
   return d.gen == w.generations[d.wid]

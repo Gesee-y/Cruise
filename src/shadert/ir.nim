@@ -24,7 +24,7 @@ type
 
   CIRNodeKind* = enum
     cnkNone
-    cnkStmtList
+    cnkStmtList, cnkShaderName
     cnkDecl, cnkFuncSig, cnkFuncDef
     cnkCall
     cnkObjConstr
@@ -47,6 +47,7 @@ type
     cnkCast
     cnkConv
     cnkBracket
+    cnkTypeEqv
     cnkConstDef, cnkTypeDef, cnkIdentDef
     cnkCaseStmt
     cnkOfBranch, cnkDefaultBranch

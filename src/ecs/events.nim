@@ -1,5 +1,3 @@
-import tables
-
 # ################################################################################################# #
 # ########################################### EVENTS ############################################## #
 # ################################################################################################# #
@@ -287,7 +285,7 @@ proc emitDenseComponentRemoved*(em: var EventManager, entity: DenseHandle, compo
     componentIds: componentIds.toSeq
   ))
 
-proc emitDenseEntityMigrated*(em: var EventManager, entity: DenseHandle, old,lst:uint, 
+proc emitDenseEntityMigrated*(em: var EventManager, entity: DenseHandle, old,lst:uint,
                              oldArchetype, newArchetype: uint16) =
   em.denseEntityMigrated.trigger(DenseEntityMigratedEvent(
     entity: entity,
@@ -297,7 +295,7 @@ proc emitDenseEntityMigrated*(em: var EventManager, entity: DenseHandle, old,lst
     newArchetype: newArchetype
   ))
 
-proc emitDenseEntityMigratedBatch*(em: var EventManager, ids,old,lst:seq[uint32], 
+proc emitDenseEntityMigratedBatch*(em: var EventManager, ids,old,lst:seq[uint32],
                              oldArchetype, newArchetype: uint16) =
   em.denseEntityMigratedBatch.trigger(DenseEntityMigratedBatchEvent(
     ids: ids,
@@ -329,14 +327,14 @@ proc emitSparseComponentRemoved*(em: var EventManager, entity: SparseHandle, com
     componentIds: componentIds.toSeq
   ))
 
-proc emitDensified*(em: var EventManager, oldSparse: SparseHandle, 
+proc emitDensified*(em: var EventManager, oldSparse: SparseHandle,
                    newDense: DenseHandle) =
   em.densifiedEvent.trigger(DensifiedEvent(
     oldSparse: oldSparse,
     newDense: newDense,
   ))
 
-proc emitSparsified*(em: var EventManager, oldDense: DenseHandle, 
+proc emitSparsified*(em: var EventManager, oldDense: DenseHandle,
                     newSparse: SparseHandle) =
   em.sparsifiedEvent.trigger(SparsifiedEvent(
     oldDense: oldDense,
@@ -350,7 +348,7 @@ proc emitCommandBufferFlushed*(em: var EventManager, bufferId, entitiesProcessed
     operationCount: operationCount
   ))
 
-proc emitArchetypeCreated*(em: var EventManager, archetypeId: int, 
+proc emitArchetypeCreated*(em: var EventManager, archetypeId: int,
                           mask: ArchetypeMask, componentIds: seq[int]) =
   em.archetypeCreated.trigger(ArchetypeCreatedEvent(
     archetypeId: archetypeId,
