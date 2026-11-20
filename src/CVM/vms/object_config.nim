@@ -17,8 +17,6 @@ type
   VmTextureConfig* = object
     slot*: int
     data*: seq[byte]
-    width*, height*: int
-    srgb*, repeat*, mipmaps*: bool
 
   VmObjectConfig* = object
     ## `bytecode` and `uniforms` are consumed by CPU/OpenCL. The shader fields
@@ -98,15 +96,10 @@ proc addVertexAttribute*(config: var VmObjectConfig, bufferId, elementBytes: int
   config.attributes.add VmAttributeConfig(bufferId: bufferId,
     elementBytes: elementBytes, byteOffset: byteOffset, strideBytes: strideBytes)
 
-proc setTexture*(config: var VmObjectConfig, slot: int, rgbaPixels: openArray[byte],
-                 width, height: int, srgb: bool = false,
-                 repeat: bool = false, mipmaps: bool = false) =
+proc setTexture*(config: var VmObjectConfig, slot: int, rgbaPixels: openArray[byte]) =
   if slot < 0 or slot >= 8:
     assert false, "Texture slot must be in 0..7"
-  assert width > 0 and height > 0 and rgbaPixels.len == width * height * 4,
-    "Texture config requires width*height RGBA8 pixel bytes"
-  var texture = VmTextureConfig(slot: slot, width: width, height: height,
-    srgb: srgb, repeat: repeat, mipmaps: mipmaps)
+  var texture = VmTextureConfig(slot: slot)
   texture.data = @rgbaPixels
   var index = 0
   while index < config.textures.len and config.textures[index].slot != slot:
