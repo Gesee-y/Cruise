@@ -64,7 +64,7 @@ let c = a.cross(b)
 
 - **[GPGPU](https://github.com/Gesee-y/Cruise/tree/main/src/gpuarray)**: Cruise allows you to port seq/arrays operations on GPU to accelerate your calculations. It's provide the abstract `GPUSeq` and `GPUArray` that are easy to extend. There is already a CPU and OpenCL backend.
 
-- **[Optional ECS](https://github.com/Gesee-y/Cruise/tree/main/src/assets)**: Cruise provides a high performances, optional ECS based on a fragmented storage. Allowing to mimick archetypes and sparse sets in the same structure without losing the best of both.
+- **[Optional ECS](https://github.com/Gesee-y/Cruise/tree/main/src/ecs)**: Cruise provides a high performances, optional ECS based on a fragmented storage. Allowing to mimick archetypes and sparse sets in the same structure without losing the best of both.
 
 - **[Audio engine](https://github.com/Gesee-y/Cruise/blob/main/src/audio)**: Cruise offers an audio engine, abstracted across platforms allowing you to audio on windows, linux, macos, web.
 
@@ -74,14 +74,21 @@ let c = a.cross(b)
 
 - **[Backend agnostic rendering](https://github.com/Gesee-y/Cruise/tree/main/src/render)**: Command buffer based renderer, an everything as resource philosophy, 
 
-- **[Nim Shaders](https://github.com/Gesee-y/Cruise/tree/main/src/shadert)**: Cruise allows you to write your shader in nim, compile them to OpenCL or ~~GLSL 4.3, then use [shaderc](https://github.com/RowDaBoat/shadercnim) to compile it to other shading backend~~. This even allows you to test your shader on CPU!
+- **[Nim Shaders](https://github.com/Gesee-y/Cruise/tree/main/src/CVM)**: Cruise allows you to write your shader in nim, compile them to OpenCL or GLSL 3.3, then use [shaderc](https://github.com/RowDaBoat/shadercnim) to compile it to other shading backend. This even allows you to test your shader on CPU!
+Through the VM availables in CVM, you can even execute dynamic CPU code in it, or just use it as a placeholder during shader compilation to avoid stutter without losing quality
 
 ```nim
-proc myShader(fragCoord: MyVec4, uv: MyVec2) =
-  fragCoord.x = uv.x
-  fragCoord.y = uv.y
+import CVM/bytecode
 
-let result = compileToGLSL(myShader)
+translateToBytecode()
+translateToOpenCL()
+setShaderName("myShader")
+
+var N {.uniform.}: int = 0
+
+proc main(i {.globalIndex.}: int, a {.ssbo.}: seq[int], b {.ssbo.}: seq[int], c {.ssbo.}: var seq[int]):
+  if i < N:
+    c[i] = a[i] + b[i]
 ```
 
 - **[Standard Plugins](https://github.com/Gesee-y/Cruise/tree/main/stdplugin)**: Cruise offers a set of default plugins like: render graph with multi-pass, aliasing, fully backend-agnostic. A SceneTree, SDL implementation of the abstraction,and more.
@@ -132,7 +139,7 @@ app.quitSDL3App()
 - **[SDL Render](https://github.com/Gesee-y/Cruise/tree/main/stdplugin/sdlrender)**: An implementation of a renderer using the rendering interface, allows you to draw, manage resources and batch draw calls or even integrate it with a render graph.
 ```nim
 import Cruise/src/render/render
-import Cruise/stdplugin//rendergraph/core
+import Cruise/stdplugin/rendergraph/core
 import Cruise/stdplugin/sdlrender/sdlrender
 import Cruise/stdplugin/sdlwin/sdlwin
 import math
@@ -162,7 +169,7 @@ while running:
     ren.beginFrame()
 
     ren.DrawCircleAdv(
-      fpoint(float32(W)*0.5 + cos(t)*150, float32(H)*0.5 + sin(t)*150),
+      fpoint(float32(800)*0.5 + cos(t)*150, float32(600)*0.5 + sin(t)*150),
       30, rgba(255,100,50,200), filled=true)
 
     ren.endFrame()
