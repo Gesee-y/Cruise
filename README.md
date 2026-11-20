@@ -108,7 +108,7 @@ proc main(uv {.fragmentInput.}: Vec2,
   fragColor = sample(tex, uv)
 ```
 
-![cubes in space with a cute pichu](https://codeberg.org/Gesee/CVM/src/commit/cad21384191b02602a87338b45c737929b7d78d7/renders/r3.mp4)
+<video src="https://codeberg.org/Gesee/CVM/raw/commit/cad21384191b02602a87338b45c737929b7d78d7/renders/r3.mp4" controls width="100%"></video>
 
 ### Cyber cube + lightning and with a cute pichu
 
@@ -265,7 +265,7 @@ proc main(uv {.fragmentInput.}: Vec2,
   fragColor = newVec4f(1.0f, 1.0f, 1.0f, 1.0f)
 ```
 
-![cyber cubes in space with a cute pichu](https://codeberg.org/Gesee/CVM/src/commit/cad21384191b02602a87338b45c737929b7d78d7/renders/r2.mp4)
+<video src="https://codeberg.org/Gesee/CVM/raw/commit/cad21384191b02602a87338b45c737929b7d78d7/renders/r2.mp4" controls width="100%"></video>
 (Both the light and the object render use only the VM as shader and the bytecode is passed as uniform)
 
 ### [Plastic crate from poly haven with PBR](https://polyhaven.com/a/plastic_crate_02)
@@ -380,7 +380,7 @@ proc main(uv {.fragmentInput.}: Vec2,
   fragmentColor = newVec4f(color, alpha)
 ```
 
-![plastic crate](https://codeberg.org/Gesee/CVM/src/commit/cad21384191b02602a87338b45c737929b7d78d7/renders/r1.mp4)
+<video src="https://codeberg.org/Gesee/CVM/raw/commit/cad21384191b02602a87338b45c737929b7d78d7/renders/r1.mp4" controls width="100%"></video>
 
 > Note
 > This project is **NOT** a renderer. It's a VM you integrate in your existing workflow.
