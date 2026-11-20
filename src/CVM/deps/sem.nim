@@ -401,6 +401,10 @@ proc resolveNode(cache: var TypeCache, n: var CIRNode, inFunc = false) =
     cache.registerVertexInput(n)
   of cnkFragmentInput:
     cache.registerFragmentInput(n)
+  of cnkTriggerGLSLTranspilation:
+    cache.transpilation.incl(tmGLSL)
+  of cnkTriggerOpenCLTranspilation:
+    cache.transpilation.incl(tmOpenCL)
   of cnkAsgn:
     cache.resolveNode(n.args[0], inFunc=inFunc)
     cache.resolveNode(n.args[1], inFunc=inFunc)

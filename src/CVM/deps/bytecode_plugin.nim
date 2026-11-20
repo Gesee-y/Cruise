@@ -7,6 +7,12 @@
 import plugins
 import std/[syncio, tables, strutils]
 
+type
+  TranspilationMode = enum
+    tmNone
+    tmGLSL
+    tmOpenCL
+
 include "errors.nim"
 include "types.nim"
 include "allocator.nim"

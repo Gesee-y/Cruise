@@ -9,7 +9,7 @@ const SYSTEM_MODULE = "sysvq"
 
 type
   CIRNodeKind* = enum
-    cnkNone
+    cnkNone, cnkTriggerCLTranspilation, cnkTriggerGLSLTranspilation
     cnkStmtList, cnkShaderName, cnkFragmentOutput, cnkVertexOutput, cnkVertexVarying, cnkVertexInput, cnkFragmentInput
     cnkSection
     cnkDecl, cnkFuncSig, cnkFuncDef
@@ -355,7 +355,11 @@ proc makeCallIR(c: NifCursor): CIRNode =
     result.add newCIRSym(it.info, it.getTypeName)
     skip it
     result.add newCIRSym(it.info, it.stringValue)
-    return 
+    return
+  elif it.symText.startsWith("translateToGLSL"):
+    result = newCIRNode(c.info, cnkTriggerGLSLTranspilation)
+  elif it.symText.startsWith("translateToOpenCL"):
+    result = newCIRNode(c.info, cnkTriggerCLTranspilation)
   else:
     result.add(newCIRSym(it.info, it.symText))
   skip it

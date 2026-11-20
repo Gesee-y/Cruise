@@ -103,7 +103,8 @@ type
     functions*: Table[string, ProcOverload]
     liveness*: Table[string, CLiveness]
     equivalences*: Table[string, string]
-    shaderParams*: ShaderParameters 
+    shaderParams*: ShaderParameters
+    transpilation*: set[TranspilationMode]
 
 # ######################################################################################################### #
 # ############################################# CONSTRUCTORS ############################################## #
