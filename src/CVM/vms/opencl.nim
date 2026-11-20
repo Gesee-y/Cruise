@@ -11,8 +11,7 @@ const
   MAX_BUFFERS* = 8
   DEFAULT_VM_FEATURES* = {bfCalls, bfMatrices, bfVectorMath, bfTranscendentals, bfMixing, bfReg256}
 
-# Optimized OpenCL C kernel source code interpreting CVM bytecode
-const OpenClVmKernelSource* = staticRead("opencl_vm.opencl")
+include "opencl_vm.nimf"
 
 type
   OpenClVariant* = object
@@ -59,16 +58,9 @@ proc getBuildLog(program: Pprogram, device: Pdevice_id): string =
     result = "No build log available"
 
 proc buildVariant*(ctx: OpenClContext, features: set[BytecodeFeature]): OpenClVariant =
-  let regBytes = getRegisterWord(features) * 4
-  var options = "-cl-mad-enable -cl-fast-relaxed-math"
-  options.add " -DMAX_MEM=" & $regBytes
-  options.add " -DENABLE_CALLS=" & (if bfCalls in features: "1" else: "0")
-  options.add " -DENABLE_MATRICES=" & (if bfMatrices in features: "1" else: "0")
-  options.add " -DENABLE_VECTORMATH=" & (if bfVectorMath in features: "1" else: "0")
-  options.add " -DENABLE_TRANSCENDENTALS=" & (if bfTranscendentals in features: "1" else: "0")
-  options.add " -DENABLE_MIXING=" & (if bfMixing in features: "1" else: "0")
-
-  var src = cstring(OpenClVmKernelSource)
+  let options = "-cl-mad-enable -cl-fast-relaxed-math"
+  let kernelSource = generateOpenClVmSource(features)
+  var src = cstring(kernelSource)
   var lines = [src]
   var status: TClResult
   result.program = createProgramWithSource(ctx.context, 1, cast[cstringArray](addr lines), nil, addr status)
