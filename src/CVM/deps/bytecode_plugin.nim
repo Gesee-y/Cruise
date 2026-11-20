@@ -20,6 +20,18 @@ include "ir.nim"
 include "sem.nim"
 include "rewriter.nim"
 include "generator.nim"
+include "backends/common.nim"
+include "backends/glsl33.nim"
+include "backends/opencl.nim"
+
+proc writeBackendSource(path, source: string) =
+  var f = open(path, fmWrite)
+  var sourceBuffer = newSeq[char](source.len)
+  for i, ch in source:
+    sourceBuffer[i] = ch
+  if sourceBuffer.len > 0:
+    discard writeBuffer(f, addr sourceBuffer[0], sourceBuffer.len)
+  close(f)
 
 proc getShaderName(n: NifCursor): string =
   result = "generated"
@@ -49,6 +61,23 @@ proc generateBytecode(n: var NifCursor): NifBuilder =
 
   var re = newRewriterEngine()
   re.rewritePass(irCode, cache)
+
+  # Both text backends consume the same semantically checked, rewritten CIR
+  # tree as the bytecode generator.
+  var glslSource = ""
+  var openclSource = ""
+  if tmGLSL33 in cache.transpilation:
+    glslSource = emitGLSL33(irCode, cache)
+  if tmOpenCL in cache.transpilation:
+    openclSource = emitOpenCL(irCode, cache)
+  if irGenErrors.len > 0:
+    result.withTree StmtsS, n.info:
+      flushIRErrors(result)
+    return
+  if tmGLSL33 in cache.transpilation:
+    writeBackendSource(cache.programName & ".glsl", glslSource)
+  if tmOpenCL in cache.transpilation:
+    writeBackendSource(cache.programName & ".cl", openclSource)
 
   var ctx = CodeGenCtx(
     cache: cache,

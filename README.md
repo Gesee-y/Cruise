@@ -34,6 +34,11 @@ proc main(i {.globalIndex.}: int, a {.ssbo.}: seq[int], b {.ssbo.}: seq[int], c 
 
 This will generate a `myShader.cbc` file, which contains the bytecode of the program.
 
+To also emit source from the same rewritten IR, add `translateToGLSL33()` and/or
+`translateToOpenCL()` beside `translateToBytecode()`. The plugin writes
+`myShader.glsl` and `myShader.cl`; selecting either backend does not replace the
+bytecode output.
+
 Then in the program running it:
 
 ```nim

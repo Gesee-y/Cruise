@@ -357,7 +357,7 @@ proc makeCallIR(c: NifCursor): CIRNode =
     result.add newCIRSym(it.info, it.stringValue)
     return
   elif it.symText.startsWith("translateToGLSL"):
-    result = newCIRNode(c.info, cnkTriggerGLSLTranspilation)
+    result = newCIRNode(c.info, cnkTriggerGLSL33Transpilation)
   elif it.symText.startsWith("translateToOpenCL"):
     result = newCIRNode(c.info, cnkTriggerCLTranspilation)
   else:
@@ -695,7 +695,9 @@ proc toIR(n: NifCursor): CIRNode =
         # functions. Their instantiated signatures include static `string`
         # parameters which are intentionally outside the GPU type system.
         let shortName = name.split(".")[0]
-        if shortName == "setShaderName" or shortName == "setShaderType":
+        if shortName == "setShaderName" or shortName == "setShaderType" or
+            shortName == "translateToGLSL" or shortName == "translateToGLSL33" or
+            shortName == "translateToOpenCL":
           return newCIRNode(c.info, cnkEmpty)
 
         let isMainEntry = name.startsWith(MAIN_ENTRY_NAME)
