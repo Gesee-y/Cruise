@@ -9,7 +9,7 @@ const SYSTEM_MODULE = "sysvq"
 
 type
   CIRNodeKind* = enum
-    cnkNone, cnkTriggerCLTranspilation, cnkTriggerGLSLTranspilation
+    cnkNone, cnkTriggerCLTranspilation, cnkTriggerGLSL33Transpilation
     cnkStmtList, cnkShaderName, cnkFragmentOutput, cnkVertexOutput, cnkVertexVarying, cnkVertexInput, cnkFragmentInput
     cnkSection
     cnkDecl, cnkFuncSig, cnkFuncDef

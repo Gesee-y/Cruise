@@ -9,8 +9,7 @@ import std/[syncio, tables, strutils]
 
 type
   TranspilationMode = enum
-    tmNone
-    tmGLSL
+    tmGLSL33
     tmOpenCL
 
 include "errors.nim"
