@@ -12,7 +12,9 @@ inline void decodeWord(uint word, int *op, int *dst, int *src, int *size) {
     *src  = (int)(word & 0xFF);
 }
 
-inline long readMemInt(const uchar *mem, int address, int size) {
+// Keep variable-width memory helpers out of the VM dispatch loop. Inlining
+// their dynamic-size paths makes the AMD OpenCL optimizer explode in compile time.
+__attribute__((noinline)) long readMemInt(const uchar *mem, int address, int size) {
     if (size == 8) {
         return *(const long*)(mem + address);
     } else if (size == 4) {
@@ -29,7 +31,7 @@ inline long readMemInt(const uchar *mem, int address, int size) {
     }
 }
 
-inline void writeMemInt(uchar *mem, int address, int size, long val) {
+__attribute__((noinline)) void writeMemInt(uchar *mem, int address, int size, long val) {
     if (size == 8) {
         *(long*)(mem + address) = val;
     } else if (size == 4) {
@@ -58,7 +60,7 @@ inline void writeStackWord(uchar *stack, int address, uint value) {
 }
 #end if
 
-inline vm_float_t readMemFloat(const uchar *mem, int address, int size) {
+__attribute__((noinline)) vm_float_t readMemFloat(const uchar *mem, int address, int size) {
 #  result.add("#if defined(cl_khr_fp64) || defined(cl_amd_fp64)\n")
     if (size == 8) {
         return *(const double*)(mem + address);
@@ -67,7 +69,7 @@ inline vm_float_t readMemFloat(const uchar *mem, int address, int size) {
     return *(const float*)(mem + address);
 }
 
-inline void writeMemFloat(uchar *mem, int address, int size, vm_float_t val) {
+__attribute__((noinline)) void writeMemFloat(uchar *mem, int address, int size, vm_float_t val) {
 #  result.add("#if defined(cl_khr_fp64) || defined(cl_amd_fp64)\n")
     if (size == 8) {
         *(double*)(mem + address) = (double)val;
@@ -85,7 +87,7 @@ inline void writeFloatWord(uchar *mem, int wordIndex, float value) {
     ((__private float*)mem)[wordIndex] = value;
 }
 
-inline ulong readMemUInt(const uchar *mem, int address, int size) {
+__attribute__((noinline)) ulong readMemUInt(const uchar *mem, int address, int size) {
     if (size == 8) return *(const ulong*)(mem + address);
     if (size == 4) return (ulong)(*(const uint*)(mem + address));
     if (size == 2) return (ulong)(*(const ushort*)(mem + address));
@@ -96,7 +98,7 @@ inline ulong readMemUInt(const uchar *mem, int address, int size) {
     return v;
 }
 
-inline void writeMemUInt(uchar *mem, int address, int size, ulong val) {
+__attribute__((noinline)) void writeMemUInt(uchar *mem, int address, int size, ulong val) {
     if (size == 8) *(ulong*)(mem + address) = val;
     else if (size == 4) *(uint*)(mem + address) = (uint)val;
     else if (size == 2) *(ushort*)(mem + address) = (ushort)val;
@@ -451,8 +453,10 @@ __kernel void runVM(
                 pc = target;
                 break;
             }
+#end if
 
             case 21: { // vocRet
+#if bfCalls in features:
                 if (callFrameBase >= 0 && callFrameBase + 16 <= stackLen) {
                     uint returnPc = readStackWord(stack, callFrameBase);
                     uint parentBases = readStackWord(stack, callFrameBase + 4);
@@ -474,9 +478,11 @@ __kernel void runVM(
                 } else {
                     halted = 1;
                 }
+#else:
+                return;
+#end if
                 break;
             }
-#end if
 
             case 22: { // vocJmp
                 uint target = program[pc];
