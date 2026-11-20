@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /testresults/
 /tests/megatest.nim
 /nimcache/
@@ -5,3 +6,17 @@
 *.txt
 .nimcache
 nimcache
+=======
+memo
+nimcache
+tests/vm
+externalModule
+assets
+tests/shaders
+.nimcache_light
+.nimcache
+*.sh
+*.dll
+*.cbc
+*.exe
+>>>>>>> CVMF
