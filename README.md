@@ -2,6 +2,7 @@
 
 ![Tests status](https://github.com/Gesee-y/Cruise/actions/workflows/tests.yml/badge.svg)
 ![Docs](https://img.shields.io/github/actions/workflow/status/Gesee-y/Cruise/docs.yml?label=docs&status=latest)
+[Support the project]((https://github.com/Gesee-y/Cruise/blob/undertale-engine/FUNDING.md))
 
 Once upon a time, making a game was long, tremendous and insane task. People would often need to build their own game engine before being able to make their game logics. But nowadays, the rise of game engines has allowed peoples to focus on creativity rather than fighting with low level details.
 While being an extreme time saver, regular game engines often have their limitations which may be **cost**, **technical debt**, **performances**, etc.
@@ -181,6 +182,12 @@ ren.teardown()
 ## Example
 
 You can see examples and some little games made with Cruise [here](https://github.com/Gesee-y/Cruise/tree/main/examples)
+
+## Contribution
+
+Contribution for any of the modules of Cruise are welcome!
+If you would like to support it's creator, leave a tip [here]((https://github.com/Gesee-y/Cruise/blob/undertale-engine/FUNDING.md))
+
 
 ## License
 
