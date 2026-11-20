@@ -1,15 +1,16 @@
-# Cruise Shader VM (CVM/CSVM/SVM, whethever, no one's care :p)
+# Cruise Shader VM (CVM/CSVM/SVM, whatever, no one's care :p)
 
 Cruise VM is an implementation of a **Virtual Machine** on top of **Nimony** or **Nim 3**, whethever tf you want to call it.
-So what it does is using compiler plugins to turn a module into bytecode.
+So what it does is use compiler plugins to turn a module into bytecode.
 
-It also have a few restriction:
+It also has a few restriction:
 
 - Can't use `ref`
-- Can only import some predefined module
+- Can only use builtin functions or those defined in the module
 - No recursion
 - Limited memory and stack size (255 bytes of memory, 64 bytes stack)
 - No top level expression
+- Needs an entry point
 
 So why should we care about such a restricted VM ?
 Because it's made entirely to run on GPU!
@@ -58,6 +59,8 @@ proc main:
 
 ### 36 Cubes in space
 
+<details>
+<summary> See shaders </summary>
 Vertex shader:
 
 ```nim
@@ -108,10 +111,13 @@ proc main(uv {.fragmentInput.}: Vec2,
   fragColor = sample(tex, uv)
 ```
 
+</details>
 <video src="https://codeberg.org/Gesee/CVM/raw/commit/cad21384191b02602a87338b45c737929b7d78d7/renders/r3.mp4" controls width="100%"></video>
 
 ### Cyber cube + lightning and with a cute pichu
 
+<details>
+<summary> See shaders </summary>
 Vertex shader:
 
 ```nim
@@ -265,11 +271,14 @@ proc main(uv {.fragmentInput.}: Vec2,
   fragColor = newVec4f(1.0f, 1.0f, 1.0f, 1.0f)
 ```
 
+</details>
 <video src="https://codeberg.org/Gesee/CVM/raw/commit/cad21384191b02602a87338b45c737929b7d78d7/renders/r2.mp4" controls width="100%"></video>
 (Both the light and the object render use only the VM as shader and the bytecode is passed as uniform)
 
 ### [Plastic crate from poly haven with PBR](https://polyhaven.com/a/plastic_crate_02)
 
+<details>
+<summary> See shaders </summary>
 Vertex shader:
 
 ```nim
@@ -380,6 +389,7 @@ proc main(uv {.fragmentInput.}: Vec2,
   fragmentColor = newVec4f(color, alpha)
 ```
 
+</details>
 <video src="https://codeberg.org/Gesee/CVM/raw/commit/cad21384191b02602a87338b45c737929b7d78d7/renders/r1.mp4" controls width="100%"></video>
 
 > Note
@@ -431,5 +441,5 @@ Being able to use Nim for everything without writing a single line of shader cod
 
 ## Cons
 
-- Slower than a native GPU program (On a AMD FirePro W4190M for the plastic crate the VM run at 100FPS while the native version runs a 500FPS, this range with the draw distance, with the object covering a huge part of the screen, the VM runs a 10FPS while the natives runs a 400FPS).
+- Slower than a native GPU program.
 - Still ongoing (handling more GPU construct, run on more shader langs, etc etc)
